@@ -1,0 +1,33 @@
+/*
+ * Base (non-Tailwind) styles for the IdP-HOSTED sign-in bundle.
+ *
+ * Veil renders <SignIn> inside its own Tailwind build and needs none of this.
+ * AitherIdentity serves a bare HTML shell with no build pipeline, so the
+ * Tailwind utilities the component uses are compiled ahead of time and baked
+ * into the security-core image.
+ *
+ * The Tailwind entry point that pulls this in lives at
+ * `AitherVeil/scripts/signin-tailwind.css` — NOT here — because `@import
+ * "tailwindcss"` resolves from the CSS file's own directory, and portal-kit has
+ * no node_modules of its own in this workspace layout. Keeping the two split
+ * means the component ships its own base styles while the build stays where the
+ * toolchain actually is.
+ */
+
+/*
+ * The hosted page is standalone — nothing else sets a background, so an
+ * un-styled flash before the bundle mounts would be a white screen on what is
+ * a black page. Paint the shell immediately.
+ */
+html, body {
+    background: #000;
+    margin: 0;
+    min-height: 100dvh;
+}
+
+#aither-signin-root:empty::after {
+    content: "";
+    display: block;
+    min-height: 100dvh;
+    background: #000;
+}

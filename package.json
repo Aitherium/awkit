@@ -1,0 +1,250 @@
+{
+  "name": "@aitherium/awkit",
+  "version": "0.2.1",
+  "description": "Shared React workspace panels for AitherOS product portals",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    },
+    "./surfaces": {
+      "types": "./src/surfaces/index.ts",
+      "import": "./src/surfaces/index.ts"
+    },
+    "./panels": {
+      "types": "./src/panels/index.ts",
+      "import": "./src/panels/index.ts"
+    },
+    "./panels/*": {
+      "types": "./src/panels/*.ts",
+      "import": [
+        "./src/panels/*.ts",
+        "./src/panels/*.tsx",
+        "./src/panels/*"
+      ]
+    },
+    "./panels/registry": {
+      "types": "./src/panels/registry.ts",
+      "import": "./src/panels/registry.ts"
+    },
+    "./pages": {
+      "types": "./src/pages/index.ts",
+      "import": "./src/pages/index.ts"
+    },
+    "./auth": {
+      "types": "./src/auth/index.ts",
+      "import": "./src/auth/index.ts"
+    },
+    "./auth/signin.css": "./src/auth/signin.css",
+    "./ui": {
+      "types": "./src/ui/index.ts",
+      "import": "./src/ui/index.ts"
+    },
+    "./hooks": {
+      "types": "./src/hooks/index.ts",
+      "import": "./src/hooks/index.ts"
+    },
+    "./lib": {
+      "types": "./src/lib/index.ts",
+      "import": "./src/lib/index.ts"
+    },
+    "./types": {
+      "types": "./src/types.ts",
+      "import": "./src/types.ts"
+    },
+    "./styles": "./src/awkit-vars.css",
+    "./base.css": "./src/awkit-base.css",
+    "./voice": {
+      "types": "./src/voice/index.ts",
+      "import": "./src/voice/index.ts"
+    },
+    "./storefront": {
+      "types": "./src/storefront/index.ts",
+      "import": "./src/storefront/index.ts"
+    },
+    "./templates": {
+      "types": "./src/templates/index.ts",
+      "import": "./src/templates/index.ts"
+    },
+    "./admin": {
+      "types": "./src/admin/index.ts",
+      "import": "./src/admin/index.ts"
+    },
+    "./channel-frames": {
+      "types": "./src/channel-frames/index.ts",
+      "import": "./src/channel-frames/index.ts"
+    },
+    "./webml": {
+      "types": "./src/webml/index.ts",
+      "import": "./src/webml/index.ts"
+    },
+    "./webml/worker-core": {
+      "types": "./src/webml/worker-core.ts",
+      "import": "./src/webml/worker-core.ts"
+    },
+    "./webml/bonsai-models": {
+      "types": "./src/webml/bonsai-models.ts",
+      "import": "./src/webml/bonsai-models.ts"
+    },
+    "./webml/code-embed": {
+      "types": "./src/webml/code-embed.ts",
+      "import": "./src/webml/code-embed.ts"
+    },
+    "./webml/bonsai-worker-core": {
+      "types": "./src/webml/bonsai-worker-core.ts",
+      "import": "./src/webml/bonsai-worker-core.ts"
+    },
+    "./sync": {
+      "types": "./src/sync/index.ts",
+      "import": "./src/sync/index.ts"
+    },
+    "./terminal": {
+      "types": "./src/terminal/index.ts",
+      "import": "./src/terminal/index.ts"
+    },
+    "./terminal/wrapped-links": {
+      "types": "./src/terminal/wrapped-links.ts",
+      "import": "./src/terminal/wrapped-links.ts"
+    }
+  },
+  "publishConfig": {
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      },
+      "./surfaces": {
+        "types": "./dist/surfaces/index.d.ts",
+        "import": "./dist/surfaces/index.js"
+      },
+      "./panels": {
+        "types": "./dist/panels/index.d.ts",
+        "import": "./dist/panels/index.js"
+      },
+      "./pages": {
+        "types": "./dist/pages/index.d.ts",
+        "import": "./dist/pages/index.js"
+      },
+      "./auth": {
+        "types": "./dist/auth/index.d.ts",
+        "import": "./dist/auth/index.js"
+      },
+      "./auth/signin.css": "./dist/auth/signin.css",
+      "./ui": {
+        "types": "./dist/ui/index.d.ts",
+        "import": "./dist/ui/index.js"
+      },
+      "./hooks": {
+        "types": "./dist/hooks/index.d.ts",
+        "import": "./dist/hooks/index.js"
+      },
+      "./lib": {
+        "types": "./dist/lib/index.d.ts",
+        "import": "./dist/lib/index.js"
+      },
+      "./types": {
+        "types": "./dist/types.d.ts",
+        "import": "./dist/types.js"
+      },
+      "./styles": "./dist/awkit-vars.css",
+      "./base.css": "./dist/awkit-base.css",
+      "./voice": {
+        "types": "./dist/voice/index.d.ts",
+        "import": "./dist/voice/index.js"
+      },
+      "./storefront": {
+        "types": "./dist/storefront/index.d.ts",
+        "import": "./dist/storefront/index.js"
+      },
+      "./templates": {
+        "types": "./dist/templates/index.d.ts",
+        "import": "./dist/templates/index.js"
+      },
+      "./admin": {
+        "types": "./dist/admin/index.d.ts",
+        "import": "./dist/admin/index.js"
+      },
+      "./webml": {
+        "types": "./dist/webml/index.d.ts",
+        "import": "./dist/webml/index.js"
+      },
+      "./webml/worker-core": {
+        "types": "./dist/webml/worker-core.d.ts",
+        "import": "./dist/webml/worker-core.js"
+      },
+      "./webml/bonsai-models": {
+        "types": "./dist/webml/bonsai-models.d.ts",
+        "import": "./dist/webml/bonsai-models.js"
+      },
+      "./webml/code-embed": {
+        "types": "./dist/webml/code-embed.d.ts",
+        "import": "./dist/webml/code-embed.js"
+      },
+      "./webml/bonsai-worker-core": {
+        "types": "./dist/webml/bonsai-worker-core.d.ts",
+        "import": "./dist/webml/bonsai-worker-core.js"
+      },
+      "./sync": {
+        "types": "./dist/sync/index.d.ts",
+        "import": "./dist/sync/index.js"
+      },
+      "./channel-frames": {
+        "types": "./dist/channel-frames/index.d.ts",
+        "import": "./dist/channel-frames/index.js"
+      }
+    },
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "files": [
+    "dist/",
+    "src/"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && node copy-assets.mjs && npm run build:worker && npm run build:embed-worker",
+    "pack:dist": "npm run build && npm pack",
+    "build:worker": "esbuild src/webml/bonsai-worker-entry.ts --bundle --format=esm --minify --outfile=dist/webml/bonsai-worker.js",
+    "build:embed-worker": "esbuild src/webml/session-memory/embed.worker.ts --bundle --format=esm --minify --outfile=dist/webml/session-memory/embed.worker.js"
+  },
+  "dependencies": {
+    "@aitherium/bead-space": "^0.1.0",
+    "d3-force": "^3.0.0"
+  },
+  "peerDependencies": {
+    "react": "^18.0.0 || ^19.0.0",
+    "react-dom": "^18.0.0 || ^19.0.0",
+    "lucide-react": ">=0.555.0",
+    "next": ">=14.0.0",
+    "@huggingface/transformers": ">=3.0.0"
+  },
+  "peerDependenciesMeta": {
+    "next": {
+      "optional": true
+    },
+    "@huggingface/transformers": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/d3-array": "^3.2.1",
+    "@types/d3-drag": "^3.0.7",
+    "@types/d3-force": "^3.0.10",
+    "@types/d3-selection": "^3.0.11",
+    "@types/d3-shape": "^3.1.6",
+    "@types/d3-transition": "^3.0.9",
+    "@types/d3-zoom": "^3.0.8",
+    "@types/node": "^25.9.1",
+    "@types/react": "^18.3.29",
+    "@types/react-dom": "^18.3.7",
+    "@webgpu/types": "^0.1.71",
+    "next": "^16.2.7",
+    "typescript": "^5.9.3",
+    "esbuild": "^0.25.6"
+  },
+  "license": "UNLICENSED"
+}

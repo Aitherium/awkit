@@ -1,0 +1,432 @@
+/**
+ * Fleet Surface — using the room's drafting-sheet language.
+ *
+ * Variables cascade from the room's .room-* system, so the surface inherits
+ * the tenant's theme automatically. When Fleet is rendered standalone, it
+ * brings its own defaults.
+ */
+
+.fleet-surface {
+  --sheet-void: var(--bg-deep, #0a0e14);
+  --sheet-base: var(--bg-base, #121821);
+  --sheet-panel: var(--bg-surface, #19202c);
+  --sheet-raised: var(--bg-elevated, #232c3b);
+
+  --ink: var(--text-primary, #e9eff8);
+  --ink-soft: var(--text-secondary, #b4c0d1);
+  --graphite: var(--text-muted, #7a869a);
+
+  --stake: var(--accent-primary, #f4b740);
+  --datum: var(--accent-secondary, #5b9dff);
+  --alarm: var(--accent-danger, #f87171);
+
+  --rule: color-mix(in srgb, var(--stake) 14%, transparent);
+  --rule-soft: color-mix(in srgb, var(--ink) 7%, transparent);
+
+  --grid-fine: 8px;
+
+  --font-draft: var(--font-mono, 'JetBrains Mono', 'Fira Code', monospace);
+  --font-hand: var(--font-sans, Inter, system-ui, sans-serif);
+
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-height: 0;
+  font-family: var(--font-hand);
+  background: var(--sheet-void);
+  color: var(--ink);
+}
+
+/* ── Header ──────────────────────────────────────────────────────── */
+
+.fleet-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.9rem 1.2rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.fleet-title {
+  font-family: var(--font-draft);
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--stake);
+  margin: 0;
+}
+
+.fleet-close {
+  border: 0;
+  background: none;
+  color: var(--graphite);
+  font-family: var(--font-draft);
+  font-size: 0.6rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color 140ms ease;
+}
+
+.fleet-close:hover { color: var(--ink); }
+.fleet-close:focus-visible {
+  outline: 2px solid var(--datum);
+  outline-offset: 2px;
+}
+
+/* ── Content area ────────────────────────────────────────────────── */
+
+.fleet-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem 1.2rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule) transparent;
+}
+
+.fleet-content::-webkit-scrollbar { width: 10px; }
+.fleet-content::-webkit-scrollbar-thumb {
+  background: var(--rule);
+  border-radius: 99px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+/* ── Sections ────────────────────────────────────────────────────── */
+
+.fleet-section {
+  margin-bottom: 1.6rem;
+}
+
+.fleet-section:last-child { margin-bottom: 0; }
+
+.fleet-section-title {
+  font-family: var(--font-draft);
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--graphite);
+  margin: 0 0 0.85rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--rule);
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.fleet-section-badge {
+  font-family: var(--font-draft);
+  font-size: 0.55rem;
+  letter-spacing: 0.08em;
+  color: var(--graphite);
+  white-space: nowrap;
+  padding: 0.15rem 0.5rem;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--stake) 3%, transparent);
+  transition: all 140ms ease;
+}
+
+.fleet-section-badge[data-active='true'] {
+  color: var(--datum);
+  background: color-mix(in srgb, var(--datum) 8%, transparent);
+}
+
+/* ── Item lists ──────────────────────────────────────────────────── */
+
+.fleet-roll {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Service status items — name and one-word status. */
+.fleet-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.6rem;
+  margin: 0 -0.6rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  transition: background 140ms ease;
+  border-bottom: 1px solid var(--rule-soft);
+}
+
+.fleet-item:last-child { border-bottom: 0; }
+.fleet-item:hover { background: color-mix(in srgb, var(--stake) 5%, transparent); }
+
+.fleet-item-name {
+  font-family: var(--font-draft);
+  font-weight: 500;
+  flex: 0 0 auto;
+}
+
+.fleet-item-status {
+  font-family: var(--font-draft);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  color: var(--graphite);
+  text-align: right;
+  flex: 0 0 auto;
+  transition: color 140ms ease;
+}
+
+.fleet-item[data-status='unreachable'] .fleet-item-status {
+  color: var(--alarm);
+}
+
+/* Ambient roster — agents that are listening. */
+.fleet-agent-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0.5rem;
+  margin: 0 -0.5rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  border-bottom: 1px solid var(--rule-soft);
+  transition: background 140ms ease;
+}
+
+.fleet-agent-item:last-child { border-bottom: 0; }
+.fleet-agent-item:hover { background: color-mix(in srgb, var(--datum) 6%, transparent); }
+
+.fleet-agent-mark {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
+  background: transparent;
+  border: 1.5px solid var(--datum);
+}
+
+.fleet-agent-item[data-online='false'] .fleet-agent-mark { border-color: var(--graphite); }
+
+.fleet-agent-name {
+  font-weight: 500;
+}
+
+.fleet-agent-online {
+  margin-left: auto;
+  font-family: var(--font-draft);
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--graphite);
+}
+
+.fleet-agent-item[data-online='false'] { color: var(--graphite); }
+
+/* ── Ambient tuning readout ──────────────────────────────────────── */
+
+.fleet-tuning {
+  font-family: var(--font-draft);
+  font-size: 0.62rem;
+  line-height: 1.8;
+  letter-spacing: 0.06em;
+  color: var(--graphite);
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--rule-soft);
+}
+
+.fleet-tuning-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.fleet-tuning-value {
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Workforce brain — agents available to hire ──────────────────── */
+
+.fleet-workforce-item {
+  display: block;
+  padding: 0.75rem 0.6rem;
+  margin: 0 -0.6rem;
+  border-radius: 4px;
+  border-bottom: 1px solid var(--rule-soft);
+  transition: background 140ms ease;
+}
+
+.fleet-workforce-item:last-child { border-bottom: 0; }
+.fleet-workforce-item:hover { background: color-mix(in srgb, var(--stake) 4%, transparent); }
+
+.fleet-workforce-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin-bottom: 0.3rem;
+}
+
+.fleet-workforce-name {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--ink);
+}
+
+.fleet-workforce-version {
+  font-family: var(--font-draft);
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  color: var(--graphite);
+  margin-left: auto;
+}
+
+.fleet-workforce-description {
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  margin: 0.25rem 0 0.5rem;
+}
+
+.fleet-workforce-domains,
+.fleet-workforce-capabilities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.4rem 0;
+  align-items: center;
+}
+
+.fleet-domain-tag,
+.fleet-capability-tag {
+  display: inline-block;
+  font-family: var(--font-draft);
+  font-size: 0.65rem;
+  letter-spacing: 0.06em;
+  color: var(--graphite);
+  background: color-mix(in srgb, var(--datum) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--datum) 20%, transparent);
+  padding: 0.25rem 0.4rem;
+  border-radius: 3px;
+}
+
+.fleet-capabilities-label {
+  font-family: var(--font-draft);
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--graphite);
+}
+
+.fleet-capabilities-more {
+  font-family: var(--font-draft);
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
+  color: var(--graphite);
+  font-style: italic;
+}
+
+/* Hire button — plain, with clear disabled state. */
+.fleet-hire-button {
+  margin-top: 0.5rem;
+  padding: 0.4rem 0.7rem;
+  border: 1px solid var(--rule);
+  background: none;
+  color: var(--graphite);
+  font-family: var(--font-draft);
+  font-size: 0.6rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: all 140ms ease;
+}
+
+.fleet-hire-button:hover:not(:disabled) {
+  color: var(--sheet-void);
+  background: var(--stake);
+  border-color: var(--stake);
+}
+
+.fleet-hire-button:focus-visible {
+  outline: 2px solid var(--stake);
+  outline-offset: 2px;
+}
+
+.fleet-hire-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ── Status & error messages ─────────────────────────────────────── */
+
+.fleet-note {
+  font-size: 0.8rem;
+  line-height: 1.65;
+  color: var(--graphite);
+  margin: 0;
+}
+
+.fleet-error {
+  font-size: 0.8rem;
+  line-height: 1.65;
+  color: var(--alarm);
+  margin: 0;
+  padding: 0.75rem;
+  background: color-mix(in srgb, var(--alarm) 8%, transparent);
+  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--alarm) 20%, transparent);
+}
+
+.fleet-error code {
+  font-family: var(--font-draft);
+  font-size: 0.7rem;
+  background: color-mix(in srgb, var(--alarm) 12%, transparent);
+  padding: 0.2rem 0.35rem;
+  border-radius: 2px;
+}
+
+/* Alert banner — something is degraded but not critical. */
+.fleet-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+  background: color-mix(in srgb, var(--alarm) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--alarm) 20%, transparent);
+  border-radius: 4px;
+  font-size: 0.8rem;
+  line-height: 1.65;
+  color: var(--ink-soft);
+}
+
+.fleet-alert-icon {
+  flex: none;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+/* ── Reduced motion ──────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .fleet-item,
+  .fleet-agent-item,
+  .fleet-workforce-item,
+  .fleet-hire-button,
+  .fleet-close {
+    transition: none !important;
+  }
+}
+
+/* ── Focus visible (global reset + override) ─────────────────────── */
+
+.fleet-surface :focus-visible {
+  outline: 2px solid var(--stake);
+  outline-offset: 2px;
+}

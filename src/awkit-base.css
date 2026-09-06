@@ -1,0 +1,369 @@
+/**
+ * Portal-kit shared base styles — resets, utility classes, and component primitives.
+ *
+ * Apps import this AFTER defining their :root CSS variables (brand palette).
+ * All utility classes reference var(--xxx) so they adapt to any brand.
+ *
+ * Usage in app index.css:
+ *   :root { --accent-primary: #c4956a; ... }
+ *   @import 'awkit/src/portal-kit-base.css';
+ *
+ * Or import in main.tsx:
+ *   import 'awkit/src/portal-kit-base.css';
+ */
+
+/* ── Resets ─────────────────────────────────────────────────────────────── */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  display: flex;
+  min-height: 100vh;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  font-family: inherit;
+  transition: all 0.15s ease;
+}
+
+input, textarea, select {
+  font-family: inherit;
+  border: none;
+  outline: none;
+}
+
+a { color: var(--accent-primary); text-decoration: none; }
+a:hover { opacity: 0.8; }
+
+/* ── Scrollbar ──────────────────────────────────────────────────────────── */
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--glass-border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+.custom-scroll::-webkit-scrollbar { width: 6px; }
+.custom-scroll::-webkit-scrollbar-track { background: transparent; }
+.custom-scroll::-webkit-scrollbar-thumb {
+  background: oklch(0.30 0.02 250 / 0.4);
+  border-radius: 3px;
+}
+
+/* ── Animations ─────────────────────────────────────────────────────────── */
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.animate-in { animation: slideUp 0.2s ease forwards; }
+.fade-in { animation: fadeIn 0.3s ease forwards; }
+.slide-in { animation: slideIn 0.3s ease forwards; }
+
+/* ── Utility: Spinner / Empty / Error ───────────────────────────────────── */
+
+.loading-spinner {
+  width: 20px; height: 20px;
+  border: 2px solid var(--glass-border);
+  border-top-color: var(--accent-primary);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+.empty-state {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 3rem 1rem; color: var(--text-muted); text-align: center;
+}
+.empty-state h3 { font-size: 1rem; margin-bottom: 0.5rem; color: var(--text-secondary); }
+/* Centred by the flex parent above today; `margin-inline` states it on the rule
+   that owns the cap, so it survives the parent's layout changing. */
+.empty-state p { font-size: 0.85rem; max-width: 320px; margin-inline: auto; }
+
+.error-banner {
+  padding: 0.75rem 1rem;
+  background: oklch(0.15 0.06 25); border: 1px solid oklch(0.30 0.10 25);
+  border-radius: var(--radius); color: var(--accent-coral);
+  font-size: 0.85rem; margin-bottom: 1rem;
+}
+
+/* ── Buttons ────────────────────────────────────────────────────────────── */
+
+.btn {
+  padding: 0.6rem 1.2rem; border-radius: var(--radius);
+  font-weight: 600; font-size: 0.85rem; transition: opacity 0.15s, transform 0.1s;
+}
+.btn:hover { opacity: 0.9; }
+.btn:active { transform: scale(0.98); }
+.btn-primary { background: var(--accent-primary); color: var(--bg-deep); }
+.btn-secondary { background: var(--bg-elevated); color: var(--text-primary); }
+.btn-ghost { background: transparent; color: var(--text-secondary); }
+
+/* ── Badges ─────────────────────────────────────────────────────────────── */
+
+.badge {
+  display: inline-flex; align-items: center;
+  padding: 0.15rem 0.5rem; background: var(--bg-elevated);
+  border-radius: 4px; font-size: 0.75rem; color: var(--text-secondary);
+}
+.badge-success { background: oklch(0.25 0.08 155); color: var(--accent-green); }
+.badge-error { background: oklch(0.25 0.08 25); color: var(--accent-coral); }
+.badge-warning { background: oklch(0.22 0.06 85); color: oklch(0.85 0.12 85); }
+.badge-info { background: oklch(0.20 0.06 195); color: var(--accent-cyan); }
+.badge-pending { background: oklch(0.20 0.06 290); color: var(--accent-primary); }
+
+/* ── Cards ──────────────────────────────────────────────────────────────── */
+
+.card {
+  background: var(--bg-surface);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.card:hover {
+  border-color: oklch(0.40 0.04 250 / 0.4);
+}
+.card-interactive { cursor: pointer; }
+.card-interactive:hover {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 1px oklch(0.72 0.14 290 / 0.15);
+}
+
+/* ── Stat Cards ─────────────────────────────────────────────────────────── */
+
+.stat-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  padding: 1rem 1.25rem;
+  display: flex; flex-direction: column; gap: 0.25rem;
+}
+.stat-card .stat-value {
+  font-size: 1.5rem; font-weight: 700; line-height: 1.2; letter-spacing: -0.02em;
+}
+.stat-card .stat-label {
+  font-size: 0.7rem; font-weight: 500; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+
+/* ── Panel Layout ───────────────────────────────────────────────────────── */
+
+/* The cap keeps prose readable on a wide monitor; `margin-inline: auto` is what
+   makes the leftover space split evenly instead of piling up on the right. Without
+   it the panel is pinned LEFT, so widening the window just grows a dead margin —
+   which reads as "the page doesn't resize". Apps that want full bleed set
+   `--panel-max: none` rather than re-declaring the rule. */
+.panel {
+  padding: var(--panel-pad, 1.5rem);
+  max-width: var(--panel-max, 1100px);
+  margin-inline: auto;
+  width: 100%;
+}
+.panel-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 1.25rem;
+}
+.panel-title {
+  font-size: 1.1rem; font-weight: 700; letter-spacing: -0.01em;
+}
+
+/* ── Grid Layouts ───────────────────────────────────────────────────────── */
+
+.grid-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+}
+.grid-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 0.75rem;
+}
+
+/* ── Segmented Control (Tab Pills) ──────────────────────────────────────── */
+
+.seg-control {
+  display: inline-flex; gap: 2px;
+  background: var(--bg-elevated); border-radius: var(--radius); padding: 3px;
+}
+.seg-control button {
+  padding: 0.4rem 0.85rem;
+  border-radius: calc(var(--radius) - 2px);
+  font-size: 0.78rem; font-weight: 500; color: var(--text-secondary);
+  background: transparent; transition: all 0.15s;
+}
+.seg-control button[data-active="true"] {
+  background: var(--bg-surface); color: var(--text-primary);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+/* ── Progress Bar ───────────────────────────────────────────────────────── */
+
+.progress-bar {
+  height: 6px; background: var(--bg-elevated);
+  border-radius: 3px; overflow: hidden;
+}
+.progress-bar-fill {
+  height: 100%; border-radius: 3px;
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ── Popover ────────────────────────────────────────────────────────────── */
+
+.popover {
+  position: absolute; z-index: 100;
+  background: var(--bg-elevated);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  animation: slideUp 0.15s ease;
+}
+
+/* ── Confidence Indicators ──────────────────────────────────────────────── */
+
+.confidence-high { color: var(--accent-green); }
+.confidence-mid { color: oklch(0.85 0.12 85); }
+.confidence-low { color: var(--accent-coral); }
+
+/* ── Forms ──────────────────────────────────────────────────────────────── */
+
+textarea.auto-resize { resize: vertical; min-height: 80px; }
+
+input:focus-visible, textarea:focus-visible, select:focus-visible {
+  outline: 2px solid oklch(0.72 0.14 290 / 0.5);
+  outline-offset: 1px;
+}
+
+/* ── Tooltip ────────────────────────────────────────────────────────────── */
+
+[data-tooltip] { position: relative; }
+[data-tooltip]:hover::after {
+  content: attr(data-tooltip);
+  position: absolute; bottom: calc(100% + 6px); left: 50%;
+  transform: translateX(-50%);
+  padding: 0.3rem 0.6rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--glass-border);
+  border-radius: 6px; font-size: 0.7rem; color: var(--text-secondary);
+  white-space: nowrap; z-index: 200; pointer-events: none;
+  animation: slideUp 0.1s ease;
+}
+
+
+/* ── PortalShell nav row hover (inline styles can't express :hover) ────── */
+.portal-shell-nav-item:hover {
+  background: var(--sidebar-row-hover, rgba(255,255,255,0.04)) !important;
+  color: var(--text-primary) !important;
+}
+.portal-shell-nav-item[data-active='true']:hover {
+  background: var(--sidebar-row-active-bg, var(--bg-elevated)) !important;
+  color: var(--accent-primary) !important;
+}
+
+
+/* ── Responsive ─────────────────────────────────────────────────────────────
+ *
+ * This shared base carried ZERO breakpoints for its whole life, so every product
+ * built on portal-kit inherited a desktop-only layout and had to reinvent mobile
+ * itself — which is why a tenant portal and a tenant app were both unusable on
+ * a phone. Being the
+ * SHARED base is exactly why the breakpoints belong here: fixing them per-product
+ * guarantees the next product ships broken too.
+ *
+ * Mobile-first would be the better architecture, but this file already ships in
+ * live products; restating every rule would be a rewrite with real regression
+ * risk. These max-width overrides are additive and safe, and they make the
+ * default responsive. Anything below is a floor a product may raise, never a
+ * ceiling it must fight.
+ */
+
+/* Tablet / small laptop. */
+@media (max-width: 900px) {
+  .panel { padding: var(--panel-pad-md, 1.15rem); }
+  .grid-stats { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+  .grid-cards { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+}
+
+/* Phone. Single column everywhere: a `minmax(280px, 1fr)` track cannot fit a
+   360px-wide viewport once padding is taken, so the grid overflows horizontally
+   and the whole page scrolls sideways — the "nearly unusable" symptom. */
+@media (max-width: 600px) {
+  .panel {
+    padding: var(--panel-pad-sm, 0.9rem);
+    max-width: 100%;
+  }
+  .grid-stats,
+  .grid-cards {
+    grid-template-columns: 1fr;
+    gap: 0.6rem;
+  }
+
+  /* A header that is `space-between` on one line squeezes its title to a few
+     characters next to any action cluster. Stack instead. */
+  .panel-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.6rem;
+  }
+
+  /* Pills overflow the viewport rather than wrapping, because the control is an
+     inline-flex row. Let it scroll on its own axis instead of the page. */
+  .seg-control {
+    display: flex;
+    width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .seg-control::-webkit-scrollbar { display: none; }
+  .seg-control button {
+    flex: 1 0 auto;
+    min-height: 44px; /* Apple/Android minimum tap target. */
+  }
+
+  .stat-card { padding: 0.8rem 0.9rem; }
+  .stat-card .stat-value { font-size: 1.25rem; }
+
+  /* Touch targets. A 0.4rem-padded control is ~26px tall — under half the 44px
+     minimum, which is what makes a working page feel broken on a phone. */
+  button,
+  [role='button'],
+  input,
+  select,
+  textarea {
+    min-height: 44px;
+  }
+
+  /* A hover tooltip cannot be dismissed by touch and covers what it explains. */
+  [data-tooltip]:hover::after { display: none; }
+}
+
+/* Never let a page scroll sideways. A single over-wide child (a long token, a
+   wide table, a fixed-width embed) otherwise drags the entire document with it,
+   which is the difference between "one awkward element" and "the site is
+   broken". */
+@media (max-width: 600px) {
+  html, body { max-width: 100%; overflow-x: hidden; }
+  img, video, canvas, svg, iframe, table, pre { max-width: 100%; }
+  pre { overflow-x: auto; }
+}
