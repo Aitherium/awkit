@@ -113,7 +113,7 @@ export function disposeWarmWebGPUWorkers(): void {
 export function useWebGPUChat(opts: UseWebGPUChatOptions): UseWebGPUChat {
   // Device-sized default, never the flat catalogue default: DEFAULT_WEBML_MODEL_ID
   // is bonsai-27b-text (3.6 GB) and an un-sized default put a 3.6 GB download in
-  // front of every tenant visitor (measured 2026-08-30 on vibe/jgames, which
+  // front of every tenant visitor (measured 2026-08-30 on two tenant apps, which
   // bundle this hook). suggestBonsaiModelId errs small (saveData/slow-link →
   // 1.7b; mobile → 4b/1.7b; desktop ≥8 GB → 8b; else 4b) — the same sizing
   // aitherium.com's own brain uses. Consumers may still pin a model explicitly.

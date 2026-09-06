@@ -9,7 +9,7 @@
  * WHAT THIS DELIBERATELY DOES NOT DO: decide WHERE a model may run. The Living OS half
  * (`AitherVeil/src/lib/bonsai-consent.ts`) carries a host allowlist and a path denylist,
  * because it knows it is aitherium.com and knows which of its own routes are reading
- * surfaces. awkit ships to other people's domains — `garg.aitherium.com`, a customer
+ * surfaces. awkit ships to other people's domains — a tenant subdomain, a customer
  * appliance, an ADK agent, a browser extension — and a hardcoded aitherium.com allowlist
  * there would refuse every legitimate host in silence. Surface policy belongs to whoever
  * mounts the component; this module owns the question that is the same everywhere: **did a

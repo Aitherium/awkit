@@ -183,8 +183,8 @@ Compatible with CompanyRoom's layout:
 
 1. **Copy to node_modules (for iteration):**
    ```bash
-   cp -r AitherOS/apps/packages/portal-kit/src/surfaces/Mail \
-     .PRODUCTS/.GARGBOT/frontend/node_modules/awkit/src/surfaces/Mail
+   cp -r node_modules/awkit/src/surfaces/Mail \
+     <your-app>/node_modules/awkit/src/surfaces/Mail
    ```
 
 2. **Import CSS in consuming app:**

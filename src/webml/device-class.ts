@@ -18,7 +18,7 @@
  * the two copies and a paraphrase is a failure.
  *
  * Why the shared copy has to exist at all: these constants must be ONE number
- * across Veil, gargbot, adk and AitherConnect (gate 1zt BIH002), which a
+ * across every surface that bundles this module, which a
  * per-app literal cannot be — and the drift between a hardened app copy and an
  * un-hardened shared copy is exactly what gate 1zt was written for.
  */

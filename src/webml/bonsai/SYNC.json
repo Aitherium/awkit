@@ -1,5 +1,5 @@
 {
-  "note": "sha256 of the CANONICAL sources (LF-normalised) at the last sync. Regenerate with scripts/sync-webml-to-portal-kit.mjs; verified by dev/tools/check_webml_runtime_parity.py.",
+  "note": "sha256 of the CANONICAL sources (LF-normalised) at the last sync. Regenerate with scripts/sync-webml-to-awkit.mjs; verified by dev/tools/check_webml_runtime_parity.py.",
   "canonical": [
     "AitherOS/apps/AitherVeil/src/lib/bonsai-tools",
     "AitherOS/apps/AitherVeil/src/lib/bonsai-webgpu",
@@ -15,7 +15,7 @@
     "bonsai-tools/local-pim-tools.ts": "f53f18085a6b5efaa8a9cef7eb0bcf66abff214e288e77fc26a9e59be4e48651",
     "bonsai-tools/meta-steer.ts": "b068c27bd52a47eb772d0264f7a09e5bcca061732aab000d5d98624193eee7b6",
     "bonsai-tools/parser.ts": "794a0d3f154239f36212a0bdde2e94b5867ba72fd386b33519bfe5a2c5d43f6c",
-    "bonsai-tools/registry.ts": "6c6b6a7758c83b6d532b9eb3a5b7e39e2544e1c62a18cf9dab01f76502c35dbb",
+    "bonsai-tools/registry.ts": "e3d52baa425fd6561328cdf54b69752a964852b45ed94036fdaee87189d4b155",
     "bonsai-tools/stream-gate.ts": "fe90549f6f97345d9cfcc78e9d493e3cb3af13bcb9fa067d4c6a760cfa43006b",
     "bonsai-tools/tool-orchestrator.ts": "117caa0b770c7dc46df9d3531f14fe546a9baeabe27901c9423719a00afe73bf",
     "bonsai-webgpu/gguf/idb-cache.ts": "282ced63b4a7d9817fa23c9f8b8e82194144c737a6638b30c5ddf8de8caaf5f3",

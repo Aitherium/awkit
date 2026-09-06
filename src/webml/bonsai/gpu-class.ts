@@ -1,8 +1,7 @@
 // GENERATED — DO NOT EDIT.
-// Synced from AitherVeil/src/lib/bonsai-webgpu by
-// AitherOS/apps/AitherVeil/scripts/sync-webml-to-awkit.mjs.
-// Edit the canonical copy and re-run the sync; a hand edit here is
-// overwritten on the next run and is invisible to aitherium.com.
+// Synced from the canonical Bonsai webml runtime (the AitherVeil source
+// tree in the AitherOS monorepo). Edit the canonical copy and re-run the
+// sync; a hand edit here is overwritten on the next run.
 /* SPDX-License-Identifier: LicenseRef-Aitherium-Proprietary
  * © 2026 Aitherium, LLC. Original work.
  *
