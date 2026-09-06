@@ -1,0 +1,145 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   PORTAL MOBILE SHELL — the shared phone contract
+   ═══════════════════════════════════════════════════════════════════════════
+
+   Consolidation step 2 (step 1 was the terminal). This file owns the phone
+   behaviour of the "Dark Glass" portal shell — the app grid, the top bar, the
+   drawer sidebar, the bottom tab bar and the floating action button — as an
+   OVERRIDE layer applied after a surface's own stylesheet.
+
+   It is an override layer rather than a rewrite on purpose: AitherTunnel's
+   portal is a 322 KB Python file emitting inline CSS, and rewriting all of it
+   at once is how a consolidation stalls half-done. Adopting this file is one
+   line; porting the markup can follow.
+
+   THE CONTRACT a surface must satisfy to adopt this:
+     .app-shell        the full-height grid wrapper
+     .top-bar          fixed-height header, contains .brand
+     .mobile-toggle    the drawer button (phone only)
+     .sidebar          nav drawer; `.open` shows it
+     .sidebar-backdrop optional sibling; `.open` shows it
+     .main-content     the scroll container
+     .bottom-nav       phone tab bar, containing .nav-tab children
+     .nav-item         a sidebar row
+     .relay-fab        floating chat button (optional)
+
+   EVERY RULE BELOW FIXES A DEFECT MEASURED ON A 390x844 VIEWPORT, 2026-08-06,
+   against the live tunnel portal. They are not preferences.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1. The app must be as tall as the VISIBLE viewport, not 100vh ─────────
+   On every mobile browser `100vh` is the viewport with the URL bar RETRACTED,
+   so a `height:100vh` shell is taller than what you can see and its
+   `position:fixed; bottom:0` bar sits under the browser chrome. `body` here
+   also sets `overflow:hidden`, so you cannot scroll to reach it.
+   `dvh` is the dynamic viewport unit; the `vh` line stays first as the
+   fallback for anything that does not support it.                          */
+.app-shell {
+  height: 100vh;
+  height: 100dvh;
+}
+
+body:has(.app-shell) {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+@media (max-width: 900px) {
+  /* ── 2. The tab bar must fit EVERY tab ────────────────────────────────────
+     MEASURED: the bar declared `grid-template-columns: repeat(4, 1fr)` and the
+     markup has FIVE tabs, so the fifth ("More" — the only route to Routes, VPN,
+     Services, Infra, Workspaces, Settings from a phone) was laid out in an
+     implicit second row at y=845 on an 844px-tall viewport: entirely below the
+     fold, unreachable, while still rendering and accepting no taps.
+     Auto-flow rather than `repeat(5, 1fr)` so a sixth tab cannot re-break it. */
+  .bottom-nav {
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    grid-auto-rows: 100%;
+    /* The bar is `height: 50px` and safe-area padding INSIDE a fixed height
+       squeezes the labels instead of clearing the home indicator. Grow the box. */
+    height: calc(50px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .bottom-nav .nav-tab {
+    /* 44px is the accessible touch floor; these were 50px tall but only as tall
+       as the row they landed in, and the labels clipped at 4+ tabs. */
+    min-height: 44px;
+    min-width: 0;      /* was 50px — with 5+ tabs that forces overflow */
+    padding: 4px 2px;
+    overflow: hidden;
+  }
+
+  .bottom-nav .nav-tab > div:last-child {
+    font-size: 10px;
+    line-height: 1.15;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* ── 3. The FAB must not sit on a nav tab ──────────────────────────────────
+     MEASURED: `.relay-fab` (54x54 at x=316,y=770) overlapped the "Agents" tab
+     (x=292..390, y=795..845) — a floating button covering a primary navigation
+     control. Lift it clear of the bar and of the home indicator. */
+  .relay-fab {
+    bottom: calc(50px + env(safe-area-inset-bottom, 0px) + 12px) !important;
+    z-index: 90;   /* under .bottom-nav (100), so the bar always wins a tap */
+  }
+
+  /* ── 4. The drawer button must not cover the brand ─────────────────────────
+     MEASURED: `.mobile-toggle` is `position:fixed; top:10px; left:10px` and the
+     brand mark is at x=10,y=12 — the hamburger rendered directly on top of the
+     logo. Reserve the gutter instead of moving the fixed button, which several
+     pages position against. */
+  .top-bar .brand {
+    margin-left: 44px;
+  }
+
+  /* ── 5. The drawer needs a way OUT ─────────────────────────────────────────
+     MEASURED: `.sidebar.open` is a 260px overlay on a 390px screen with no
+     backdrop element and no close control — two thirds of the screen covered,
+     dismissable only by finding the same small button underneath it. Tapping
+     outside a drawer to close it is the universal gesture; without a backdrop
+     there is nothing to receive that tap. */
+  .sidebar-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 998;              /* under .sidebar (999), over everything else */
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(2px);
+  }
+
+  .sidebar-backdrop.open {
+    display: block;
+  }
+
+  .sidebar.open {
+    /* Clear the notch, and let a long nav list scroll rather than clip. */
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* ── 6. Primary navigation must be tappable ────────────────────────────────
+     MEASURED: all 23 `.nav-item` rows in the drawer were under 44px tall, and
+     five action buttons were 40px. The drawer IS the navigation on a phone once
+     the tab bar is full, so every row being under the touch floor is most of
+     what "unusable on mobile" means here. */
+  .sidebar .nav-item {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+  }
+
+  .btn,
+  button.btn,
+  .btn-sm {
+    min-height: 44px;
+  }
+}

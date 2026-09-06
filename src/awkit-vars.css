@@ -1,0 +1,168 @@
+/**
+ * Portal-kit CSS custom properties.
+ *
+ * Products that already define these (tenant apps via index.css) override them;
+ * products using different styling systems (e.g. a tenant with Tailwind) import this
+ * file and override to match their palette.
+ *
+ * The ThemeProvider (./ui/ThemeProvider) overrides any of these at runtime by
+ * reading /api/config/embed.theme.palette and writing CSS variables on :root. It
+ * ALSO writes `data-theme="dark"|"light"` (ThemeProvider.tsx) — until now nothing
+ * consumed that attribute, so light mode was wired end-to-end and completely inert.
+ * The `[data-theme="light"]` block at the bottom is what activates it.
+ *
+ * ── The border scale is load-bearing, and it is solved, not chosen ────────────
+ * The previous version collapsed borders into the surfaces they sit on:
+ *     --bg-elevated:  #1A2A40
+ *     --glass-border: rgba(26, 42, 64, 0.8)   <- rgb(26,42,64) IS #1A2A40
+ * i.e. the border token was the elevated-surface colour at 80% opacity. Lines
+ * could not help but disappear. One tenant's equivalent measured **1.14:1** against
+ * its own surface, where WCAG 1.4.11 asks 3:1 of a UI component boundary.
+ *
+ * These values cannot be picked by eye: oklch `L` is perceptual lightness while
+ * WCAG compares sRGB relative luminance, and near black a large L step buys very
+ * little luminance (two hand-picked replacements at L=0.34 and L=0.46 still only
+ * reached 1.7:1 and 2.7:1). They are solved by bisection and then asserted by
+ * `AitherOS/dev/tools/check_theme_contrast.py`, which has a --self-test that
+ * reproduces the 1.14:1 border and fails on it.
+ */
+:root {
+  /* ── Surface elevation ───────────────────────────────────────────────────
+   * Aitherium Brand Guide v1.0 hues, unchanged. `--bg-overlay` is new: floating
+   * window chrome needs a step above `--bg-elevated` or a window dragged over a
+   * card is indistinguishable from it. */
+  --bg-deep: #060D1A;
+  --bg-base: #0A1628;
+  --bg-surface: #0A1628;
+  --bg-elevated: #1A2A40;
+  --bg-overlay: #22344E;
+  --bg-hover: #1F3149;
+
+  /* ── Borders: their OWN scale, never equal to a surface ───────────────────
+   * subtle  — hairline separators inside a card (decorative, perceptible only)
+   * default — card/window/input outlines (WCAG 1.4.11, 3:1)
+   * strong  — focused window chrome, emphasis
+   * focus   — keyboard focus ring; accent-coloured on purpose */
+  --border-subtle: oklch(0.42 0.02 250);
+  --border-default: oklch(0.62 0.02 250);
+  --border-strong: oklch(0.74 0.02 250);
+  --border-focus: var(--accent-primary);
+
+  /* ── Typography colours ──────────────────────────────────────────────────
+   * `--text-muted` is the most-used token in the package (1040 references), so
+   * its contrast decides how most of the UI reads. It was #4A6A8A. */
+  --text-primary: #E8F0F8;
+  --text-secondary: oklch(0.84 0.02 250);
+  --text-muted: oklch(0.74 0.02 250);
+  --text-ghost: oklch(0.56 0.02 250);
+
+  /* ── Accents — brand guide colours, unchanged ────────────────────────────── */
+  --accent-primary: #00E5FF;      /* Cyan Glow */
+  --accent-secondary: #7C4DFF;    /* Cosmic Violet */
+  --accent-cyan: #40C4FF;         /* Soft Cyan */
+  --accent-bridge: #536DFE;       /* Indigo Bridge */
+  --accent-green: #4ade80;
+  --accent-success: #4ade80;
+  --accent-coral: #f87171;
+  --accent-rose: #ec4899;
+  --accent-warm: #f59e0b;
+  --accent-warn: #f59e0b;
+  --accent-danger: #f87171;
+  --accent-sky: #38bdf8;
+  --accent-sage: #7ab08a;
+
+  /* ── Legacy aliases ──────────────────────────────────────────────────────
+   * `--glass-border` has 449 call sites and `--divider` 17; renaming them would
+   * be a 460-site edit for no benefit. They now POINT AT the border scale, so
+   * every existing usage inherits the fix without being touched. Bare
+   * `--border` / `--accent` / `--text` are used by shared components (269 / 122 /
+   * 79 references) and were previously defined only by one tenant's index.css —
+   * every other consumer resolved them to nothing, which makes the whole
+   * declaration invalid and drops the border entirely. Defined here so a tenant
+   * that forgets them still renders. */
+  --glass-border: var(--border-default);
+  --divider: var(--border-subtle);
+  --border: var(--border-default);
+  --border-color: var(--border-default);
+  --accent: var(--accent-primary);
+  --text: var(--text-primary);
+  --fg: var(--text-primary);
+  --fg-muted: var(--text-muted);
+  --text-tertiary: var(--text-ghost);
+  --card: var(--bg-surface);
+  --bg-secondary: var(--bg-base);
+  --bg-active: var(--bg-elevated);
+  --accent-blue: var(--accent-bridge);
+  --accent-red: var(--accent-danger);
+  --text-danger: var(--accent-danger);
+
+  /* Signature gradients */
+  --gradient-creation: linear-gradient(135deg, #00E5FF, #536DFE, #7C4DFF);
+  --gradient-ai-symbol: linear-gradient(135deg, #00E5FF, #40C4FF);
+
+  /* Sidebar */
+  --sidebar-bg: linear-gradient(180deg, var(--bg-base) 0%, var(--bg-surface) 100%);
+  --sidebar-border: var(--border-default);
+  --sidebar-section-label: var(--text-muted);
+  --sidebar-row-hover: rgba(232, 240, 248, 0.06);
+  --sidebar-row-active-bg: var(--bg-elevated);
+  --brand-glow: 0 0 0 1px rgba(0, 229, 255, 0.18), 0 8px 24px rgba(0, 229, 255, 0.08);
+  --card-hover: rgba(232, 240, 248, 0.06);
+
+  /* Shape */
+  --radius: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+  --shadow-window: 0 16px 48px rgba(0, 0, 0, 0.55);
+
+  /* Type — Inter for everything, JetBrains Mono for data/code */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --font-display: 'Inter', -apple-system, sans-serif;
+}
+
+/**
+ * ── Light mode ──────────────────────────────────────────────────────────────
+ * Activated by ThemeProvider writing data-theme="light" on :root. Only the values
+ * that must change are redefined; every alias above (--glass-border, --border,
+ * --divider, ...) points at these names and therefore follows automatically.
+ *
+ * Elevation inverts: in dark mode a raised surface gets LIGHTER, in light mode it
+ * gets whiter while the page itself sits slightly grey, so a card still reads as
+ * lifted rather than merging into the page.
+ */
+:root[data-theme="light"] {
+  --bg-deep: oklch(0.95 0.006 250);
+  --bg-base: oklch(0.975 0.005 250);
+  --bg-surface: oklch(0.995 0.002 250);
+  --bg-elevated: oklch(1 0 0);
+  --bg-overlay: oklch(1 0 0);
+
+  --border-subtle: oklch(0.79 0.012 250);
+  --border-default: oklch(0.62 0.025 250);
+  --border-strong: oklch(0.48 0.03 250);
+
+  --text-primary: oklch(0.24 0.02 250);
+  --text-secondary: oklch(0.40 0.02 250);
+  --text-muted: oklch(0.50 0.02 250);
+  --text-ghost: oklch(0.62 0.02 250);
+
+  /* Neon-on-black accents are unreadable on white; darken to hold 4.5:1 as text
+   * while keeping the brand hue. */
+  --accent-primary: oklch(0.55 0.13 230);
+  --accent-cyan: oklch(0.58 0.12 235);
+  --accent-green: oklch(0.55 0.15 150);
+  --accent-success: oklch(0.55 0.15 150);
+  --accent-coral: oklch(0.55 0.17 25);
+  --accent-danger: oklch(0.55 0.17 25);
+  --accent-warm: oklch(0.60 0.14 70);
+  --accent-warn: oklch(0.60 0.14 70);
+
+  --sidebar-bg: linear-gradient(180deg, var(--bg-base) 0%, var(--bg-surface) 100%);
+  --sidebar-row-hover: rgba(10, 22, 40, 0.05);
+  --card-hover: rgba(10, 22, 40, 0.04);
+  --brand-glow: 0 0 0 1px rgba(0, 120, 160, 0.22), 0 8px 24px rgba(0, 120, 160, 0.10);
+  --shadow: 0 4px 24px rgba(10, 22, 40, 0.12);
+  --shadow-window: 0 16px 48px rgba(10, 22, 40, 0.22);
+}

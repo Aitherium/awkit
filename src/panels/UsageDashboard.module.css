@@ -1,0 +1,649 @@
+/* UsageDashboard Styles */
+
+.container {
+  padding: 2rem;
+  background: #f8f9fa;
+  border-radius: 8px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.loading {
+  text-align: center;
+  padding: 3rem;
+  color: #666;
+  font-size: 1.1rem;
+}
+
+.error {
+  padding: 1.5rem;
+  background-color: #fee;
+  color: #c33;
+  border: 1px solid #fcc;
+  border-radius: 6px;
+  margin-bottom: 1.5rem;
+}
+
+/* Header */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+  border-bottom: 2px solid #e0e0e0;
+  padding-bottom: 1.5rem;
+}
+
+.header h1 {
+  margin: 0;
+  font-size: 1.8rem;
+  color: #333;
+}
+
+.headerControls {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.refreshControl {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.refreshControl label {
+  font-size: 0.9rem;
+  color: #666;
+  font-weight: 500;
+}
+
+.refreshControl select {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  background: white;
+  cursor: pointer;
+}
+
+.refreshBtn {
+  padding: 0.5rem 1rem;
+  background-color: #0066cc;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: background-color 0.2s;
+}
+
+.refreshBtn:hover:not(:disabled) {
+  background-color: #0052a3;
+}
+
+.refreshBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* License Info */
+.licenseInfo {
+  background: white;
+  padding: 1.5rem;
+  border-radius: 6px;
+  margin-bottom: 1.5rem;
+  border-left: 4px solid #0066cc;
+}
+
+.infoGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.infoItem {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.label {
+  font-size: 0.85rem;
+  color: #666;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.value {
+  font-size: 1.1rem;
+  color: #333;
+  font-weight: 500;
+}
+
+.status-active {
+  color: #28a745;
+  background-color: #f0f8f4;
+  padding: 0.4rem 0.8rem;
+  border-radius: 4px;
+  display: inline-block;
+  width: fit-content;
+}
+
+.status-trial {
+  color: #ff9800;
+  background-color: #fff8f0;
+  padding: 0.4rem 0.8rem;
+  border-radius: 4px;
+  display: inline-block;
+  width: fit-content;
+}
+
+.status-expired {
+  color: #c33;
+  background-color: #fee;
+  padding: 0.4rem 0.8rem;
+  border-radius: 4px;
+  display: inline-block;
+  width: fit-content;
+}
+
+.upgradeBtn {
+  padding: 0.7rem 1.4rem;
+  background-color: #ff5722;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 600;
+  text-decoration: none;
+  display: inline-block;
+  transition: background-color 0.2s;
+}
+
+.upgradeBtn:hover {
+  background-color: #e64a19;
+}
+
+/* Warnings */
+.warnings {
+  padding: 1rem 1.5rem;
+  border-radius: 6px;
+  margin-bottom: 1.5rem;
+  border-left: 4px solid;
+}
+
+.warnings.error {
+  background-color: #fee;
+  border-color: #c33;
+  color: #c33;
+}
+
+.warnings.warning {
+  background-color: #fff8e1;
+  border-color: #ff9800;
+  color: #e65100;
+}
+
+.warnings h3 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1rem;
+}
+
+.warnings ul {
+  margin: 0;
+  padding-left: 1.5rem;
+}
+
+.warnings li {
+  margin: 0.3rem 0;
+}
+
+/* Metrics Grid */
+.metricsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.metricCard {
+  background: white;
+  padding: 1.5rem;
+  border-radius: 8px;
+  border-left: 4px solid;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.metricCard.color-green {
+  border-left-color: #28a745;
+}
+
+.metricCard.color-yellow {
+  border-left-color: #ff9800;
+}
+
+.metricCard.color-red {
+  border-left-color: #c33;
+}
+
+.metricHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  margin-bottom: 1rem;
+}
+
+.metricIcon {
+  font-size: 1.8rem;
+}
+
+.metricTitle {
+  margin: 0;
+  font-size: 1rem;
+  color: #333;
+  font-weight: 600;
+}
+
+.metricValue {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: #0066cc;
+  margin-bottom: 0.8rem;
+}
+
+.progressBar {
+  width: 100%;
+  height: 8px;
+  background-color: #e0e0e0;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 0.6rem;
+}
+
+.progress {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.progress.bg-green {
+  background-color: #28a745;
+}
+
+.progress.bg-yellow {
+  background-color: #ff9800;
+}
+
+.progress.bg-red {
+  background-color: #c33;
+}
+
+.metricPercent {
+  font-size: 0.9rem;
+  color: #666;
+  font-weight: 500;
+}
+
+.metricWarning {
+  margin-top: 0.6rem;
+  font-size: 0.85rem;
+  color: #ff6b6b;
+  font-weight: 600;
+}
+
+/* History Section */
+.historySection {
+  background: white;
+  padding: 2rem;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.historyHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid #e0e0e0;
+  padding-bottom: 1rem;
+}
+
+.historyHeader h2 {
+  margin: 0;
+  color: #333;
+  font-size: 1.4rem;
+}
+
+.periodToggle {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.periodToggle button {
+  padding: 0.5rem 1rem;
+  border: 1px solid #ccc;
+  background: white;
+  color: #666;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.periodToggle button.active {
+  background-color: #0066cc;
+  color: white;
+  border-color: #0066cc;
+}
+
+.periodToggle button:hover {
+  border-color: #0066cc;
+}
+
+/* Summary Stats */
+.summaryStats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+  padding: 1.5rem;
+  background-color: #f8f9fa;
+  border-radius: 6px;
+}
+
+.stat {
+  text-align: center;
+}
+
+.statLabel {
+  font-size: 0.85rem;
+  color: #666;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 0.5rem;
+}
+
+.statValue {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #0066cc;
+  margin-bottom: 0.3rem;
+}
+
+.statSubtext {
+  font-size: 0.8rem;
+  color: #999;
+}
+
+/* Daily Breakdown */
+.dailyBreakdown {
+  margin-bottom: 2rem;
+}
+
+.dailyBreakdown h3 {
+  margin: 0 0 1rem 0;
+  color: #333;
+  font-size: 1.1rem;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+}
+
+.table thead {
+  background-color: #f8f9fa;
+  border-bottom: 2px solid #e0e0e0;
+}
+
+.table th {
+  padding: 0.8rem;
+  text-align: left;
+  font-weight: 600;
+  color: #333;
+  font-size: 0.9rem;
+}
+
+.table td {
+  padding: 0.8rem;
+  border-bottom: 1px solid #f0f0f0;
+  color: #666;
+}
+
+.table tbody tr:hover {
+  background-color: #fafafa;
+}
+
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Top Tools */
+.topTools {
+  margin-bottom: 2rem;
+}
+
+.topTools h3 {
+  margin: 0 0 1rem 0;
+  color: #333;
+  font-size: 1.1rem;
+}
+
+.topTools ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.topTools li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.8rem 1rem;
+  background-color: #f8f9fa;
+  border-radius: 4px;
+  margin-bottom: 0.5rem;
+}
+
+.toolName {
+  font-weight: 500;
+  color: #333;
+}
+
+.toolCount {
+  background-color: #e3f2fd;
+  color: #0066cc;
+  padding: 0.3rem 0.7rem;
+  border-radius: 3px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+/* Export Section */
+.exportSection {
+  background: white;
+  padding: 1.5rem;
+  border-radius: 8px;
+  margin-top: 2rem;
+  border-top: 1px solid #e0e0e0;
+}
+
+.exportSection h3 {
+  margin: 0 0 1rem 0;
+  color: #333;
+}
+
+.exportButtons {
+  display: flex;
+  gap: 1rem;
+}
+
+.exportBtn {
+  padding: 0.7rem 1.5rem;
+  background-color: #0066cc;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 0.95rem;
+  transition: background-color 0.2s;
+}
+
+.exportBtn:hover {
+  background-color: #0052a3;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .container {
+    padding: 1rem;
+  }
+
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+
+  .headerControls {
+    width: 100%;
+    flex-direction: column;
+  }
+
+  .refreshControl {
+    width: 100%;
+  }
+
+  .refreshControl select {
+    flex: 1;
+  }
+
+  .metricsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .infoGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .summaryStats {
+    grid-template-columns: 1fr;
+  }
+
+  .historyHeader {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+
+  .periodToggle {
+    width: 100%;
+  }
+
+  .periodToggle button {
+    flex: 1;
+  }
+
+  .table {
+    font-size: 0.9rem;
+  }
+
+  .table th,
+  .table td {
+    padding: 0.6rem 0.4rem;
+  }
+
+  .exportButtons {
+    flex-direction: column;
+  }
+
+  .exportBtn {
+    width: 100%;
+  }
+}
+
+/* Dark mode support (optional) */
+@media (prefers-color-scheme: dark) {
+  .container {
+    background: #1e1e1e;
+    color: #e0e0e0;
+  }
+
+  .metricCard,
+  .licenseInfo,
+  .historySection,
+  .exportSection,
+  .table {
+    background-color: #2d2d2d;
+    color: #e0e0e0;
+  }
+
+  .header {
+    border-bottom-color: #444;
+  }
+
+  .header h1 {
+    color: #e0e0e0;
+  }
+
+  .label {
+    color: #b0b0b0;
+  }
+
+  .value {
+    color: #e0e0e0;
+  }
+
+  .metricTitle {
+    color: #e0e0e0;
+  }
+
+  .progressBar {
+    background-color: #444;
+  }
+
+  .summaryStats {
+    background-color: #3a3a3a;
+  }
+
+  .periodToggle button {
+    background: #2d2d2d;
+    border-color: #444;
+    color: #b0b0b0;
+  }
+
+  .periodToggle button.active {
+    background-color: #0066cc;
+    color: white;
+  }
+
+  .table thead {
+    background-color: #3a3a3a;
+    border-bottom-color: #444;
+  }
+
+  .table th {
+    color: #e0e0e0;
+  }
+
+  .table td {
+    border-bottom-color: #444;
+    color: #b0b0b0;
+  }
+
+  .table tbody tr:hover {
+    background-color: #333;
+  }
+
+  .topTools li {
+    background-color: #3a3a3a;
+  }
+
+  .toolName {
+    color: #e0e0e0;
+  }
+}

@@ -1,0 +1,936 @@
+/**
+ * Company Room — a working drawing, not a chat window.
+ *
+ * The room borrows its language from the drafting sheet: a grid, a datum line
+ * running the height of the sheet, annotations tacked off the datum with drafted
+ * tick marks, and a title block in the corner holding who and what is present.
+ *
+ * The datum is the signature. It is also functional: the ambient agent roster
+ * (response_probability / cooldown_seconds, driven by Relay's group-chat bridge)
+ * is rendered as a slow charge travelling the datum, so the machinery that
+ * decides whether an agent speaks up is something you can watch rather than
+ * something that surprises you.
+ *
+ * Tenants theme the room through the portal-kit palette variables; every value
+ * below falls back to the room's own defaults so an unthemed app still reads as
+ * deliberate.
+ */
+
+.room {
+  --sheet-void: var(--bg-deep, #0a0e14);
+  --sheet-base: var(--bg-base, #121821);
+  --sheet-panel: var(--bg-surface, #19202c);
+  --sheet-raised: var(--bg-elevated, #232c3b);
+
+  --ink: var(--text-primary, #e9eff8);
+  --ink-soft: var(--text-secondary, #b4c0d1);
+  --graphite: var(--text-muted, #7a869a);
+
+  /* Construction yellow = people and action. Blueprint blue = agents. */
+  --stake: var(--accent-primary, #f4b740);
+  --datum: var(--accent-secondary, #5b9dff);
+  --alarm: var(--accent-danger, #f87171);
+
+  --rule: color-mix(in srgb, var(--stake) 14%, transparent);
+  --rule-soft: color-mix(in srgb, var(--ink) 7%, transparent);
+
+  --grid-fine: 8px;
+  --grid-major: 64px;
+  --datum-x: 148px;
+
+  --font-draft: var(--font-mono, 'JetBrains Mono', 'Fira Code', monospace);
+  --font-hand: var(--font-sans, Inter, system-ui, sans-serif);
+
+  position: relative;
+  display: grid;
+  /* The title block is USER-RESIZABLE (drag its left edge). The width lives in a
+     variable so the grip can set it inline on this element and it persists per
+     visitor; the clamp keeps a drag from collapsing the block or eating the sheet.
+     It was `minmax(260px, 340px)` — a fixed range with no way to change it.
+
+     The DEFAULT is viewport-relative, not a pinned 320px. A presence rail sized
+     for a laptop is the same rail on a 2560px monitor, so every summoned panel
+     was crammed into ~250px of usable width (320 minus the block's own padding)
+     with three quarters of the screen empty beside it. */
+  --room-block-w: clamp(300px, 22vw, 440px);
+
+  /* A FLOOR the summoned surface can raise, independent of the user's dragged
+     width. `max()` (not an override) is load-bearing: BlockGrip writes
+     --room-block-w as an INLINE style, which beats any rule here — so a visitor
+     who had ever dragged the rail narrow would never see a wide panel again.
+     Taking the max means a drag still wins whenever it asks for MORE room. */
+  --room-surface-min: 0px;
+  grid-template-columns:
+    1fr clamp(240px, max(var(--room-block-w), var(--room-surface-min)), 72%);
+  grid-template-rows: auto 1fr auto;
+  grid-template-areas:
+    'header  header'
+    'sheet   block'
+    'command command';
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--sheet-void);
+  color: var(--ink);
+  font-family: var(--font-hand);
+
+  /* portal-kit-base.css sets `#root { display: flex }` (a ROW), so the room is a
+     flex ITEM, not a block. Without these it is sized by fit-content — the grid's
+     `1fr` resolves against the room's own content instead of the viewport, so the
+     room occupied roughly half a wide window and left the rest dead black. Any
+     in-flow sibling (a widget that is not position:fixed) then got squeezed to a
+     sliver, wrapping its text one character per line down the edge.
+     `min-width: 0` is required as well: a flex item's default `min-width: auto`
+     refuses to shrink below min-content, which reintroduces horizontal overflow
+     on a phone — and this ships as an installable PWA. */
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+}
+
+/* Inside an OS window the room fills the WINDOW, not the viewport, so the
+   composer (bottom grid row) stays visible without scrolling. */
+.room[data-oswindow="true"] {
+  height: 100%;
+  min-height: 0;
+}
+
+/* Drafting grid: a fine weave under a major division. Deliberately near the
+   threshold of visibility — it should register as texture, not as a table. */
+.room::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(var(--rule-soft) 1px, transparent 1px),
+    linear-gradient(90deg, var(--rule-soft) 1px, transparent 1px),
+    linear-gradient(var(--rule) 1px, transparent 1px),
+    linear-gradient(90deg, var(--rule) 1px, transparent 1px);
+  background-size:
+    var(--grid-fine) var(--grid-fine),
+    var(--grid-fine) var(--grid-fine),
+    var(--grid-major) var(--grid-major),
+    var(--grid-major) var(--grid-major);
+  opacity: 0.5;
+  mask-image: radial-gradient(ellipse 120% 100% at 30% 0%, #000 35%, transparent 100%);
+}
+
+/* ── Header: the sheet's caption ─────────────────────────────────────── */
+
+.room-header {
+  grid-area: header;
+  display: flex;
+  align-items: baseline;
+  gap: 1.25rem;
+  padding: 1.1rem 1.5rem 0.9rem;
+  border-bottom: 1px solid var(--rule);
+  z-index: 2;
+}
+
+.room-title {
+  font-family: var(--font-draft);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.room-channel {
+  font-family: var(--font-draft);
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  color: var(--graphite);
+}
+
+.room-state {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-draft);
+  font-size: 0.62rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--graphite);
+}
+
+.room-state[data-degraded='true'] { color: var(--alarm); }
+
+.room-state-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--datum);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--datum) 18%, transparent);
+}
+
+.room-state[data-degraded='true'] .room-state-dot {
+  background: var(--alarm);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--alarm) 18%, transparent);
+}
+
+/* ── The sheet: datum + annotations ──────────────────────────────────── */
+
+.room-sheet {
+  grid-area: sheet;
+  position: relative;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 1.75rem 1.5rem 2rem 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule) transparent;
+}
+
+.room-sheet::-webkit-scrollbar { width: 10px; }
+.room-sheet::-webkit-scrollbar-thumb {
+  background: var(--rule);
+  border-radius: 99px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+/* The datum line itself — drawn downward on load. */
+.room-datum {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--datum-x);
+  width: 1px;
+  background: linear-gradient(
+    to bottom,
+    transparent 0,
+    var(--rule) 6%,
+    var(--rule) 94%,
+    transparent 100%
+  );
+  transform-origin: top;
+  animation: datum-draw 900ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  pointer-events: none;
+}
+
+/* Ambient charge: a slow travelling glow, shown only while rostered agents are
+   actually eligible to speak. Speed is bound to the roster cooldown. */
+.room-datum::after {
+  content: '';
+  position: absolute;
+  left: -1px;
+  width: 3px;
+  height: 22%;
+  border-radius: 99px;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    color-mix(in srgb, var(--datum) 70%, transparent),
+    transparent
+  );
+  filter: blur(1px);
+  opacity: 0;
+}
+
+.room-datum[data-ambient='true']::after {
+  opacity: 1;
+  animation: datum-charge var(--charge-duration, 9s) ease-in-out infinite;
+}
+
+.room-datum[data-listening='true']::after {
+  animation-duration: 2.4s;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    color-mix(in srgb, var(--stake) 80%, transparent),
+    transparent
+  );
+}
+
+@keyframes datum-draw {
+  from { transform: scaleY(0); opacity: 0; }
+  to   { transform: scaleY(1); opacity: 1; }
+}
+
+@keyframes datum-charge {
+  0%   { top: -22%; opacity: 0; }
+  12%  { opacity: 1; }
+  88%  { opacity: 1; }
+  100% { top: 100%; opacity: 0; }
+}
+
+/* ── Annotations: one utterance, tacked off the datum ────────────────── */
+
+.room-entry {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--datum-x) 1fr;
+  gap: 0 1.5rem;
+  padding: 0.6rem 0;
+  animation: annotate-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes annotate-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Left gutter: station mark + who spoke. Right-aligned INTO the datum, the way
+   a drawing's annotations read toward their leader line. */
+.room-gutter {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.2rem;
+  padding-right: 1.1rem;
+  text-align: right;
+}
+
+.room-station {
+  font-family: var(--font-draft);
+  font-size: 0.6rem;
+  letter-spacing: 0.12em;
+  color: var(--graphite);
+  font-variant-numeric: tabular-nums;
+}
+
+.room-who {
+  font-family: var(--font-draft);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--stake);
+  white-space: nowrap;
+}
+
+.room-entry[data-voice='agent'] .room-who { color: var(--datum); }
+.room-entry[data-voice='system'] .room-who { color: var(--graphite); }
+
+/* The tick: a drafted mark sitting ON the datum. People get a solid stake,
+   agents get an open mark — the same distinction a drawing makes between a
+   surveyed point and a noted one. */
+.room-tick {
+  position: absolute;
+  left: calc(var(--datum-x) - 3.5px);
+  top: 1.05rem;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--stake);
+  box-shadow: 0 0 0 4px var(--sheet-void);
+  animation: tick-set 380ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.room-entry[data-voice='agent'] .room-tick {
+  background: var(--sheet-void);
+  border: 1.5px solid var(--datum);
+  box-shadow: 0 0 0 4px var(--sheet-void), 0 0 10px color-mix(in srgb, var(--datum) 45%, transparent);
+}
+
+.room-entry[data-voice='system'] .room-tick {
+  width: 5px;
+  height: 5px;
+  left: calc(var(--datum-x) - 2px);
+  background: var(--graphite);
+}
+
+@keyframes tick-set {
+  from { transform: scale(0); }
+  to   { transform: scale(1); }
+}
+
+.room-said {
+  font-size: 0.95rem;
+  line-height: 1.65;
+  color: var(--ink-soft);
+  max-width: 68ch;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding-top: 0.15rem;
+}
+
+.room-entry[data-voice='agent'] .room-said { color: var(--ink); }
+
+.room-entry[data-voice='system'] .room-said {
+  font-family: var(--font-draft);
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  color: var(--graphite);
+  text-transform: uppercase;
+}
+
+.room-entry[data-pending='true'] { opacity: 0.55; }
+
+.room-entry[data-failed='true'] .room-tick { background: var(--alarm); }
+.room-entry[data-failed='true'] .room-said { color: var(--alarm); }
+
+/* ── Empty sheet ─────────────────────────────────────────────────────── */
+
+.room-blank {
+  display: grid;
+  grid-template-columns: var(--datum-x) 1fr;
+  gap: 0 1.5rem;
+  padding-top: 3rem;
+}
+
+.room-blank-body { max-width: 46ch; }
+
+.room-blank-eyebrow {
+  font-family: var(--font-draft);
+  font-size: 0.62rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--datum);
+  margin-bottom: 0.85rem;
+}
+
+.room-blank-lede {
+  font-size: 1.05rem;
+  line-height: 1.6;
+  color: var(--ink);
+  margin: 0 0 0.6rem;
+}
+
+.room-blank-sub {
+  font-size: 0.88rem;
+  line-height: 1.65;
+  color: var(--graphite);
+  margin: 0;
+}
+
+/* ── Title block: presence, in the corner where a drawing signs itself ── */
+
+/* Drag handle on the block's left edge. Sits ON the border rather than beside it,
+   so it costs no layout width; the hit area is widened past the visible line
+   because a 1px target is unusable with a mouse. */
+.room-grip {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  width: 7px;
+  z-index: 5;
+  cursor: col-resize;
+  background: transparent;
+  border: none;
+  padding: 0;
+  touch-action: none; /* let the pointer handler own the gesture on touch */
+}
+
+.room-grip::after {
+  content: '';
+  position: absolute;
+  inset: 0 3px;
+  background: transparent;
+  transition: background 0.12s ease;
+}
+
+.room-grip:hover::after,
+.room-grip:focus-visible::after,
+.room-grip[data-dragging='true']::after {
+  background: var(--stake);
+}
+
+.room-grip:focus-visible {
+  outline: none;
+}
+
+.room-block {
+  grid-area: block;
+  position: relative;
+  z-index: 2;
+  overflow-y: auto;
+  border-left: 1px solid var(--rule);
+  padding: 1.5rem 1.4rem 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.6rem;
+  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--sheet-base) 55%, transparent));
+}
+
+/* A summons that brings back a WORKING SURFACE — hardware enrollment, the
+   on-device model, the bead space, the pillar lanes — is not a presence readout
+   and does not fit in a presence rail. `data-surface="wide"` raises the block's
+   floor for as long as that panel is open; closing it returns the rail to the
+   visitor's own width. Without this the panels rendered at ~250px of usable
+   width: install commands truncated mid-word ("pip install aither-"), Copy
+   buttons pressed against them, and the model picker unreadable. */
+.room[data-surface='wide'] {
+  --room-surface-min: clamp(380px, 44vw, 820px);
+}
+
+/* The summoned panel owns the block's full width. `min-width: 0` because the
+   block is a flex COLUMN: a child's default `min-width: auto` refuses to shrink
+   below its min-content, so one long unbroken token (an install command, a
+   device id) pushes the whole rail wider than its grid track and overflows. */
+.room-summoned {
+  min-width: 0;
+  /* Reclaim the block's own gutter — every panel brings its own padding, and
+     paying for both left ~2.6rem of a narrow rail to double margins. */
+  margin: 0 -1.4rem;
+}
+
+/* Panels are shared components that also render full-page in a portal, where a
+   nowrap command line is correct. In here there is no width to spare, so
+   nothing may be clipped out of sight. `!important` is required, not lazy:
+   these are React INLINE styles, which no ordinary rule can reach. */
+.room-summoned code,
+.room-summoned pre,
+.room-summoned kbd {
+  white-space: pre-wrap !important;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.room-block-section > h3 {
+  font-family: var(--font-draft);
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--graphite);
+  margin: 0 0 0.85rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--rule);
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.room-block-count {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.room-roll {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.room-member {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0.5rem;
+  margin: 0 -0.5rem;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+  transition: background 140ms ease;
+}
+
+.room-member:hover { background: color-mix(in srgb, var(--stake) 6%, transparent); }
+
+.room-member-mark {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--stake);
+}
+
+.room-member[data-kind='agent'] .room-member-mark {
+  background: transparent;
+  border: 1.5px solid var(--datum);
+}
+
+.room-member[data-online='false'] .room-member-mark { background: var(--graphite); border-color: var(--graphite); }
+.room-member[data-online='false'] { color: var(--graphite); }
+
+/* The name takes the free space and ellipsises rather than pushing the row wider
+   — defensive against a long nick. `min-width: 0` is required because a flex
+   item's default `min-width: auto` refuses to shrink below its own text.
+
+   CORRECTION, recorded because the claim outlived the check: this was first
+   written to fix a "402px row inside a 394px box" overflow, and THERE IS NO SUCH
+   BUG. Measured on the live page afterwards: `.room-member` carries
+   `margin: 0 -0.5rem` on purpose, so it is 16px wider than the roll's content box
+   and bleeds into `.room-block`'s own 1.4rem gutter — which is what makes the
+   hover highlight reach past the text. Its right edge lands at 2546px inside a
+   block ending at 2560px, and the name is not ellipsised at any normal width.
+   A `scrollWidth > clientWidth` probe reads that deliberate bleed as an overflow.
+   The rule is kept because it is a real guard against a long name; the overflow
+   it was credited with fixing never existed. */
+.room-member-name {
+  font-weight: 500;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.room-member-role {
+  margin-left: auto;
+  font-family: var(--font-draft);
+  font-size: 0.58rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--graphite);
+}
+
+.room-dismiss {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  color: var(--graphite);
+  font-family: var(--font-draft);
+  font-size: 0.58rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 140ms ease, color 140ms ease;
+}
+
+.room-member:hover .room-dismiss { opacity: 1; }
+.room-dismiss:hover { color: var(--alarm); }
+.room-dismiss:focus-visible { opacity: 1; outline: 2px solid var(--datum); outline-offset: 2px; }
+
+/* Ambient readout — the roster tuning, stated plainly. */
+.room-ambient {
+  font-family: var(--font-draft);
+  font-size: 0.62rem;
+  line-height: 1.8;
+  letter-spacing: 0.06em;
+  color: var(--graphite);
+}
+
+.room-ambient-row { display: flex; justify-content: space-between; gap: 1rem; }
+.room-ambient-row > span:last-child { color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+
+.room-ambient-off { color: var(--graphite); font-style: italic; letter-spacing: 0; }
+
+/* ── Command line: the composer, seated on the datum ─────────────────── */
+
+.room-command {
+  grid-area: command;
+  position: relative;
+  z-index: 3;
+  border-top: 1px solid var(--rule);
+  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--sheet-base) 70%, transparent));
+  padding: 0.9rem 1.5rem 1.1rem;
+}
+
+.room-command-inner {
+  display: grid;
+  grid-template-columns: var(--datum-x) 1fr auto;
+  gap: 0 1.5rem;
+  align-items: center;
+}
+
+.room-prompt {
+  font-family: var(--font-draft);
+  font-size: 0.62rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--graphite);
+  text-align: right;
+  padding-right: 1.1rem;
+}
+
+.room-input {
+  width: 100%;
+  background: none;
+  border: 0;
+  color: var(--ink);
+  font-family: var(--font-hand);
+  font-size: 0.98rem;
+  line-height: 1.5;
+  padding: 0.55rem 0;
+  resize: none;
+  max-height: 8rem;
+}
+
+.room-input::placeholder { color: var(--graphite); }
+.room-input:focus { outline: none; }
+
+/* Focus lands on the whole command line, not a boxed input. */
+.room-command:focus-within .room-prompt { color: var(--stake); }
+.room-command:focus-within { border-top-color: color-mix(in srgb, var(--stake) 40%, transparent); }
+
+.room-send {
+  border: 1px solid var(--rule);
+  background: none;
+  color: var(--graphite);
+  font-family: var(--font-draft);
+  font-size: 0.62rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 0.5rem 0.9rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 140ms ease, border-color 140ms ease, background 140ms ease;
+}
+
+.room-send:hover:not(:disabled),
+.room-send:focus-visible {
+  color: var(--sheet-void);
+  background: var(--stake);
+  border-color: var(--stake);
+}
+
+.room-send:disabled { opacity: 0.35; cursor: default; }
+.room-send:focus-visible { outline: 2px solid var(--stake); outline-offset: 2px; }
+
+/* ── Summons palette ─────────────────────────────────────────────────── */
+
+.room-palette {
+  position: absolute;
+  bottom: calc(100% + 0.6rem);
+  left: calc(var(--datum-x) + 1.5rem);
+  right: 1.5rem;
+  max-width: 520px;
+  background: var(--sheet-panel);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+  animation: annotate-in 160ms ease both;
+}
+
+.room-palette-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.9rem;
+  width: 100%;
+  padding: 0.6rem 0.9rem;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  color: var(--ink-soft);
+  border-bottom: 1px solid var(--rule-soft);
+}
+
+.room-palette-item:last-child { border-bottom: 0; }
+
+.room-palette-item[aria-selected='true'],
+.room-palette-item:hover {
+  background: color-mix(in srgb, var(--stake) 9%, transparent);
+  color: var(--ink);
+}
+
+.room-palette-token {
+  font-family: var(--font-draft);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  color: var(--stake);
+  min-width: 5.5rem;
+}
+
+.room-palette-item[data-kind='agent'] .room-palette-token { color: var(--datum); }
+
+.room-palette-label { font-size: 0.85rem; font-weight: 500; }
+
+.room-palette-hint {
+  margin-left: auto;
+  font-size: 0.72rem;
+  color: var(--graphite);
+  text-align: right;
+}
+
+/* ── Context surface: what a summons brings back ─────────────────────── */
+
+.room-context {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  min-height: 0;
+}
+
+.room-context-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.room-context-title {
+  font-family: var(--font-draft);
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--stake);
+}
+
+.room-context-close {
+  border: 0;
+  background: none;
+  color: var(--graphite);
+  font-family: var(--font-draft);
+  font-size: 0.6rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.room-context-close:hover { color: var(--ink); }
+.room-context-close:focus-visible { outline: 2px solid var(--datum); outline-offset: 2px; }
+
+.room-context-body {
+  font-size: 0.82rem;
+  line-height: 1.65;
+  color: var(--ink-soft);
+  overflow-y: auto;
+  max-height: 42vh;
+}
+
+.room-result {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: none;
+  padding: 0.55rem 0.5rem;
+  margin: 0 -0.5rem;
+  border-radius: 6px;
+  color: var(--ink-soft);
+  cursor: pointer;
+  border-bottom: 1px solid var(--rule-soft);
+}
+
+.room-result:hover { background: color-mix(in srgb, var(--datum) 8%, transparent); color: var(--ink); }
+.room-result:focus-visible { outline: 2px solid var(--datum); outline-offset: -2px; }
+
+.room-result-name { font-weight: 500; font-size: 0.84rem; }
+
+.room-result-meta {
+  font-family: var(--font-draft);
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  color: var(--graphite);
+  margin-top: 0.15rem;
+}
+
+.room-note {
+  font-size: 0.78rem;
+  color: var(--graphite);
+  line-height: 1.6;
+}
+
+/* ── Responsive: the title block folds under the sheet ───────────────── */
+
+@media (max-width: 900px) {
+  .room {
+    --datum-x: 84px;
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      'header'
+      'sheet'
+      'command';
+  }
+  .room-block {
+    position: fixed;
+    inset: auto 0 0 0;
+    max-height: 62vh;
+    border-left: 0;
+    border-top: 1px solid var(--rule);
+    background: var(--sheet-base);
+    transform: translateY(100%);
+    transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .room-block[data-open='true'] { transform: none; }
+  .room-palette { left: 1rem; right: 1rem; }
+  .room-said { font-size: 0.92rem; }
+}
+
+@media (max-width: 560px) {
+  .room { --datum-x: 60px; }
+  .room-gutter { padding-right: 0.7rem; }
+  .room-entry, .room-command-inner, .room-blank { gap: 0 0.9rem; }
+  .room-who { font-size: 0.6rem; }
+  .room-station { display: none; }
+}
+
+/* ── Phone: two defects that make the composer unusable ─────────────────────
+   Both are touch-specific, so they are invisible in a desktop browser at a
+   narrow width -- which is how they survived the breakpoints above.          */
+@media (max-width: 900px) {
+  /* 1. iOS Safari ZOOMS the whole page when a focused field's font-size is
+        under 16px, and does not zoom back out on blur. `.room-input` is
+        0.98rem = 15.68px, so tapping the composer -- the single most common
+        action in the room -- yanked the layout to a magnified viewport the
+        user then had to pinch out of. 16px is the documented threshold, not a
+        preference; it applies to the INPUT only, so the room's typographic
+        scale is untouched. */
+  .room-input {
+    font-size: 16px;
+  }
+
+  /* 2. The command bar is the bottom-most element of a 100dvh grid, and its
+        1.1rem (17.6px) bottom padding is less than the ~34px home indicator
+        inset on a notched iPhone -- so the caret and the last line of a typed
+        message sit UNDER the system gesture bar, where taps go to the OS.
+        env() resolves to 0px on hardware without an inset, so this is a no-op
+        everywhere else. */
+  .room-command {
+    padding-bottom: calc(1.1rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* The context sheet slides up from the bottom edge on phones (see the
+     .room-block rule above), so it needs the same clearance or its last row
+     is unreachable. */
+  .room-block {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* 3. TAP TARGETS. Measured 2026-08-11 on the SIGNED-IN room at 390x844
+        (Playwright, real render): 9 of 12 interactive elements were under
+        44x44 CSS px, the documented minimum for a finger. These are not
+        cosmetic -- the room rendered correctly and was close to untappable,
+        which is the whole of "it works but feels like shit on a phone".
+
+        The three measured offenders, at their measured sizes:
+          .room-send      56x32   the PRIMARY action; you send every message with it
+          .room-dismiss   50x13   "Send away", 13px tall -- a third of a fingertip
+          a rail button    7x347  SEVEN pixels wide
+
+        Sized here rather than in the base rules on purpose: on a pointer
+        device these controls are deliberately quiet typographic buttons, and
+        growing them everywhere would coarsen the room's density for the
+        desktop users it was designed around. A finger is not a mouse; only
+        the phone needs the floor.
+
+        `min-height` + `min-width` rather than fixed sizes so a control that is
+        already large enough is untouched, and inline-flex centring so the
+        label does not drift to the top-left of its new box. */
+  .room-send,
+  .room-dismiss {
+    min-height: 44px;
+    min-width: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* A control narrower than a finger cannot be hit no matter how tall it is.
+     Applies to any button in the room that a pointer-era layout left as a
+     hairline rail or icon strip. */
+  .room button,
+  .room [role='button'] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+/* ── Quality floor ───────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .room *,
+  .room *::before,
+  .room *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  .room-datum[data-ambient='true']::after { opacity: 0.6; top: 40%; }
+}
+
+.room :focus-visible { outline: 2px solid var(--stake); outline-offset: 2px; }

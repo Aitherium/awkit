@@ -1,0 +1,334 @@
+/**
+ * AitherMail surface styling.
+ *
+ * Uses the Company Room's drafting sheet language: mono utility type (--font-draft),
+ * humanist body (--font-hand), construction yellow (--stake) for people, blueprint
+ * blue (--datum) for structure, and the defined grid / hierarchy / color system.
+ *
+ * Works as a context surface (narrow panel) and scales to standalone viewing.
+ */
+
+.mail-surface {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  min-height: 0;
+  color: var(--ink, #e9eff8);
+  font-family: var(--font-hand, Inter, system-ui, sans-serif);
+}
+
+/* ── Header ──────────────────────────────────────────────────────────── */
+
+.mail-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--rule, color-mix(in srgb, var(--stake, #f4b740) 14%, transparent));
+}
+
+.mail-title {
+  font-family: var(--font-draft, 'JetBrains Mono', monospace);
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--stake, #f4b740);
+}
+
+.mail-close {
+  border: 0;
+  background: none;
+  color: var(--graphite, #7a869a);
+  font-family: var(--font-draft, 'JetBrains Mono', monospace);
+  font-size: 0.6rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  padding: 0;
+  transition: color 140ms ease;
+}
+
+.mail-close:hover {
+  color: var(--ink, #e9eff8);
+}
+
+.mail-close:focus-visible {
+  outline: 2px solid var(--datum, #5b9dff);
+  outline-offset: 2px;
+}
+
+/* ── Body container ──────────────────────────────────────────────────── */
+
+.mail-body {
+  font-size: 0.82rem;
+  line-height: 1.65;
+  color: var(--ink-soft, #b4c0d1);
+  overflow-y: auto;
+  max-height: 42vh;
+  padding-right: 0.5rem;
+}
+
+.mail-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.mail-body::-webkit-scrollbar-thumb {
+  background: var(--rule-soft, color-mix(in srgb, var(--ink, #e9eff8) 7%, transparent));
+  border-radius: 99px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+/* ── Note / error messaging ──────────────────────────────────────────── */
+
+.mail-note,
+.mail-error {
+  font-size: 0.78rem;
+  line-height: 1.6;
+  margin: 0;
+  padding: 0.75rem 0;
+}
+
+.mail-note {
+  color: var(--graphite, #7a869a);
+}
+
+.mail-error {
+  color: var(--alarm, #f87171);
+}
+
+/* ── Message list ────────────────────────────────────────────────────── */
+
+.mail-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.mail-item {
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: auto auto auto auto;
+  gap: 0.15rem 0;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: none;
+  padding: 0.55rem 0.5rem;
+  margin: 0 -0.5rem;
+  border-radius: 6px;
+  cursor: pointer;
+  border-bottom: 1px solid
+    var(--rule-soft, color-mix(in srgb, var(--ink, #e9eff8) 7%, transparent));
+  color: var(--ink-soft, #b4c0d1);
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.mail-item:hover {
+  background: color-mix(in srgb, var(--datum, #5b9dff) 8%, transparent);
+  color: var(--ink, #e9eff8);
+}
+
+.mail-item:focus-visible {
+  outline: 2px solid var(--datum, #5b9dff);
+  outline-offset: -2px;
+}
+
+/* Unread message gets the highlight */
+.mail-item-unread {
+  font-weight: 500;
+  color: var(--ink, #e9eff8);
+  background: color-mix(in srgb, var(--stake, #f4b740) 4%, transparent);
+}
+
+.mail-item-unread:hover {
+  background: color-mix(in srgb, var(--stake, #f4b740) 8%, transparent);
+}
+
+.mail-item-from {
+  font-family: var(--font-draft, 'JetBrains Mono', monospace);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--stake, #f4b740);
+}
+
+.mail-item-subject {
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: inherit;
+  margin-top: 0.2rem;
+}
+
+.mail-item-preview {
+  font-size: 0.75rem;
+  color: var(--graphite, #7a869a);
+  margin-top: 0.1rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mail-item-date {
+  font-family: var(--font-draft, 'JetBrains Mono', monospace);
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  color: var(--graphite, #7a869a);
+  margin-top: 0.15rem;
+}
+
+/* ── Message detail view ─────────────────────────────────────────────── */
+
+.mail-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.mail-back {
+  align-self: flex-start;
+  border: 0;
+  background: none;
+  color: var(--datum, #5b9dff);
+  font-family: var(--font-hand, Inter, system-ui, sans-serif);
+  font-size: 0.82rem;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+  transition: color 140ms ease;
+}
+
+.mail-back:hover {
+  color: var(--ink, #e9eff8);
+}
+
+.mail-back:focus-visible {
+  outline: 2px solid var(--datum, #5b9dff);
+  outline-offset: 2px;
+}
+
+.mail-view-header {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.3rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid
+    var(--rule, color-mix(in srgb, var(--stake, #f4b740) 14%, transparent));
+}
+
+.mail-view-from {
+  font-family: var(--font-draft, 'JetBrains Mono', monospace);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--stake, #f4b740);
+}
+
+.mail-view-subject {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--ink, #e9eff8);
+  line-height: 1.4;
+}
+
+.mail-view-date {
+  font-family: var(--font-draft, 'JetBrains Mono', monospace);
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  color: var(--graphite, #7a869a);
+}
+
+.mail-view-body {
+  font-size: 0.88rem;
+  line-height: 1.65;
+  color: var(--ink-soft, #b4c0d1);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  padding: 0.75rem 0;
+  max-width: 68ch;
+}
+
+/* ── Action buttons ──────────────────────────────────────────────────── */
+
+.mail-view-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid
+    var(--rule, color-mix(in srgb, var(--stake, #f4b740) 14%, transparent));
+}
+
+.mail-action {
+  border: 1px solid
+    var(--rule, color-mix(in srgb, var(--stake, #f4b740) 14%, transparent));
+  background: none;
+  color: var(--graphite, #7a869a);
+  font-family: var(--font-draft, 'JetBrains Mono', monospace);
+  font-size: 0.62rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 0.5rem 0.9rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 140ms ease, border-color 140ms ease, background 140ms ease;
+}
+
+.mail-action:hover:not(:disabled) {
+  color: var(--sheet-void, #0a0e14);
+  background: var(--stake, #f4b740);
+  border-color: var(--stake, #f4b740);
+}
+
+.mail-action:focus-visible {
+  outline: 2px solid var(--stake, #f4b740);
+  outline-offset: 2px;
+}
+
+.mail-action:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* ── Responsive: stack better on narrow screens ───────────────────── */
+
+@media (max-width: 560px) {
+  .mail-body {
+    font-size: 0.78rem;
+  }
+
+  .mail-item {
+    padding: 0.5rem 0.4rem;
+    gap: 0.1rem 0;
+  }
+
+  .mail-item-from {
+    font-size: 0.6rem;
+  }
+
+  .mail-item-subject {
+    font-size: 0.78rem;
+  }
+
+  .mail-item-preview {
+    font-size: 0.7rem;
+  }
+}
+
+/* ── Respect prefers-reduced-motion ──────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .mail-item,
+  .mail-action,
+  .mail-close,
+  .mail-back {
+    transition-duration: 0.001ms !important;
+  }
+}
