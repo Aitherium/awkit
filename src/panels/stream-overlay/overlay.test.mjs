@@ -12,7 +12,10 @@
  * THE MECHANIC under test: kick donations fill the POT toward the goal; keep
  * donations RAISE the goal. When the pot meets the goal the guest is kicked --
  * never before the guaranteed airtime (the kick goes PENDING and keep can still
- * save them), and a kick cycles to the next guest with a fresh goal.
+ * save them). The KICKED message then HOLDS (requested by the show 2026-09-06:
+ * the next contestant has to sit down first): no clock starts, no board
+ * resets, donations buffer, until the operator presses play -- only play
+ * cycles to the next guest with a fresh goal.
  *
  * Exit 0 all passed, 1 a real failure, 2 the harness could not run (the file
  * moved, or the script block could not be extracted) -- never 0 on "could not
@@ -20,6 +23,7 @@
  */
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
+import { connect as netConnect } from "node:net";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -203,19 +207,116 @@ check("  still not kicked early",            api.state.kicked, b2.kicked);
 now = T0 + GUARANTEE_MS + 1;
 api.evaluate();
 check("pending kick fires at the deadline",  api.state.kicked, b2.kicked + 1);
-check("  pot reset for the next guest",      api.state.pot, 0);
-check("  goal reset to the base",            api.state.goal, BASE);
-check("  next guest cycled",                 api.state.guest, b2.guest + 1);
-check("  no pending left",                   api.state.kickPending, null);
+check("  no pending left after the kick",    api.state.kickPending, null);
+check("  the KICKED message HOLDS",          api.state.held, true);
+check("  next guest waits for play",         api.state.guest, b2.guest);
 
-// Once the guarantee has elapsed, the pot meeting the goal is an IMMEDIATE kick.
+// ---- the hold: the KICKED message stays until the operator presses play ----
+// Requested by the show (2026-09-06): after a kick the widget must NOT move
+// on -- the next contestant has to sit down first, and their clock must not
+// start before they are ready. While held: the board is frozen, the clock
+// does not run, and donations buffer onto the NEXT guest's board.
+const HOLD_MS = 3 * GUARANTEE_MS;
+now += HOLD_MS;                                // time passes behind the splash
+api.evaluate();
+check("  the guarantee clock does not run while held", api.state.kicked, b2.kicked + 1);
+check("  pot frozen at the kick moment",               api.state.pot, BASE);
+api.ingest({ amount_cents: 2000, message: "kick" });
+api.ingest({ amount_cents: 3000, message: "keep" });
+check("  held kick donation is buffered, not scored",  api.state.pot, BASE);
+check("  held keep donation is buffered, not scored",  api.state.goal, BASE);
+api.evaluate();
+check("  buffered donations cannot kick anyone early", api.state.kicked, b2.kicked + 1);
+let snapHeld = null;
+api.handleMessage({ type: "snapshot" }, { postMessage: (m) => { snapHeld = m; } });
+check("  snapshot says held", snapHeld && snapHeld.payload.held, true);
+// The operator presses play once the next contestant is seated: the board
+// resets fresh (pot 0, base goal) and the buffered donations then land on it.
+api.handleMessage({ type: "play" }, null);
+check("  play clears the hold",               api.state.held, false);
+check("  play starts the next guest",         api.state.guest, b2.guest + 1);
+// 2000, not BASE + 2000: the board really reset before the buffer landed.
+// A flush that ran before the reset would leave the kicked pot on screen.
+check("  buffered kick landed on the next guest",  api.state.pot, 2000);
+check("  buffered keep raised the next goal",      api.state.goal, BASE + 3000);
+
+// Once the guarantee has elapsed, the pot meeting the goal is an IMMEDIATE
+// kick -- and, like every kick, it HOLDS until the operator presses play.
 now = T0;   // the previous block left the clock advanced; a fresh guest starts HERE
 reset();
 const k2 = { kicked: api.state.kicked, guest: api.state.guest };
 now = T0 + GUARANTEE_MS + 1000;
 api.ingest({ amount_cents: BASE, message: "kick" });
 check("kick after the guarantee is immediate", api.state.kicked, k2.kicked + 1);
-check("  next guest cycled",                   api.state.guest, k2.guest + 1);
+check("  the KICKED message holds",            api.state.held, true);
+check("  next guest waits for play",           api.state.guest, k2.guest);
+api.handleMessage({ type: "play" }, null);
+check("  play cycles to the next guest",       api.state.guest, k2.guest + 1);
+check("  play resets pot and goal",            api.state.pot === 0 && api.state.goal === BASE, true);
+check("  play leaves no hold behind",          api.state.held, false);
+
+// ---- a SECOND play must not destroy the money the first one landed --------
+// Measured before the guard: buffer $20 during a hold, press play (pot 2000),
+// press it again -> pot 0, and ingest() had already marked that id seen, so no
+// re-delivery can restore it. A double-click reaches this in under a second
+// (the button's own visibility only refreshes on the 1s snapshot poll), and a
+// duplicated frame over the relay reaches it with no click at all.
+now = T0; reset();
+{
+  const b = { kicked: api.state.kicked, guest: api.state.guest };
+  now = T0 + GUARANTEE_MS + 1000;
+  api.ingest({ id: "dt-kick", amount_cents: BASE, message: "kick" });
+  api.ingest({ id: "dt-buf", amount_cents: 2000, message: "kick" });
+  api.handleMessage({ type: "play" }, null);
+  check("play lands the buffered donation",   api.state.pot, 2000);
+  api.handleMessage({ type: "play" }, null);
+  check("  a SECOND play does not destroy it", api.state.pot, 2000);
+  check("  and does not advance the guest again", api.state.guest, b.guest + 1);
+  // reset is the always-on door and must still work.
+  api.handleMessage({ type: "reset" }, null);
+  check("  reset still starts a new guest",   api.state.guest, b.guest + 2);
+  check("  on a fresh board",                 api.state.pot, 0);
+}
+
+// setgoal during a hold must not be silently accepted then overwritten.
+now = T0; reset();
+{
+  now = T0 + GUARANTEE_MS + 1000;
+  api.ingest({ id: "sg-kick", amount_cents: BASE, message: "kick" });
+  api.handleMessage({ type: "setgoal", goal_cents: 50000 }, null);
+  check("setgoal while held is refused, not silently lost", api.state.goal, BASE);
+  api.handleMessage({ type: "play" }, null);
+  api.handleMessage({ type: "setgoal", goal_cents: 50000 }, null);
+  check("  and works once the hold is released",           api.state.goal, 50000);
+}
+
+// ---- while HELD, only play/reset may end the hold -------------------------
+// Measured on the shipped script before this guard existed: a "window" while
+// held un-froze the board, landed the buffered donations on the ALREADY-KICKED
+// guest's still-full pot, re-armed a pending kick, and counted that SAME guest
+// as kicked a second time (kicked 2 -> 3 with the guest counter never moving).
+// Both controls also made the splash vanish on a mis-click, which is the exact
+// thing the hold exists to prevent.
+for (const ctrl of ["clear", "window"]) {
+  now = T0; reset();
+  const b = { kicked: api.state.kicked, guest: api.state.guest };
+  now = T0 + GUARANTEE_MS + 1000;
+  api.ingest({ id: "held-" + ctrl, amount_cents: BASE, message: "kick" });
+  check(`held before ${ctrl}`, api.state.held, true);
+  api.ingest({ id: "buf-" + ctrl, amount_cents: 300, message: "kick" });
+  api.handleMessage({ type: ctrl }, null);
+  check(`  ${ctrl} does NOT end the hold`,       api.state.held, true);
+  check(`  ${ctrl} does NOT move the board`,     api.state.pot, BASE);
+  check(`  ${ctrl} does NOT advance the guest`,  api.state.guest, b.guest);
+  // ...and the same guest is never counted as kicked twice.
+  now += GUARANTEE_MS + 2000;
+  api.evaluate();
+  check(`  no second kick for one guest after ${ctrl}`, api.state.kicked, b.kicked + 1);
+  // play still works afterwards, and the buffered money still lands.
+  api.handleMessage({ type: "play" }, null);
+  check(`  play still releases after ${ctrl}`,   api.state.held, false);
+  check(`  buffered donation still landed`,      api.state.pot, 300);
+}
 
 // A keep donation at or above the pot during the guarantee never even starts a
 // pending kick.
@@ -270,8 +371,16 @@ check("  goal in the snapshot",         snap.payload.goal, BASE);
 check("  guest in the snapshot",        snap.payload.guest, snap.payload.guest);
 check("  clock in the snapshot",        snap.payload.now, now);
 check("  guarantee in the snapshot",    snap.payload.guarantee, GUARANTEE_MS);
+check("  held flag in the snapshot",    snap.payload.held, false);
 api.handleMessage({ type: "snapshot" }, null);
-check("snapshot with no source is a no-op", snap.payload.pot, 0);
+check("a sourceless snapshot request never posts to a window", snap.payload.pot, 0);
+// A snapshot REPLY carries a payload; a REQUEST does not. Without that test
+// two overlays on one relay answer each other's answers forever, because on
+// the wire a reply is indistinguishable from a request. This is the arm that
+// makes the relay's snapshot lane safe to have more than one overlay on.
+snap = null;
+api.handleMessage({ type: "snapshot", payload: { pot: 999, held: true } }, src);
+check("a snapshot REPLY is not answered with another reply", snap, null);
 
 // ---- TBAT flier palette ----------------------------------------------------
 // The overlay sits next to TBAT's own social artwork: four flat colours -- flag
@@ -302,9 +411,9 @@ const declarations = html
   .replace(/\/\*[\s\S]*?\*\//g, "")   // CSS block comments
   .replace(/^\s*\/\/.*$/gm, "");      // JS line comments in the inline script
 // Scoped to the :root block -- the DEFAULT palette -- not the whole file. The
-// old colours legitimately survive as the named "aither" PRESET, so a
-// whole-file scan now fails on a feature. What must not come back is the
-// default: this asserts what the overlay paints when nobody passes ?theme.
+// warmer orange legitimately survives as a named PRESET, so a whole-file scan
+// now fails on a feature. What must not come back is the default: this asserts
+// what the overlay paints when nobody passes ?theme.
 const rootBlock = (declarations.match(/:root\s*\{[\s\S]*?\}/) || [""])[0];
 check("  :root block was found", rootBlock.includes("--red"), true);
 check("no orange in the default palette",
@@ -315,7 +424,7 @@ check("no pale cyan in the default palette",
 // The presets are a product requirement (the next org is not red/white/blue),
 // so pin that they exist and that overrides are VALIDATED -- an unvalidated
 // query value reaches setProperty, which is a CSS injection via a link.
-check("theme presets exist",     html.includes("THEMES") && html.includes("aither:"), true);
+check("theme presets exist",     html.includes("THEMES") && html.includes("warm:"), true);
 check("hex overrides validated", /\^#\[0-9a-fA-F\]\{6\}\$/.test(html), true);
 
 // Guard the guard: if the stripper ever ate the whole file, every "no X left"
@@ -351,9 +460,45 @@ for (; i2 >= 0 && j2 < ts.length; j2++) {
 const demoHtml = i2 < 0 || j2 >= ts.length ? "" : eval("`" + ts.slice(i2 + decl2.length, j2) + "`");
 check("control room constant exists", demoHtml.length > 1000, true);
 for (const ctrl of ["Reset board", "Restart timer", "New guest", "Set goal",
-                    "Add donation", "Auto feed", "snapshot", "relay", "Copy"]) {
+                    "Add donation", "Fake donations", "snapshot", "relay", "Copy",
+                    "NEXT GUEST READY"]) {
   check("  control room carries: " + ctrl, demoHtml.includes(ctrl), true);
 }
+// The splash's only exit is an operator message, so a dead relay strands a
+// full-cover KICKED splash on air while this page still looks fine. The
+// reconnect and the visible status are the difference between "play did
+// nothing" and "play did nothing BECAUSE the relay is down".
+check("  control room reconnects a dropped relay",
+      demoHtml.includes("onclose") && demoHtml.includes("connectRelay"), true);
+check("  and says so on screen",
+      demoHtml.includes("relayState") && demoHtml.includes("DISCONNECTED"), true);
+check("  control room drives the hold with play",
+      demoHtml.includes('type: "play"') && demoHtml.includes("playNext"), true);
+// The play button is HIDDEN unless held, and held reached this page only from
+// the PREVIEW iframe -- a different overlay from the one in OBS. When the two
+// diverge (OBS reloads the scene, the relay drops, the operator changes the
+// goal without re-pasting the URL) the graphic on air sits under a full-cover
+// KICKED splash while the button that clears it is not on screen. So the poll
+// must go down the relay too, and the reply must be preferred over the
+// preview's. Behaviour is proven in the browser proof; these pin the wiring.
+check("  control room polls the ON-AIR copy over the relay",
+      demoHtml.includes("relay.send") && demoHtml.includes('type: "snapshot"'), true);
+check("  and reads the reply back off that socket",
+      demoHtml.includes("ws.onmessage") && demoHtml.includes("applySnapshot"), true);
+check("  the on-air copy wins over the preview",
+      demoHtml.includes("lastOnAir"), true);
+// close() is ASYNCHRONOUS. connectRelay() replaces the socket immediately, so
+// the OLD socket's onclose runs afterwards -- and unguarded it threw away the
+// socket that had just replaced it and scheduled another reconnect, which
+// closed the next live socket in turn. Measured in a real browser: the third
+// and fourth button presses of a session were silently dropped while the
+// status line read "connected". Every handler must check it is still current.
+check("  a replaced relay socket's handlers are inert",
+      (demoHtml.match(/relay [!=]== ws/g) || []).length >= 4, true);
+// The preview always moves, so a send that never left the room looks exactly
+// like one that did -- unless the page says so.
+check("  a press that did not reach the relay says so",
+      demoHtml.includes("OBS did not get that"), true);
 check("  control room embeds the real overlay", demoHtml.includes("overlay.html"), true);
 check("  control room links the kit zip", demoHtml.includes("kit.zip"), true);
 
@@ -410,14 +555,39 @@ if (relayJs.length > 2000) {
   writeFileSync(join(kitDir, "relay.js"), relayJs, "utf8");
   writeFileSync(join(kitDir, "overlay.html"), html, "utf8");
   writeFileSync(join(kitDir, "control-room.html"), demoHtml, "utf8");
-  const port = 20000 + Math.floor(Math.random() * 20000);
+  // Start it and WATCH it, rather than sleeping a fixed guess at it. relay.js
+  // exits 1 on a listen error and stdio is ignored, so a port already in use
+  // looked exactly like a relay that would not start -- measured 1 failing run
+  // in 3 before this. A gate that fails at random teaches people to re-run
+  // until green, which trains away the signal.
   // stdio: "ignore" -- the port is OURS (we passed it); pipes would leave
   // handles open and Windows libuv asserts on parent teardown.
-  const relay = spawn(process.execPath, [join(kitDir, "relay.js"), String(port)],
-                      { stdio: "ignore" });
-  await new Promise((r) => setTimeout(r, 800));   // let it bind
-  for (const [path, needle] of [["/", "control room"], ["/overlay.html", "tug-of-war"],
-                                ["/overlay.html?goal=10000&ws=ws://127.0.0.1:" + port, "tug-of-war"]]) {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  async function startKitRelay(attempts = 3) {
+    for (let a = 0; a < attempts; a++) {
+      const p = 20000 + Math.floor(Math.random() * 20000);
+      const child = spawn(process.execPath, [join(kitDir, "relay.js"), String(p)],
+                          { stdio: "ignore" });
+      let died = false;
+      child.on("exit", () => { died = true; });
+      for (let i = 0; i < 40 && !died; i++) {
+        try { await fetch(`http://127.0.0.1:${p}/`); return { child, port: p }; }
+        catch { await sleep(250); }
+      }
+      child.kill();
+      if (!died) return null;   // never died AND never answered: a real failure
+    }
+    return null;
+  }
+  const kit = await startKitRelay();
+  if (!kit) {
+    failed++;
+    console.log("  FAIL  offline kit relay never answered on any of 3 ports");
+  }
+  const relay = kit ? kit.child : { kill() {}, on(_e, cb) { cb(); } };
+  const port = kit ? kit.port : 0;
+  for (const [path, needle] of (kit ? [["/", "control room"], ["/overlay.html", "tug-of-war"],
+                                ["/overlay.html?goal=10000&ws=ws://127.0.0.1:" + port, "tug-of-war"]] : [])) {
     try {
       const res = await fetch(`http://127.0.0.1:${port}${path}`);
       const body = await res.text();
@@ -429,6 +599,71 @@ if (relayJs.length > 2000) {
       console.log(`  FAIL  offline kit fetch ${path}: ${e.message}`);
     }
   }
+  // ---- the Origin gate: a foreign TAB must not be able to drive the show ---
+  // A WebSocket is exempt from the same-origin policy, so any page the operator
+  // has open can dial ws://127.0.0.1:8787 and fake a donation or kick the guest.
+  // Binding to loopback does not help -- the attacker is a tab, not a host.
+  // Absent Origin (native clients, OBS) and this relay's own origin must STILL
+  // connect, or the gate has deleted the feature instead of guarding it.
+  const handshake = (originLine) => new Promise((res) => {
+    const sock = netConnect(port, "127.0.0.1");
+    let out = "";
+    sock.on("connect", () => sock.write("GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n" + originLine + "Sec-WebSocket-Key: aGVsbG8gd29ybGQ=\r\nSec-WebSocket-Version: 13\r\n\r\n"));
+    sock.on("data", (d) => { out += d; sock.end(); });
+    sock.on("close", () => res(out.split("\r\n")[0] || ""));
+    setTimeout(() => { sock.destroy(); res("(timeout)"); }, 2500);
+  });
+  for (const [label, line, want] of [
+    ["no Origin (a native client) connects", "", "101"],
+    ["this relay's own origin connects", "Origin: http://127.0.0.1:" + port + "\r\n", "101"],
+    ["a FOREIGN page is refused", "Origin: https://evil.example\r\n", "403"],
+    ["a different local port is refused", "Origin: http://127.0.0.1:9999\r\n", "403"],
+  ]) {
+    const got = await handshake(line);
+    const ok = got.includes(want);
+    if (!ok) failed++;
+    console.log(`  ${ok ? "PASS" : "FAIL"}  origin gate: ${label} (${got.trim()})`);
+  }
+
+  // ---- "node relay.js 0" -- the invocation serve() documents ---------------
+  // serve()'s own comment tells people to run it ("node relay.js 0 would
+  // otherwise print a URL that does not connect") while the arg guard below it
+  // refused any port under 1. So a documented invocation had never once
+  // worked, and the failure was a bare "bad port: 0" -- which reads as the
+  // operator mistyping rather than as the tool contradicting its own docs.
+  // A comment is not a gate; this is.
+  const ephemeral = await new Promise((res) => {
+    const child = spawn(process.execPath, [join(kitDir, "relay.js"), "0"]);
+    let buf = "", done = false;
+    const finish = (v) => { if (!done) { done = true; res(v); } };
+    const onData = (d) => {
+      buf += d;
+      const m = buf.match(/ws:\/\/127\.0\.0\.1:(\d+)/);
+      if (m) finish({ child, port: Number(m[1]) });
+    };
+    child.stdout.on("data", onData);
+    child.stderr.on("data", onData);
+    child.on("exit", (c) => finish({ child: null, port: 0, why: `exited ${c}: ${buf.trim()}` }));
+    setTimeout(() => { child.kill(); finish({ child: null, port: 0, why: "no port announced" }); }, 6000);
+  });
+  {
+    const ok = ephemeral.port > 0;
+    if (!ok) failed++;
+    console.log(`  ${ok ? "PASS" : "FAIL"}  "relay.js 0" binds a free port and announces it `
+                + `(${ok ? ephemeral.port : ephemeral.why})`);
+    if (ok) {
+      // Announcing a port it did not bind would be worse than refusing 0.
+      let served = false;
+      try {
+        const r = await fetch(`http://127.0.0.1:${ephemeral.port}/`);
+        served = r.status === 200;
+      } catch { served = false; }
+      if (!served) failed++;
+      console.log(`  ${served ? "PASS" : "FAIL"}  the announced ephemeral port really serves`);
+      ephemeral.child.kill();
+    }
+  }
+
   relay.kill();
   await new Promise((r) => { relay.on("close", r); setTimeout(r, 1500); });
 }

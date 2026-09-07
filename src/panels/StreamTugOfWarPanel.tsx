@@ -16,8 +16,11 @@
  * never before their guaranteed minimum airtime (default 2 minutes); if the
  * goal is met during the guarantee the kick is PENDING and the timer counts it
  * down, with keep donations still able to save the guest. Kicks are favoured on
- * purpose: the splash auto-advances to the next guest with a fresh goal, which
- * is how the show cycles people through.
+ * purpose, but the KICKED message HOLDS until the operator presses play: the
+ * next contestant sits down first, and their clock starts when they are ready
+ * (donations that arrive during the pause are buffered onto the next guest).
+ * That is how the show cycles people through without ever starting a guest who
+ * is not seated.
  *
  * THE PANEL IS THE MANAGEMENT SURFACE, not a mock. It shows the overlay's LIVE
  * state (pot/goal/guest/kicked/timer, polled from the overlay itself once a
@@ -79,6 +82,10 @@ interface Snapshot {
   guest: number
   kicked: number
   kickPending: number | null
+  /** True while the KICKED splash is holding between guests: the board is
+   * frozen and the next guest's clock has not started. The panel shows the
+   * play button off this flag. */
+  held: boolean
   guestStart: number
   now: number
 }
@@ -171,6 +178,11 @@ export default function StreamTugOfWarPanel({ overlayUrl }: StreamTugOfWarPanelP
 
   const timerInfo = useMemo(() => {
     if (!live) return null
+    if (live.held) {
+      // Between guests: nothing is counting. The next contestant's clock
+      // starts when the operator presses play.
+      return { label: 'NEXT GUEST', left: 0, danger: true }
+    }
     if (live.kickPending) {
       const left = Math.max(0, Math.ceil((live.kickPending - live.now) / 1000))
       return { label: 'KICK', left, danger: true }
@@ -230,9 +242,11 @@ export default function StreamTugOfWarPanel({ overlayUrl }: StreamTugOfWarPanelP
           <strong>{cfg.left}</strong> donations fill the pot toward the goal;{' '}
           <strong>{cfg.right}</strong> donations raise the goal — the goalkeepers push the
           line back. When the pot meets the goal the guest is kicked (never before their
-          guaranteed airtime; keep can still save them during the countdown), and the next
-          guest cycles in with a fresh goal. Donations with neither keyword, or with both,
-          are counted as donations but not as votes.
+          guaranteed airtime; keep can still save them during the countdown). The KICKED
+          message then holds until you press play — the next contestant sits down first,
+          and their clock starts when you start them; donations during the pause count on
+          the next guest. Donations with neither keyword, or with both, are counted as
+          donations but not as votes.
         </p>
       </div>
 
@@ -267,6 +281,23 @@ export default function StreamTugOfWarPanel({ overlayUrl }: StreamTugOfWarPanelP
           <span>GUEST <strong>{live.guest}</strong></span>
           <span>KICKED <strong>{live.kicked}</strong></span>
         </div>
+      )}
+
+      {/* The play control: appears only while the overlay holds a KICKED
+          splash. This is the button the show waits on — the next contestant
+          sits down, the operator presses it, and their clock starts. */}
+      {live?.held && (
+        <button
+          onClick={() => post({ type: 'play' })}
+          title="The next contestant is seated — clear the KICKED message and start their clock"
+          style={{
+            width: '100%', padding: '12px 16px', fontSize: 16, fontWeight: 800,
+            background: '#fff', color: '#000', border: '1px solid #fff',
+            borderRadius: 8, cursor: 'pointer',
+          }}
+        >
+          ▶ NEXT GUEST READY — START THEM
+        </button>
       )}
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
