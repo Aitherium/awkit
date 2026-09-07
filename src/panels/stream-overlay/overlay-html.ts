@@ -22,11 +22,45 @@
  *     iframe.contentWindow.postMessage({ type: "reset" }, "*")        // new guest
  *     iframe.contentWindow.postMessage(
  *       { type: "setgoal", goal_cents: 50000 }, "*")                  // host sets the goal
+ *     iframe.contentWindow.postMessage({ type: "play" }, "*")         // next contestant is
+ *                                                       // seated -- clears the held
+ *                                                       // KICKED splash, starts them
+ *
+ * ENGINEERING NOTES -- ours, and they stay HERE.
+ * ----------------------------------------------
+ * Outside the backtick, so never emitted. The literal below reaches the public
+ * three ways -- the operator kit, the panel bundle, and awkit's published
+ * dist/ -- and a comment inside a template literal is string content that no
+ * bundler strips. Reader-facing why goes inside; evidence goes here.
+ *
+ * [play/reset] 2026-09-06: before the `state.held` guard on play, buffering
+ *   $20 during a hold and then pressing play twice put pot at 2000 and then
+ *   back to 0 -- money that had just landed, unrecoverable, because ingest()
+ *   had already marked those ids seen. A double-click reaches it in under a
+ *   second: the button's own visibility only refreshes on the 1s snapshot
+ *   poll. A duplicated frame off the relay reaches it with no click at all.
+ *
+ * [clear/window while held] 2026-09-06, found by tracing the two exits the
+ *   tests did NOT cover: a `window` during a hold un-froze the board, landed
+ *   the buffered donations on the ALREADY-KICKED guest's still-full pot,
+ *   re-armed a pending kick and counted that guest a SECOND time (kicked
+ *   2 -> 3, guest counter never moving). Both also cleared the splash on a
+ *   mis-click.
+ *
+ * [snapshot over the socket] a socket message has source === null, so the
+ *   reply branch that needs a window silently dropped every request that
+ *   arrived over the relay. See the control room's [applySnapshot] note.
+ *
+ * [timer visibility] tick() runs every 250ms and owned both the timer's text
+ *   and its visibility, so the badge was missing for up to a quarter-second
+ *   after the splash came down and showed THROUGH the fresh splash for the
+ *   same quarter-second after a kick -- about 15 frames at 60fps. kickNow()
+ *   and endHold() now set el.hidden directly; tick() still owns the text.
  */
 export const TUGOFWAR_OVERLAY_HTML = `<!--
   TBAT Tug-of-War donation overlay -- a single self-contained OBS browser source.
 
-  THE MECHANIC (confirmed with the show, 2026-08-28):
+  THE MECHANIC:
   - The host sets an initial KICK goal (default $100).
   - Donations carrying "kick" fill the POT toward that goal.
   - Donations carrying "keep" RAISE the goal -- keepers are goalkeepers, and
@@ -36,15 +70,14 @@ export const TUGOFWAR_OVERLAY_HTML = `<!--
     the guarantee, the kick is PENDING: the timer counts it down and keep
     donations can still raise the goal and SAVE the guest.
   - Kicks are favoured on purpose (cycle people through the show): the kick
-    splash auto-advances to the next guest with a fresh goal.
+    splash HOLDS until the operator presses play in the control room -- the
+    next contestant needs to sit down before their clock starts. Donations
+    that arrive while the splash is up are buffered and count on the next
+    guest's board when play is pressed (never lost, never started early).
 
   WHY ONE FILE. An OBS browser source loads a URL and runs it in a bare
   Chromium. No build step, no server, no npm install: the operator pastes a path
-  or URL and it works, on stream, at 2am, with no developer present. Derrick
-  raised nodecg, which is the right answer for a MULTI-graphic control-room
-  setup and is a real dependency to take on; this reads its state from the same
-  event shape, so it can be wrapped as a nodecg bundle later without rewriting
-  the graphic.
+  or URL and it works, on stream, at 2am, with no developer present.
 
   Never trusts the page it is embedded in: every incoming event is validated,
   amounts are integer cents, and unknown fields are ignored.
@@ -78,11 +111,10 @@ export const TUGOFWAR_OVERLAY_HTML = `<!--
      pale cyan (#4ab8ff) with a two-stop gradient, which reads as generic
      stream-tech and does not sit next to their artwork.
 
-     Old Glory Blue (#002868) is the flier value and is too dark to read as a
+     Old Glory Blue (#002868) is the flier value. It is too dark to read as a
      BAR FILL on a black overlay, so the blue is split: --blue for large flat
-     areas, --blue-ink for type, which sits on black with a white keyline. Do
-     not collapse them -- the type value fails contrast as a fill and the fill
-     value disappears as type. */
+     areas, --blue-ink for type on black. Do not collapse them. The type value
+     fails contrast as a fill, and the fill value disappears as type. */
   :root {
     --red:      #CE1126;   /* flag red */
     --red-ink:  #FF2537;   /* same hue, lifted for type on black */
@@ -177,8 +209,9 @@ export const TUGOFWAR_OVERLAY_HTML = `<!--
     100% { opacity: 0; transform: translateY(-58px) scale(1); }
   }
 
-  /* The kick moment. Covers the widget for a few seconds while the board
-     underneath resets for the next guest. */
+  /* The kick moment. Covers the widget from the kick until the operator
+     presses play: the KICKED message HOLDS so the next contestant can sit
+     down before their clock starts -- it must not scroll itself away. */
   #splash {
     position: absolute; inset: 0; z-index: 10;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -195,6 +228,13 @@ export const TUGOFWAR_OVERLAY_HTML = `<!--
     font-size: 26px; font-weight: 800; letter-spacing: .02em;
     color: var(--paper);
     -webkit-text-stroke: 2px var(--ink); paint-order: stroke fill;
+  }
+  /* The third splash line: who is up next. Type on the KICKED screen, so it
+     uses the lifted ink rules like .splash-sub but smaller. */
+  .splash-wait {
+    font-size: 17px; font-weight: 700; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--paper); opacity: .92;
+    -webkit-text-stroke: 1px var(--ink); paint-order: stroke fill;
   }
 
   /* A pending kick averted by keep: the goalkeepers saved the guest. */
@@ -261,9 +301,9 @@ export const TUGOFWAR_OVERLAY_HTML = `<!--
      all four rather than deriving two from two. */
   const THEMES = {
     tbat:   { red: "#CE1126", redInk: "#FF2537", blue: "#002868", blueInk: "#3D6DFF" },
-    /* The pre-TBAT palette, kept as a named preset rather than deleted so a
-       swap back is a query param instead of a revert. */
-    aither: { red: "#FF5330", redInk: "#FF6B4A", blue: "#12518A", blueInk: "#4AB8FF" },
+    /* A warmer alternative: orange against a deeper blue. Useful when the
+       segment's own graphics already carry flag red. */
+    warm:   { red: "#FF5330", redInk: "#FF6B4A", blue: "#12518A", blueInk: "#4AB8FF" },
     mono:   { red: "#8A8A8A", redInk: "#D8D8D8", blue: "#2E2E2E", blueInk: "#9A9AA5" },
   };
   const hex6 = (v) => (typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v) ? v : null);
@@ -296,7 +336,16 @@ export const TUGOFWAR_OVERLAY_HTML = `<!--
     guest: 1,                // guests cycled through (kick or manual reset)
     kicked: 0,               // guests actually kicked
     seen: new Set(),
+    held: false,             // post-kick pause: the KICKED splash is up and
+                             // nothing advances until the operator presses play
   };
+  // Donations that arrive while held. They are not lost and do not start the
+  // NEXT guest early -- they land on the fresh board when play is pressed.
+  let heldQueue = [];
+  // The relay socket, once it is OPEN. handleMessage() needs it to answer a
+  // snapshot request that arrived over the wire, and that code runs long
+  // before the socket is created -- so it is declared here, not down there.
+  let liveWs = null;
 
   const money = (cents) => {
     const d = cents / 100;
@@ -342,24 +391,50 @@ export const TUGOFWAR_OVERLAY_HTML = `<!--
     setTimeout(() => el.remove(), 2800);
   }
 
-  /** A fresh guest: pot back to zero, goal back to the base, guarantee restarts. */
+  /** Leave the held state: the KICKED splash comes down. Every operator path
+      that moves the show on goes through here (play/reset/clear/window), so a
+      splash can never survive an operator action -- and never needs a timer. */
+  function endHold() {
+    state.held = false;
+    document.getElementById("splash").hidden = true;
+    // Repaint the timer NOW, not on the next 250ms tick. tick() owns the text.
+    // If it owned visibility too, the badge would be missing for up to a
+    // quarter-second whenever the splash comes down -- and would show through
+    // the fresh splash for the same quarter-second after a kick.
+    document.getElementById("timer").hidden = false;
+  }
+
+  /** A fresh guest: pot back to zero, goal back to the base, guarantee
+      restarts. ALSO the operator's "play": it clears any held KICKED splash
+      and lands donations that arrived during the hold on the fresh board --
+      the next contestant's clock starts NOW, when they are seated, never at
+      the moment of the kick. */
   function resetGuest() {
+    endHold();
     state.pot = 0;
     state.goal = CFG.goal;
     state.guestStart = clock.now();
     state.kickPending = null;
     state.guest += 1;
     render();
+    flushHeld();
   }
 
-  /** The kick itself. State resets for the next guest immediately; the splash
-      is presentation on top, and donations that arrive during it count toward
-      the NEXT guest -- cycling is what the show wants. */
+  /** The kick itself. The KICKED splash goes up and the board HOLDS: no reset,
+      no next-guest clock, until the operator presses play in the control room
+      (the next contestant has to sit down first -- the show does not move on
+      without them). Donations that arrive while the splash is up are buffered
+      and count on the NEXT guest's board. */
   function kickNow() {
     const raised = state.pot;
     state.kicked += 1;
-    resetGuest();
-    splash("KICKED!", money(raised) + " raised to kick · guest " + state.guest + " next");
+    state.kickPending = null;
+    state.held = true;
+    document.getElementById("timer").hidden = true;   // see endHold(): no transient
+    splash("KICKED!",
+           money(raised) + " raised to kick",
+           "guest " + (state.guest + 1) + " next");
+    render();
   }
 
   /**
@@ -372,6 +447,7 @@ export const TUGOFWAR_OVERLAY_HTML = `<!--
    */
   function evaluate() {
     const now = clock.now();
+    if (state.held) return;   // post-kick pause: nothing may fire until play
     if (state.kickPending) {
       if (now >= state.kickPending) { kickNow(); return; }
       if (state.pot >= state.goal) return;      // still pending
@@ -389,11 +465,60 @@ export const TUGOFWAR_OVERLAY_HTML = `<!--
   }
 
   /**
+   * Derive what a donation VOTES: { cents, side }, or null when it is not a
+   * vote (bad amount, or no single keyword -- still a donation, not a vote).
+   * The one place amounts and keywords are read; every scoring path below
+   * resolves through here so they cannot disagree about a donor's money.
+   */
+  function resolve(ev) {
+    const cents = Number.isFinite(ev.amount_cents) ? Math.round(ev.amount_cents)
+                : Number.isFinite(ev.amount)       ? Math.round(ev.amount * 100)
+                : NaN;
+    if (!Number.isFinite(cents) || cents <= 0) return null;
+    const side = sideOf(ev.message ?? ev.comment ?? ev.note ?? "");
+    if (!side) return null;
+    return { cents, side };
+  }
+
+  /**
+   * Put one resolved donation on the board: move the pot or the goal, render,
+   * pop if it is big, and re-evaluate the kick mechanic. Callers guarantee the
+   * board is live (not held) -- flushHeld is the only path that replays, and
+   * it runs after the hold has ended.
+   */
+  function applyDonation(ev) {
+    const r = resolve(ev);
+    if (!r) return;
+    if (r.side === "left") state.pot += r.cents;   // kick: fill the pot
+    else state.goal += r.cents;                    // keep: raise the goal
+
+    render();
+    if (r.cents >= CFG.big) pop(r.side, r.cents);
+    evaluate();
+  }
+
+  /** Land donations that arrived during the hold on the fresh board. Called
+      from resetGuest() and the other operator paths that end a hold -- the
+      same action that starts the next guest -- so buffered money is never
+      lost and never lands early. */
+  function flushHeld() {
+    const q = heldQueue;
+    heldQueue = [];
+    for (const ev of q) {
+      // The id was already seen (ingest marks on arrival), so these go
+      // straight to the scoring path -- replaying through ingest() would
+      // silently drop every one as a duplicate.
+      applyDonation(ev);
+    }
+  }
+
+  /**
    * Accept one donation event.
    *   { id?, amount_cents | amount, message | comment | note }
    * \`amount\` is accepted as DOLLARS for convenience and converted; amount_cents
    * always wins when both are present.
-   * Returns true when it scored, so a caller can tell "ignored" from "counted".
+   * Returns true when it SCORED. A donation buffered by the hold returns false
+   * (it will score when play is pressed) -- "not yet" is not "ignored".
    */
   function ingest(ev) {
     if (!ev || typeof ev !== "object") return false;
@@ -402,26 +527,18 @@ export const TUGOFWAR_OVERLAY_HTML = `<!--
     const id = ev.id != null ? String(ev.id) : null;
     if (id) { if (state.seen.has(id)) return false; state.seen.add(id); }
 
-    let cents = Number.isFinite(ev.amount_cents) ? Math.round(ev.amount_cents)
-              : Number.isFinite(ev.amount)       ? Math.round(ev.amount * 100)
-              : NaN;
-    if (!Number.isFinite(cents) || cents <= 0) return false;
-
-    const side = sideOf(ev.message ?? ev.comment ?? ev.note ?? "");
-    if (!side) return false;          // no keyword: still a donation, not a vote
-
-    if (side === "left") state.pot += cents;   // kick: fill the pot
-    else state.goal += cents;                  // keep: raise the goal
-
-    render();
-    if (cents >= CFG.big) pop(side, cents);
-    evaluate();
+    if (!resolve(ev)) return false;   // not a vote: rejected, not buffered
+    if (state.held) { heldQueue.push(ev); return false; }
+    applyDonation(ev);                // one scoring path, for live and flush
     return true;
   }
 
   // ---- kick / saved presentation -------------------------------------------
-  let splashTimer = null, savedTimer = null;
-  function splash(title, sub) {
+  // The kick splash has NO auto-hide: it stays until the operator presses play
+  // (endHold sets splash.hidden = true), which is the whole point of the hold
+  // -- the show must not move on before the next contestant is seated.
+  let savedTimer = null;
+  function splash(title, sub, wait) {
     const el = document.getElementById("splash");
     el.textContent = "";
     const t = document.createElement("div");
@@ -432,9 +549,13 @@ export const TUGOFWAR_OVERLAY_HTML = `<!--
     s.textContent = sub;
     el.appendChild(t);
     el.appendChild(s);
+    if (wait) {
+      const w = document.createElement("div");
+      w.className = "splash-wait";
+      w.textContent = wait;
+      el.appendChild(w);
+    }
     el.hidden = false;
-    clearTimeout(splashTimer);
-    splashTimer = setTimeout(() => { el.hidden = true; }, 3200);
   }
   function flashSaved() {
     const el = document.getElementById("saved");
@@ -458,6 +579,20 @@ export const TUGOFWAR_OVERLAY_HTML = `<!--
   function tick() {
     const now = clock.now();
     const el = document.getElementById("timer");
+    if (state.held) {
+      // Between guests: nothing is counting -- the next contestant's clock
+      // starts when the operator presses play.
+      // HIDE it, do not just relabel it. The splash is rgba(0,0,0,.82), NOT
+      // opaque, so a relabelled badge SHOWS THROUGH and lands on top of the
+      // splash's own "guest N next" line -- two overlapping strings, on air.
+      // An earlier comment here asserted it was "hidden behind the splash";
+      // a screenshot of the real page disproved that.
+      el.textContent = "NEXT GUEST";
+      el.className = "";
+      el.hidden = true;
+      return;
+    }
+    el.hidden = false;
     if (state.kickPending) {
       if (now >= state.kickPending) { kickNow(); return; }
       el.textContent = "KICK " + mmss((state.kickPending - now) / 1000);
@@ -476,27 +611,44 @@ export const TUGOFWAR_OVERLAY_HTML = `<!--
   setInterval(tick, 250); tick();
 
   // ---- inputs ------------------------------------------------------------
-  // 1) postMessage, so a host page (or nodecg bundle) can drive it directly.
-  // The handler is a named function so the control panel can be TESTED through
-  // the same door the overlay opens on the live stream -- and so a nodecg
-  // wrapper can drive it without touching this file.
+  // 1) postMessage, so a page that embeds this overlay can drive it directly.
+  // The handler is a named function so the control room can be tested through
+  // the same door the overlay opens on the live stream, and so another tool can
+  // drive it without touching this file.
   function handleMessage(d, source) {
     if (!d || typeof d !== "object") return;
     if (d.type === "donation") ingest(d.payload ?? d);
-    if (d.type === "reset") resetGuest();                 // operator: new guest on
-    if (d.type === "clear") {                             // operator: fresh board,
+    // Both mean "the next guest is seated": clear the board, start their
+    // clock now, and land any donations that arrived during the pause.
+    // The one difference is the guard. play acts ONLY while held, so a second
+    // play -- a double-click, or a duplicated frame off the relay -- does
+    // nothing. Without that, the second one would wipe money that had just
+    // landed on the new guest, and it cannot be re-counted: those donation ids
+    // are already spent.
+    if (d.type === "play" && state.held) resetGuest();
+    if (d.type === "reset") resetGuest();
+    // WHILE HELD, THESE TWO DO NOTHING. Ending a hold means the operator has
+    // said the next guest is seated, so only play and reset can do it.
+    // Otherwise a mis-click clears the KICKED message, which is the one thing
+    // the hold exists to prevent. Restarting the window is worse: it puts the
+    // buffered money on the guest who has already gone, and kicks them twice.
+    if (d.type === "clear" && !state.held) {              // operator: fresh board,
       state.pot = 0;                                       // SAME guest -- totals
       state.goal = CFG.goal;                               // and window start over,
       state.guestStart = clock.now();                      // the guest counter does
       state.kickPending = null;                            // not move.
       render();
     }
-    if (d.type === "window") {                            // operator: restart the
+    if (d.type === "window" && !state.held) {             // operator: restart the
       state.guestStart = clock.now();                      // guaranteed airtime for
       evaluate();                                          // the CURRENT guest (a
       render();                                            // pending kick re-arms at
     }                                                      // the new window's end).
-    if (d.type === "setgoal") {                           // operator: set the goal
+    // Held means FROZEN: only play and reset act. setgoal is guarded for the
+    // same reason. Accepting it here would write a goal that play then quietly
+    // overwrites -- so the operator sets a number, watches it land, and sees it
+    // disappear.
+    if (d.type === "setgoal" && !state.held) {            // operator: set the goal
       const g = Number.isFinite(d.goal_cents) ? Math.round(d.goal_cents)
               : Number.isFinite(d.goal)       ? Math.round(d.goal)
               : NaN;
@@ -506,19 +658,34 @@ export const TUGOFWAR_OVERLAY_HTML = `<!--
         render();
       }
     }
-    if (d.type === "snapshot") {                          // control panel: a live
+    // A snapshot REQUEST carries no payload; a snapshot REPLY does. Without
+    // that test two overlays on one relay answer each other forever, because
+    // a reply looks exactly like a request.
+    if (d.type === "snapshot" && !d.payload) {            // control panel: a live
+      const reply = { type: "snapshot", payload: {
+        pot: state.pot, goal: state.goal,
+        guest: state.guest, kicked: state.kicked,
+        kickPending: state.kickPending,
+        // held: the KICKED splash is up and the board is frozen -- the
+        // control room shows its play button off this flag, never off a
+        // timer guess.
+        held: state.held,
+        guestStart: state.guestStart, now: clock.now(),
+        // The guarantee is CONFIG. The control room's readout has to come
+        // from the value the overlay enforces; a second copy of it in the
+        // control page disagrees the moment somebody sets 30s.
+        guarantee: GUARANTEE_MS,
+      } };
       if (source && typeof source.postMessage === "function") {
-        source.postMessage({ type: "snapshot", payload: {
-          pot: state.pot, goal: state.goal,
-          guest: state.guest, kicked: state.kicked,
-          kickPending: state.kickPending,
-          guestStart: state.guestStart, now: clock.now(),
-          // The guarantee is CONFIG, and the control room's timer readout
-          // must derive from the same value the overlay enforces -- a
-          // hardcoded twin in the control page silently disagrees the moment
-          // the operator sets a 30s guarantee.
-          guarantee: GUARANTEE_MS,
-        } }, "*");
+        source.postMessage(reply, "*");
+      } else if (liveWs && liveWs.readyState === 1) {
+        // ANSWER ON THE WIRE THE QUESTION CAME IN ON. A message that arrived
+        // over the socket has no window to reply to. Without this branch the
+        // control room only ever hears from the preview beside it, never from
+        // the copy on air -- and those two drift apart for ordinary reasons:
+        // OBS reloads the scene, the connection drops, the goal changes
+        // without the URL being re-pasted.
+        liveWs.send(JSON.stringify(reply));
       }
     }
   }
@@ -534,7 +701,7 @@ export const TUGOFWAR_OVERLAY_HTML = `<!--
     (function connect() {
       let ws;
       try { ws = new WebSocket(wsUrl); } catch { status("ws: bad url"); return; }
-      ws.onopen    = () => status("");
+      ws.onopen    = () => { liveWs = ws; status(""); };
       // handleMessage, NOT ingest: ingest() takes a donation, while
       // handleMessage() dispatches reset/clear/window/setgoal too. Routing the
       // socket at ingest silently DROPPED every operator control on the OBS
@@ -544,7 +711,11 @@ export const TUGOFWAR_OVERLAY_HTML = `<!--
       ws.onmessage = (m) => { try { handleMessage(JSON.parse(m.data), null); } catch {} };
       // Reconnect: a stream runs for hours and a socket WILL drop. Silent
       // disconnection would freeze the bar while looking perfectly fine.
-      ws.onclose   = () => { status("ws: reconnecting"); setTimeout(connect, 3000); };
+      ws.onclose   = () => {
+        if (liveWs === ws) liveWs = null;   // never answer down a dead socket
+        status("ws: reconnecting");
+        setTimeout(connect, 3000);
+      };
       ws.onerror   = () => status("ws: error");
     })();
   }
@@ -578,7 +749,8 @@ export const TUGOFWAR_OVERLAY_HTML = `<!--
 
   render();
   status("");
-  // Exposed for tests and for a nodecg wrapper; not used by the graphic itself.
+  // Exposed for tests and for a host page that wants to read state; the
+  // graphic itself never uses this.
   window.__tbat = { ingest, sideOf, state, CFG, evaluate, kickNow, resetGuest, clock, handleMessage };
 })();
 </script>
@@ -597,6 +769,35 @@ export const TUGOFWAR_OVERLAY_HTML = `<!--
  * It EMBEDS overlay.html rather than reimplementing it. A demo that
  * reimplements the thing it demonstrates agrees with itself and disagrees with
  * what ships.
+ *
+ * ENGINEERING NOTES -- ours, and they stay HERE.
+ * ----------------------------------------------
+ * This header is outside the backtick, so it is never emitted. The literal
+ * below ships verbatim into a partner's public repo AND through the panel
+ * bundle AND in awkit's published dist/ -- a comment inside a template literal
+ * is string content, so no bundler strips it. Keep the reader-facing why
+ * inside the literal; keep the evidence up here.
+ *
+ * [connectRelay] 2026-09-06: close() is async, so connectRelay() installed a
+ *   new socket and the OLD socket's onclose then set relay = null, discarding
+ *   its replacement and scheduling another reconnect 3s later -- which closed
+ *   the next live socket in turn. Measured in Chromium: the THIRD and FOURTH
+ *   button presses of a session were silently dropped (readyState 0, then
+ *   null) while the status line read connected and the relay's own log showed
+ *   a healthy client. Guarded by the `relay !== ws` checks, pinned by
+ *   overlay.test.mjs "a replaced relay socket's handlers are inert".
+ *
+ * [broadcast] the preview always updates, so a send that never left the page
+ *   was indistinguishable from one that worked. Hence the NOT SENT status.
+ *   Pinned by "a press that did not reach the relay says so".
+ *
+ * [applySnapshot] 2026-09-06: the play button is gated on `held`, and `held`
+ *   reached this page only from the preview iframe -- a different overlay from
+ *   the one in OBS. When they diverged the graphic on air sat under a
+ *   full-cover KICKED splash while the button that clears it was hidden.
+ *   Fixed by polling the on-air copy over the relay and preferring its answer.
+ *   Pinned by "the on-air copy wins over the preview" and, behaviourally, by
+ *   the browser proof's "the PLAY button appears" arm.
  */
 export const TUGOFWAR_DEMO_HTML = `<!--
   CONTROL ROOM for the tug-of-war donation overlay (also the demo stage).
@@ -617,12 +818,11 @@ export const TUGOFWAR_DEMO_HTML = `<!--
   relay box here, and every control action (donations included) is broadcast
   to the relay as well as to the local preview.
 
-  THE KIT: everything this page needs to run the show -- overlay, control
-  room, relay, README -- is downloadable as one kit.zip next to these pages,
-  so the operator can run the whole thing off a USB stick with zero connection
-  to the platform. The zip is built by the EMITTER from these same bytes; a
-  zip that disagreed with the pages it ships would be the drift this file
-  exists to prevent.
+  THE KIT: everything needed to run the show -- overlay, control room, relay
+  and README -- downloads as one kit.zip next to these pages. The whole thing
+  then runs off a USB stick with no connection to anything. The zip is built
+  from these same bytes, so what you download and what you see here cannot
+  disagree.
 -->
 <!doctype html>
 <meta charset="utf-8">
@@ -677,6 +877,17 @@ export const TUGOFWAR_DEMO_HTML = `<!--
   button.l { border-color: #CE1126; }
   button.r { border-color: #3D6DFF; }
   button.ghost { opacity: .75; }
+  /* The play control: appears only while the KICKED splash is holding between
+     guests. White on black -- it is the one button the operator waits for. */
+  .go {
+    display: block; width: 100%; margin: 0 0 12px; padding: 16px;
+    font-size: 18px; font-weight: 800; letter-spacing: .02em;
+    background: #fff; color: #000; border: 1px solid #fff; border-radius: 8px;
+    animation: go-pulse 1.1s infinite;
+  }
+  .go:hover { background: #ffdde3; }
+  .go[hidden] { display: none; }
+  @keyframes go-pulse { 50% { box-shadow: 0 0 0 6px rgba(255, 37, 55, .3); } }
   fieldset {
     margin-top: 14px; padding: 12px 14px; border-radius: 8px;
     border: 1px solid rgba(255,255,255,.1);
@@ -697,8 +908,10 @@ export const TUGOFWAR_DEMO_HTML = `<!--
     KICK donations fill the pot toward the goal; KEEP donations raise the goal — the
     goalkeepers push the line back. When the pot meets the goal the guest is kicked,
     never before their guaranteed minimum airtime (keep can still save them during the
-    countdown). The kick cycles to the next guest with a fresh goal. A donation of $25
-    or more pops its amount on the side it backed.
+    countdown). The KICKED message then HOLDS until you press the play button — the
+    next contestant takes their seat first, and their clock starts when you hit play.
+    Donations that arrive while the message is up are buffered and count on the next
+    guest's board. A donation of $25 or more pops its amount on the side it backed.
   </p>
 </header>
 
@@ -706,6 +919,11 @@ export const TUGOFWAR_DEMO_HTML = `<!--
   <div class="stage">
     <iframe id="ov" title="Overlay preview" src="overlay.html?goal=5000&amp;guarantee=30"></iframe>
   </div>
+
+  <!-- Shown only while the overlay holds a KICKED splash (driven by the
+       snapshot's held flag). This is the button the show waits on: the next
+       contestant sits down, the operator presses it, and their clock starts. -->
+  <button class="go" id="playNext" hidden>NEXT GUEST READY — START THEM</button>
 
   <div class="live" id="live">
     <span>POT <strong class="kick" id="livePot">$0</strong></span>
@@ -722,7 +940,7 @@ export const TUGOFWAR_DEMO_HTML = `<!--
     <button class="r" data-side="keep" data-amt="5">+$5 keep</button>
     <button class="r" data-side="keep" data-amt="25">+$25 keep</button>
     <button class="r" data-side="keep" data-amt="250">+$250 keep</button>
-    <button class="ghost" id="ambiguous">$50 "kick or keep?"</button>
+    <button class="ghost" id="ambiguous" title="A donation naming both words is not a vote -- the bar must not move">$50 saying both words</button>
   </div>
 
   <div class="row">
@@ -731,7 +949,7 @@ export const TUGOFWAR_DEMO_HTML = `<!--
     <button class="ghost" id="newguest">New guest</button>
     <input id="goalAmt" type="number" min="1" placeholder="goal $" value="100">
     <button class="ghost" id="setgoal">Set goal</button>
-    <button class="ghost" id="demo">Auto feed</button>
+    <button class="ghost" id="demo" title="Fills the board with invented donations so you can see it run">Fake donations (testing)</button>
   </div>
 
   <div class="row">
@@ -744,11 +962,11 @@ export const TUGOFWAR_DEMO_HTML = `<!--
   </div>
 
   <fieldset>
-    <legend>Segment settings — rebuilds the preview, exactly as OBS would load it</legend>
+    <legend>Segment settings — Apply reloads the preview the way OBS will load it</legend>
     <div class="row">
       <label>Kick goal $ <input id="cfgGoal" type="number" min="1" value="100"></label>
-      <label>Guarantee s <input id="cfgGuarantee" type="number" min="10" value="120"></label>
-      <label>Pop $ <input id="cfgBig" type="number" min="1" value="25"></label>
+      <label title="However fast the money comes in, the guest cannot be kicked before this is up">Safe on air, seconds <input id="cfgGuarantee" type="number" min="10" value="120"></label>
+      <label title="A donation this size or larger flashes its amount on screen">Big donation, $ <input id="cfgBig" type="number" min="1" value="25"></label>
       <button class="ghost" id="applyCfg">Apply</button>
     </div>
   </fieldset>
@@ -760,11 +978,13 @@ export const TUGOFWAR_DEMO_HTML = `<!--
       <button id="copyObs">Copy</button>
     </div>
     <div class="row">
-      <label>Relay ws:// (optional — drives the OBS copy too)
+      <label title="Without this, these buttons change the preview above but not OBS">
+        Connect this page to OBS
         <input id="relay" type="text" placeholder="ws://localhost:8787" style="width:260px;"></label>
-      <a href="relay.js" download style="font-size:13px;">Get the relay (relay.js)</a>
+      <span id="relayState" style="font-size:13px;opacity:.8;"></span>
+      <a href="relay.js" download style="font-size:13px;">Download relay.js</a>
       <span style="opacity:.45;">·</span>
-      <a href="kit.zip" download style="font-size:13px;">Download the whole kit (kit.zip — runs with no platform)</a>
+      <a href="kit.zip" download style="font-size:13px;">Download the whole kit — runs offline</a>
     </div>
   </fieldset>
 
@@ -787,17 +1007,68 @@ export const TUGOFWAR_DEMO_HTML = `<!--
   let relay = null;
   function broadcast(msg) {
     ov.contentWindow.postMessage(msg, "*");
+    if (!relayWant) return;                 // no relay configured: preview only
     if (relay && relay.readyState === WebSocket.OPEN) {
       relay.send(JSON.stringify(msg));
+      return;
     }
+    // SAY WHEN A PRESS DID NOT LEAVE THE ROOM. The preview always updates, so
+    // a dropped send looks exactly like a working one: the operator sees the
+    // bar move here and nothing move on air, and concludes the overlay is
+    // broken. This is the only moment that distinction is knowable.
+    relayStatus(relay
+      ? "Still connecting -- OBS did not get that. Try again in a moment."
+      : "Not connected -- OBS did not get that. Check the relay box.");
   }
   const relayInput = document.getElementById("relay");
-  relayInput.addEventListener("change", () => {
-    const url = relayInput.value.trim();
+  // RECONNECT, AND SAY SO. The KICKED message only comes down when the
+  // operator presses a button, so if this connection is dead the graphic on
+  // air stays under a full-cover splash while this page looks perfectly fine.
+  // Reconnecting is half the answer; the other half is the status line, because
+  // an operator pressing play and seeing nothing happen needs to know why.
+  let relayWant = "";
+  let relayTimer = null;
+  const relayStatus = (t) => {
+    const el = document.getElementById("relayState");
+    if (el) el.textContent = t;
+  };
+  function connectRelay() {
+    clearTimeout(relayTimer);
     if (relay) { try { relay.close(); } catch {} relay = null; }
-    if (url) {
-      try { relay = new WebSocket(url); } catch { relay = null; }
-    }
+    if (!relayWant) { relayStatus(""); return; }
+    let ws;
+    try { ws = new WebSocket(relayWant); } catch { relayStatus("That address is not valid"); return; }
+    relay = ws;
+    relayStatus("Connecting...");
+    // EVERY handler below checks this is STILL the current socket.
+    // close() is asynchronous, so when we replace a socket the old one's
+    // handlers still fire afterwards. Unguarded, the old socket's onclose
+    // throws away the socket that just replaced it and schedules another
+    // reconnect -- which then closes the next live one, and so on. The page
+    // keeps saying "connected" while presses quietly go nowhere.
+    ws.onopen  = () => { if (relay === ws) relayStatus("Connected to OBS"); };
+    // The OBS copy answers the snapshot poll down this socket. That reply is
+    // the only way this page can know what the graphic ON AIR is doing --
+    // everything else it renders comes from the preview iframe, which is a
+    // different overlay with its own state.
+    ws.onmessage = (m) => {
+      if (relay !== ws) return;
+      let d;
+      try { d = JSON.parse(m.data); } catch { return; }
+      if (d && d.type === "snapshot" && d.payload) applySnapshot(d.payload, true);
+    };
+    ws.onerror = () => { if (relay === ws) relayStatus("Could not connect -- is relay.js running?"); };
+    ws.onclose = () => {
+      if (relay !== ws) return;   // a socket we already replaced: not news
+      relay = null;
+      relayStatus("DISCONNECTED -- OBS is not following these buttons. Retrying...");
+      // Keep trying: the rig's relay is usually restarted mid-show, not gone.
+      relayTimer = setTimeout(connectRelay, 3000);
+    };
+  }
+  relayInput.addEventListener("change", () => {
+    relayWant = relayInput.value.trim();
+    connectRelay();
     refreshObs();   // the OBS URL carries &ws= from this box
   });
 
@@ -818,6 +1089,11 @@ export const TUGOFWAR_DEMO_HTML = `<!--
   document.getElementById("clear").addEventListener("click", () => broadcast({ type: "clear" }));
   document.getElementById("restart").addEventListener("click", () => broadcast({ type: "window" }));
   document.getElementById("newguest").addEventListener("click", () => broadcast({ type: "reset" }));
+  // The play control (hidden unless the overlay is holding a KICKED splash).
+  // "play" and "reset" are the same door inside the overlay; this button is
+  // the prominent, always-correct action the operator reaches for between
+  // guests. Broadcast reaches the preview AND the OBS copy via the relay.
+  document.getElementById("playNext").addEventListener("click", () => broadcast({ type: "play" }));
   document.getElementById("setgoal").addEventListener("click", () => {
     const v = Number(document.getElementById("goalAmt").value);
     if (Number.isFinite(v) && v > 0) broadcast({ type: "setgoal", goal_cents: Math.round(v * 100) });
@@ -863,15 +1139,29 @@ export const TUGOFWAR_DEMO_HTML = `<!--
     const s = Math.max(0, Math.floor(sec));
     return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
   }
-  window.addEventListener("message", (e) => {
-    const d = e.data;
-    if (!d || d.type !== "snapshot" || !d.payload) return;
-    const p = d.payload;
+  // WHICH OVERLAY IS THE AUTHORITY. Two copies answer this page: the preview
+  // beside it, and the one in OBS. They are not interchangeable — the one on
+  // air is the one that matters. So while the on-air copy is answering it
+  // wins, and if it goes quiet this falls back to the preview after 4s rather
+  // than freezing on a stale reading.
+  let lastOnAir = 0;
+  function applySnapshot(p, onAir) {
+    if (onAir) lastOnAir = Date.now();
+    else if (Date.now() - lastOnAir < 4000) return;
     document.getElementById("livePot").textContent = "$" + (p.pot / 100).toFixed(p.pot % 100 ? 2 : 0);
     document.getElementById("liveGoal").textContent = "$" + (p.goal / 100).toFixed(p.goal % 100 ? 2 : 0);
     document.getElementById("liveGuest").textContent = String(p.guest);
     document.getElementById("liveKicked").textContent = String(p.kicked);
     const el = document.getElementById("liveTimer");
+    // Held = a KICKED splash is up and the board is frozen between guests.
+    // The play button appears -- nothing counts down until the operator uses
+    // it, because the next contestant's clock has not started.
+    document.getElementById("playNext").hidden = !p.held;
+    if (p.held) {
+      el.textContent = "NEXT GUEST";
+      el.className = "danger";
+      return;
+    }
     const guarantee = p.guarantee || 120000;   // snapshot carries it; the fallback
                                                // only covers an old overlay in a cache
     if (p.kickPending) {
@@ -885,14 +1175,27 @@ export const TUGOFWAR_DEMO_HTML = `<!--
       el.textContent = "ON AIR " + mmss((p.now - p.guestStart) / 1000);
       el.className = "";
     }
+  }
+  window.addEventListener("message", (e) => {
+    const d = e.data;
+    if (!d || d.type !== "snapshot" || !d.payload) return;
+    applySnapshot(d.payload, false);
   });
-  setInterval(() => ov.contentWindow.postMessage({ type: "snapshot" }, "*"), 1000);
+  // Ask BOTH: the preview directly, and the OBS copy through the relay. The
+  // request carries no payload, which is how an overlay tells a request from
+  // another overlay's reply.
+  setInterval(() => {
+    ov.contentWindow.postMessage({ type: "snapshot" }, "*");
+    if (relay && relay.readyState === WebSocket.OPEN) {
+      relay.send(JSON.stringify({ type: "snapshot" }));
+    }
+  }, 1000);
 
   refreshObs();
 </script>
 <script>
-  // Version badge from manifest.json (written beside this page by the emitter).
-  // A screenshot of the control room then names the build. Silent when absent.
+  // Version badge, read from the manifest.json beside this page, so a
+  // screenshot of the control room names the build. Silent when absent.
   (function () {
     fetch("manifest.json", { cache: "no-store" }).then((r) => r.ok ? r.json() : null).then((m) => {
       if (!m || !m.version) return;
@@ -928,6 +1231,33 @@ export const TUGOFWAR_DEMO_HTML = `<!--
  *
  * NO backticks and NO ${ in this file: it lives inside a TS template literal
  * and the extractors that serve it refuse interpolated literals.
+ *
+ * ENGINEERING NOTES -- ours, and they stay HERE.
+ * ----------------------------------------------
+ * This doc header sits outside the backtick, so it is never emitted. The
+ * literal below is committed verbatim into a PARTNER'S PUBLIC REPO, where our
+ * incident record is noise a stranger has no context for -- and reads as a
+ * list of things we broke. So the shipped comment carries the reason in the
+ * present tense, and the evidence lives up here, keyed by function.
+ *
+ * [kitManifest] 2026-09-01: a "spins forever" report could not be tied to a
+ *   build for an hour, because nothing in the kit said which build it was.
+ *   Hence the version banner on every start.
+ *
+ * [broadcast] 2026-09-02, customer-reported: this path wrote RAW TEXT into the
+ *   socket while sendText() encoded, so every control-room message killed the
+ *   OBS socket instead of driving it. --selftest passed throughout: it asserted
+ *   a SUBSTRING over raw wire bytes, which a raw-text write satisfies just as
+ *   well as a correct frame. Now pinned by the frame-decoding self-test below
+ *   and by overlay.test.mjs "refuses unmasked client frames".
+ *
+ * [serve] 2026-09-01: it printed the REQUESTED port, so "node relay.js 0"
+ *   announced a URL that did not connect. Caught by the offline-kit arm in
+ *   overlay.test.mjs, which now also proves "relay.js 0" binds and serves.
+ *
+ * [selftest drain] the arm that could not tell the [broadcast] defect from its
+ *   fix. It stayed green while every real client hung up on a protocol
+ *   violation, and a customer became the detector.
  */
 export const TUGOFWAR_RELAY_JS = `#!/usr/bin/env node
 /**
@@ -1002,11 +1332,10 @@ function tryParseFrame(buf) {
   return { fin, op, payload, consumed: off + len };
 }
 
-/** The kit manifest (version, source commit, per-file sha256) written beside
- *  relay.js by the emitter. Null when absent -- an unversioned/hand-copied kit.
- *  The version is printed on every start so a customer's paste or screenshot
- *  identifies the exact build: the 2026-09-01 "spins forever" report could not
- *  be tied to a build for an hour because nothing in the kit said which it was. */
+/** The kit manifest written beside relay.js: version, source commit, per-file
+ *  sha256. Null when it is absent, which means a hand-copied kit. The version
+ *  prints on every start, so a screenshot or a pasted line names the exact
+ *  build someone is running. */
 function kitManifest() {
   try {
     return JSON.parse(fs.readFileSync(path.join(path.dirname(process.argv[1]), "manifest.json"), "utf8"));
@@ -1054,6 +1383,26 @@ function serveHttp(socket, req) {
   });
 }
 
+/** Which Origins may open a WebSocket. Absent is allowed (a native client
+ *  sends none); this relay's own loopback origin is allowed; everything
+ *  else needs --allow-origin, so a foreign TAB cannot drive the show. */
+const ALLOWED_ORIGINS = [];
+for (let i = 0; i < process.argv.length; i++) {
+  if (process.argv[i] === "--allow-origin" && process.argv[i + 1]) {
+    ALLOWED_ORIGINS.push(process.argv[i + 1].replace(/[/]+$/, "").toLowerCase());
+  }
+}
+let BOUND_PORT = 0;
+function originAllowed(req) {
+  const m = req.match(/^Origin:[ \t]*(.*)$/im);
+  if (!m) return true;                         // no Origin: a native client
+  const o = m[1].trim().replace(/[/]+$/, "").toLowerCase();
+  if (!o || o === "null") return true;         // file:// pages send "null"
+  if (ALLOWED_ORIGINS.indexOf(o) >= 0) return true;
+  return o === "http://127.0.0.1:" + BOUND_PORT
+      || o === "http://localhost:" + BOUND_PORT;
+}
+
 function handle(socket) {
   let buf = Buffer.alloc(0);
   let partial = "";                                     // fragmented text frame
@@ -1063,13 +1412,9 @@ function handle(socket) {
     if (!socket.destroyed) socket.write(encodeTextFrame(text));
   }
   function broadcast(text, except) {
-    // Encode ONCE, and encode AT ALL. Writing raw text into a WebSocket is a
-    // protocol violation: the browser answers it by CLOSING the socket, which
-    // the overlay surfaces as "ws: reconnecting" on a 3s loop forever.
-    // sendText() has always encoded; this path never did, so every control-room
-    // message killed the OBS socket instead of driving it. Customer-reported
-    // 2026-09-02 -- and the relay --selftest passed throughout, because it
-    // asserted a SUBSTRING over raw bytes, which a raw-text write satisfies.
+    // Encode once, and encode at all. Raw text in a WebSocket is a protocol
+    // violation: the browser answers it by closing the socket, and the overlay
+    // then shows "ws: reconnecting" in a 3s loop forever.
     const frame = encodeTextFrame(text);
     for (const c of CLIENTS) if (c !== except && !c.destroyed) c.write(frame);
   }
@@ -1083,6 +1428,25 @@ function handle(socket) {
       buf = buf.slice(i + 4);
       const m = req.match(/Sec-WebSocket-Key: ([^\\r\\n]+)/i);
       if (!m) { serveHttp(socket, req); return; }
+      // ORIGIN GATE. A WebSocket is not covered by the same-origin policy.
+      // Without this check, any page the operator happens to have open could
+      // connect and drive the graphic that is on air -- fake a donation, kick
+      // the guest, reset the board. Binding to 127.0.0.1 does not help: the
+      // caller is a browser tab, not a machine on the network.
+      //
+      // Still allowed: a request with no Origin at all (a native client),
+      // and this relay's own address, which is where it serves the control
+      // room and the overlay from.
+      //
+      // Hosting the overlay somewhere else and pointing it here is a real
+      // setup, so it has a door rather than a silent refusal:
+      //   node relay.js --allow-origin https://your.host
+      if (!originAllowed(req)) {
+        console.error("relay: refused a WebSocket from a foreign origin -- "
+          + "use --allow-origin if this is your own page");
+        socket.end("HTTP/1.1 403 Forbidden\\r\\nContent-Length: 0\\r\\nConnection: close\\r\\n\\r\\n");
+        return;
+      }
       socket.write(
         "HTTP/1.1 101 Switching Protocols\\r\\n" +
         "Upgrade: websocket\\r\\nConnection: Upgrade\\r\\n" +
@@ -1117,10 +1481,11 @@ function handle(socket) {
 function serve(port) {
   const server = net.createServer(handle);
   server.listen(port, "127.0.0.1", () => {
-    // Announce the BOUND port, not the requested one: "node relay.js 0"
-    // (or a busy 8787 fallback) would otherwise print a URL that does not
-    // connect. Measured 2026-09-01 -- the offline-kit test caught it.
+    // Announce the port we actually bound, not the one that was asked for.
+    // "node relay.js 0" means any free port, so the requested number is often
+    // not the one to type into OBS.
     const actual = server.address().port;
+    BOUND_PORT = actual;
     const mf = kitManifest();
     const ver = mf && mf.version
       ? "v" + mf.version + " (" + String(mf.source_commit || "").slice(0, 10) + ")"
@@ -1139,6 +1504,7 @@ function selftest() {
   const server = net.createServer(handle);
   server.listen(0, "127.0.0.1", () => {
     const port = server.address().port;
+    BOUND_PORT = port;
     const keyA = "aGVsbG8gd29ybGQ=", keyB = "c29tZS1yYW5kb20ta2V5";
     const BIG = "x".repeat(150);                        // exercises the 126-length path
     const mask = Buffer.from([1, 2, 3, 4]);
@@ -1158,13 +1524,11 @@ function selftest() {
     let handshaken = false;
     let buf = Buffer.alloc(0);
     const got = [];
-    // Decode frames the way a BROWSER does. The previous assertion was
-    // body.includes("hello") -- a SUBSTRING over raw wire bytes, which a correct
-    // frame and an unencoded raw-text write satisfy EQUALLY. So it could not
-    // distinguish the 2026-09-02 broadcast defect from its fix: it stayed green
-    // while every real client closed the socket on a protocol violation, and a
-    // customer became the detector. Parse, and refuse anything that is not a
-    // well-formed unmasked text frame.
+    // Decode frames the way a BROWSER does, and refuse anything that is not a
+    // well-formed unmasked text frame. Searching the raw bytes for the
+    // message text is not enough: that passes on a correct frame and on
+    // unencoded raw text alike, so it cannot tell a working relay from one
+    // every real client hangs up on.
     function drain() {
       for (;;) {
         if (buf.length < 2) return;
@@ -1220,7 +1584,9 @@ if (process.argv.includes("--selftest")) {
   console.log(mf && mf.version ? mf.version : "unversioned");
 } else {
   const port = parseInt(process.argv[2] || "8787", 10);
-  if (!Number.isFinite(port) || port < 1 || port > 65535) {
+  // 0 is allowed and means "any free port". serve() prints the port it
+  // actually bound, so nothing has to guess which one to use.
+  if (!Number.isFinite(port) || port < 0 || port > 65535) {
     console.error("bad port: " + process.argv[2]);
     process.exit(1);
   }
@@ -1319,15 +1685,16 @@ export const TUGOFWAR_DOWNLOADS_HTML = `<!--
   });
 </script>
 <script>
-  // Version & integrity: read from manifest.json / kit.zip.sha256 beside this
-  // page (the emitter writes both), so the page never carries a stale number.
+  // Version and integrity, read from the manifest.json and kit.zip.sha256
+  // beside this page, so this page never shows a stale number.
   (function () {
     const line = document.getElementById("verline");
     const det = document.getElementById("verdetail");
     const esc = (t) => String(t).replace(/</g, "&lt;");
     fetch("manifest.json", { cache: "no-store" }).then((r) => r.ok ? r.json() : null).then((m) => {
       if (!m) { line.textContent = "no manifest.json beside this page — unversioned build"; return; }
-      line.textContent = "kit v" + m.version + " — built from " + String(m.source_commit).slice(0, 10) + " on " + m.source_date;
+      line.textContent = "kit v" + m.version + " — built from "
+        + String(m.source_commit).slice(0, 10);
       const rows = Object.keys(m.files || {}).map((f) =>
         "<code>" + esc(f) + "</code> " + m.files[f].bytes + " B — sha256 <code>" + esc(m.files[f].sha256) + "</code>");
       let html = rows.join("<br>");
