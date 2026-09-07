@@ -263,7 +263,7 @@ export default function AgentsPanel({ apiBase = '/api/platform' }: AgentsPanelPr
             </p>
             <code style={{ display: 'block', padding: '0.5rem 0.75rem', background: 'var(--bg-deep)',
               borderRadius: 4, fontSize: '0.75rem', color: 'var(--accent-cyan)', userSelect: 'all' }}>
-              curl -fsSL https://portal.aitherium.com/install | bash && aither login && aither node register
+              curl -fsSL https://aitherium.com/install.sh | bash && aither login && aither node register
             </code>
             <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.4rem' }}>
               Auto-detects: Ollama, vLLM, llama.cpp, text-generation-webui, OpenClaw, Hermes, any OpenAI-compatible endpoint
