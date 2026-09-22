@@ -234,6 +234,79 @@ export function isPhoneDevice(): boolean {
   return /Android.+Mobile|iPhone|iPod/i.test(ua);
 }
 
+// ── WASP PHONE RATCHET ──────────────────────────────────────────────────────
+//
+// THE TABLE IS THE DECISION, AND IT IS DATA SO THE DECISION CAN BE AUDITED.
+//
+// The owner directive of 2026-09-01 was `isPhoneDevice()` -> refuse, everywhere: even the
+// smallest model (1.7B) on the wasm-CPU lane froze a Pixel 10 to a whole-device reboot.
+// That ban is being LIFTED ONE CELL AT A TIME, and only against measured hardware. A cell
+// moves from 'banned' to 'verified' in the commit that lands a passing report under
+// `bonsai-webgpu/selftest/phone-verify/<platform>-<lane>-<yyyy-mm-dd>.json`, and BIH015
+// refuses a 'verified' with no report behind it.
+//
+// Why a table rather than a flag: the four cases are genuinely different devices. Android
+// Chrome exposes a real WebGPU adapter and no TDR watchdog; iOS Safari exposes no adapter
+// info at all and kills a tab on jetsam long before its RAM runs out. One boolean would
+// let a Pixel result speak for an iPhone, which is precisely the reasoning that produced
+// the original freeze.
+//
+// EVERY ENTRY IS 'banned' TODAY. This whole plane is behaviour-neutral on phones until a
+// cell flips, and that is asserted rather than promised: `phoneLaneAllowed` returns false
+// on every phone for every lane while the table reads like this.
+export const WASP_PHONE_RATCHET = {
+  android: { wasm: 'banned', webgpu: 'banned' },
+  ios: { wasm: 'banned', webgpu: 'banned' },
+} as const;
+
+export type WaspLaneName = 'wasm' | 'webgpu';
+export type PhoneRatchetState = 'banned' | 'verified';
+
+/**
+ * The smallest plan a phone may be offered, in bytes.
+ *
+ * The 1.7B is 237 MB and the loader needs ~1.2x that resident while it uploads, so a
+ * budget below this cannot carry the smallest thing in the catalogue and "allowed" would
+ * be a promise the device cannot keep.
+ */
+export const PHONE_MIN_PLAN_BYTES = 285 * 1024 * 1024;
+
+/** Which phone platform this is, or null when it is not a phone at all. */
+export function phonePlatform(): 'android' | 'ios' | null {
+  if (!isPhoneDevice()) return null;
+  const ua = typeof navigator === 'undefined' ? '' : (navigator.userAgent ?? '');
+  return /iPhone|iPod/i.test(ua) ? 'ios' : 'android';
+}
+
+/** What a caller must show to be allowed a lane. Structural, so no module depends on the budget. */
+export interface PhoneLaneBudget {
+  lane?: string;
+  weightsBytes?: number;
+}
+
+/**
+ * MAY THIS PHONE RUN THIS LANE?
+ *
+ * FAIL-CLOSED AT EVERY STEP, and each `return false` is a distinct real case:
+ *   - not a phone            -> true, and the caller's own guards decide (this is the
+ *                               only reason desktop behaviour is untouched)
+ *   - platform unknown       -> false; an unclassifiable phone is the weakest device there is
+ *   - cell is not 'verified' -> false; this is every cell today
+ *   - no budget supplied     -> false; "allowed" without knowing what the device can hold
+ *                               is the exact claim that produced the freeze
+ *   - budget is for the OTHER lane, or too small for the smallest model -> false
+ */
+export function phoneLaneAllowed(lane: WaspLaneName, budget?: PhoneLaneBudget): boolean {
+  if (!isPhoneDevice()) return true;
+  const platform = phonePlatform();
+  if (!platform) return false;
+  if (WASP_PHONE_RATCHET[platform][lane] !== ('verified' as PhoneRatchetState)) return false;
+  if (!budget || budget.lane !== lane) return false;
+  return typeof budget.weightsBytes === 'number'
+    && budget.weightsBytes >= PHONE_MIN_PLAN_BYTES;
+}
+
+
 /**
  * MAY THIS DEVICE RUN THE WEBGPU LANE AT ALL? Phones: never.
  *

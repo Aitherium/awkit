@@ -152,9 +152,12 @@ export async function runDeltaNetBlock(ctx: LayerContext, layer: number, io: Blo
   // -------------------------------------------------------------------------
   ops.rmsnorm(ctx, io.hidden, w.get(attnNormN), h1, nTokens, embedLen, eps);
 
-  // in-projections
-  ops.projectQ1(ctx, h1, w.get(attnQkvN), qkv, nTokens, embedLen, convDim);
-  ops.projectQ1(ctx, h1, w.get(attnGateN), z, nTokens, embedLen, vDim);
+  // in-projections. BONSAI 2: attn_qkv and attn_gate are Hadamard-folded along their input,
+  // so they consume ONE sign⊙WHT transform of h1 (the fork memoises it per activation,
+  // llama-graph.cpp:1512-1519). rotatedInput returns h1 itself on a Bonsai 1 file.
+  const h1r = ops.rotatedInput(ctx, h1, nTokens, embedLen, [attnQkvN, attnGateN]);
+  ops.projectQ1(ctx, h1r, w.get(attnQkvN), qkv, nTokens, embedLen, convDim);
+  ops.projectQ1(ctx, h1r, w.get(attnGateN), z, nTokens, embedLen, vDim);
 
   // depthwise causal conv over all convDim channels, then SiLU.
   // The conv input is [history(convKernel-1 rows) | this batch's raw qkv rows] so a
@@ -230,9 +233,12 @@ export async function runDeltaNetBlock(ctx: LayerContext, layer: number, io: Blo
   ops.rmsnorm(ctx, qc, l2w, qn, nTokens * numKHeads, headDim, l2eps);
   ops.rmsnorm(ctx, kc, l2w, kn, nTokens * numKHeads, headDim, l2eps);
 
-  // beta / decay
-  ops.projectQ1(ctx, h1, w.get(ssmAlphaN), alphaRaw, nTokens, embedLen, numVHeads);
-  ops.projectQ1(ctx, h1, w.get(ssmBetaN), betaRaw, nTokens, embedLen, numVHeads);
+  // beta / decay. PER-TENSOR dispatch, and on the UNTRANSFORMED h1: Bonsai 1 ships these
+  // Q1_0 (same kernel projectQ1 would pick), Bonsai 2 ships them BF16 and NOT in
+  // prism.hadamard.weight_names (fork qwen35.cpp:387-396 runs a plain BF16 mul_mat on the
+  // normed input). Feeding them h1r, or the block kernel, would be fluent garbage.
+  ops.projectQuantized(ctx, h1, w.get(ssmAlphaN), alphaRaw, nTokens, embedLen, numVHeads, w.typeOf(ssmAlphaN));
+  ops.projectQuantized(ctx, h1, w.get(ssmBetaN), betaRaw, nTokens, embedLen, numVHeads, w.typeOf(ssmBetaN));
   ops.deltanetGate(ctx, alphaRaw, betaRaw, w.get(ssmAN), w.get(ssmDtBiasN), gBuf, betaBuf, nTokens, numVHeads);
 
   // gated delta-rule recurrence (all tokens, all v-heads, GPU-resident state)
@@ -243,7 +249,17 @@ export async function runDeltaNetBlock(ctx: LayerContext, layer: number, io: Blo
   ops.rmsnorm(ctx, recur, w.get(ssmNormN), normOut, nTokens * numVHeads, headDim, eps);
   ops.siluInplace(ctx, z, nTokens * vDim);
   ops.elementwise(ctx, normOut, z, normOut, nTokens * vDim, 1); // normOut *= silu(z)
-  ops.projectQ1(ctx, normOut, w.get(ssmOutN), ssmProj, nTokens, vDim, embedLen);
+  // BONSAI 2: ssm_out is folded along its 6144-wide input. With gdn_v_grouped the folded
+  // columns are in GROUPED v-head order (r + rep·k) while normOut is TILED (k + nk·r, the
+  // `kh = h % k_heads` convention of deltanet_seq.wgsl), so the permutation goes FIRST, then
+  // sign⊙WHT (fork llama-graph.cpp:1521-1533). hd = vDim/numVHeads, nk = numKHeads,
+  // rep = vPerKHead — the fork's perm_hd / perm_nk / perm_rep (llama-model.cpp:2080-2090).
+  const ssmIn = ops.rotatedInput(ctx, normOut, nTokens, vDim, [ssmOutN], {
+    hd: headDim,
+    nk: numKHeads,
+    rep: vPerKHead,
+  });
+  ops.projectQ1(ctx, ssmIn, w.get(ssmOutN), ssmProj, nTokens, vDim, embedLen);
 
   ops.residualAdd(ctx, io.hidden, ssmProj, nTokens * embedLen);
 
@@ -251,9 +267,12 @@ export async function runDeltaNetBlock(ctx: LayerContext, layer: number, io: Blo
   // FFN (post_attention_norm → SwiGLU)
   // -------------------------------------------------------------------------
   ops.rmsnorm(ctx, io.hidden, w.get(postAttnNormN), h2, nTokens, embedLen, eps);
-  ops.projectQ1(ctx, h2, w.get(ffnGateN), ffnG, nTokens, embedLen, ffnLen);
-  ops.projectQ1(ctx, h2, w.get(ffnUpN), ffnU, nTokens, embedLen, ffnLen);
+  const h2r = ops.rotatedInput(ctx, h2, nTokens, embedLen, [ffnGateN, ffnUpN]);
+  ops.projectQ1(ctx, h2r, w.get(ffnGateN), ffnG, nTokens, embedLen, ffnLen);
+  ops.projectQ1(ctx, h2r, w.get(ffnUpN), ffnU, nTokens, embedLen, ffnLen);
   ops.swigluMul(ctx, ffnG, ffnU, ffnM, nTokens * ffnLen);
-  ops.projectQ1(ctx, ffnM, w.get(ffnDownN), ffnD, nTokens, ffnLen, embedLen);
+  // ffn_down's input is the 17408-wide SwiGLU output: 17 blocks of 1024, its own sign vector.
+  const ffnMr = ops.rotatedInput(ctx, ffnM, nTokens, ffnLen, [ffnDownN]);
+  ops.projectQ1(ctx, ffnMr, w.get(ffnDownN), ffnD, nTokens, ffnLen, embedLen);
   ops.residualAdd(ctx, io.hidden, ffnD, nTokens * embedLen);
 }

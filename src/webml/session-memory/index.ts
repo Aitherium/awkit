@@ -17,6 +17,8 @@ import type { Embedder, MemoryChunk, QueryOptions, QueryResult, SessionMemorySta
 import type { MemoryStore } from "./store"
 import type { CaptureInput, CaptureResult } from "./capture"
 import { captureText } from "./capture"
+import { SleepTimeMemory, type ConsolidateResult, type PlanOptions } from "../sleep-time-memory"
+import { sessionMemorySleepStore, chunkToRow, type ChunkRow } from "./sleep-time"
 
 export interface SessionMemoryOptions {
   store: MemoryStore
@@ -131,6 +133,7 @@ export class SessionMemory {
       embedding: vectors[i],
     }))
     await this.store.addMany(chunks)
+    await this.enqueueForSleep(chunks)
     return chunks
   }
 
@@ -190,6 +193,7 @@ export class SessionMemory {
       const now = opts.now ?? Date.now()
       const refreshed = existing.map((c) => ({ ...c, capturedAt: new Date(now).toISOString() }))
       await this.store.addMany(refreshed)
+      await this.enqueueForSleep(refreshed)
       return {
         chunks: refreshed,
         report: { added: 0, updated: 0, unchanged: texts.length, removed: 0, embedded: 0, skippedEmbeds: texts.length },
@@ -220,6 +224,7 @@ export class SessionMemory {
     // ones were removed above. Never re-store an old copy of a freshly
     // embedded chunk — that would duplicate it (measured 2026-08-31).
     await this.store.addMany(chunks)
+    await this.enqueueForSleep(chunks)
     return {
       chunks: chunks.concat(unchangedChunks),
       report: { added, updated, unchanged, removed: stale.length, embedded: vectors.length, skippedEmbeds: unchanged },
@@ -230,12 +235,54 @@ export class SessionMemory {
   async query(text: string, opts: QueryOptions = {}): Promise<QueryResult[]> {
     const queryVector = (await this.embed([text]))[0]
     if (!queryVector) return []
-    const chunks = await this.store.all()
+    const chunks = (await this.store.all()).filter((c) => !c.tombstoned)
     return rankChunks({
       chunks,
       queryVector,
       opts: resolveQueryOptions(opts),
     })
+  }
+
+  /** The kit's sleep-time memory over this store (one object, lazily built). */
+  private sleep?: SleepTimeMemory<ChunkRow>
+  private sleepTime(): SleepTimeMemory<ChunkRow> {
+    if (!this.sleep) {
+      this.sleep = new SleepTimeMemory<ChunkRow>({
+        store: sessionMemorySleepStore(this.store),
+        embed: async (text) => (await this.embed([text]))[0],
+      })
+    }
+    return this.sleep
+  }
+
+  /**
+   * Write path of sleep-time memory: record, per new chunk, the OLDER live chunks it
+   * overlaps. Embedding-only (the vectors are already computed) — never a model call,
+   * never a throw: a failed enqueue leaves a chunk that is simply never reconciled.
+   */
+  private async enqueueForSleep(chunks: MemoryChunk[]): Promise<void> {
+    if (chunks.length === 0) return
+    try {
+      const pool = (await this.store.all()).map(chunkToRow)
+      const st = this.sleepTime()
+      for (const c of chunks) await st.enqueue(chunkToRow(c), pool)
+    } catch {
+      /* see docstring */
+    }
+  }
+
+  /** Anything queued for the sleep pass? One store read, no model. */
+  hasSleepWork(): Promise<boolean> {
+    return this.sleepTime().hasWork()
+  }
+
+  /**
+   * Sleep path: decide update/delete/ignore per queued chunk with ONE generate() each.
+   * Consent (`mayAutoLoadModel()`) is checked inside, BEFORE any generate(). Call it from
+   * `scheduleSleepPasses()` with the model's raw generate — never with the chat send.
+   */
+  consolidate(generate: (prompt: string) => Promise<string>, opts: PlanOptions = {}): Promise<ConsolidateResult> {
+    return this.sleepTime().consolidate(generate, opts)
   }
 
   async stats(): Promise<SessionMemoryStats> {

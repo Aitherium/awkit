@@ -21,17 +21,26 @@
  */
 
 import {
+  beginCopies,
   bindGroup,
   createStorage,
   createUniform,
   deferDestroy,
   dispatch1D,
+  finishCopies,
   packUniform,
   readback,
 } from "../kernels/dispatch";
 import { GgmlType } from "../gguf/types";
 import type { PipelineCache } from "../kernels/pipelines";
 import type { GpuBufferLike, GpuDeviceLike } from "../kernels/gpu-min";
+import {
+  FWHT_BLOCK,
+  isRotatedWeight,
+  needsGdnVGroupedPermute,
+  signBufferFor,
+  type HadamardCtx,
+} from "./hadamard";
 
 const F32 = 4; // bytes per f32
 const Q8_BLOCK = 32; // QK8_0 — activation quant block
@@ -52,7 +61,15 @@ export interface OpCtx {
    * Absent = Q1_0, which is what every existing caller meant before Q2_0 existed.
    */
   quantType?: number;
+  /**
+   * Bonsai 2 Hadamard fold (`prism.hadamard.*`), resolved at load — see model/hadamard.ts.
+   * ABSENT on every Bonsai 1 file, and absent means every rotation helper below is the
+   * identity: no fwht dispatch is ever emitted, so the Bonsai 1 pass is byte-identical.
+   */
+  hadamard?: HadamardCtx;
 }
+
+export { FWHT_BLOCK };
 
 /** A quantized activation tensor: per-32-block scales (act_d) + packed int8 (act_qs). */
 export interface Q8Tensor {
@@ -185,6 +202,200 @@ export function q2q8Matmul(
 }
 
 /**
+ * PTQ1_0 (Bonsai 2 ternary, 28 B / 128 trits, scale LAST) weights × Q8_0 activations. Same
+ * contract and param order as q1q8Matmul; only the kernel differs. The weight buffer is the
+ * raw GGUF bytes (28 B is 4-byte aligned, so there is no upload repack — 7 words/block).
+ * The activation must ALREADY be Hadamard-transformed when the weight is folded — see
+ * rotatedInput(); this kernel is transform-agnostic, exactly as the fork's mul_mat is.
+ */
+export function ptq1q8Matmul(
+  ctx: OpCtx,
+  weightsPtq1: GpuBufferLike,
+  act: Q8Tensor,
+  out: GpuBufferLike,
+  nRows: number,
+  K: number,
+  nCols: number,
+): void {
+  const colTiles = Math.ceil(nCols / 64);
+  const dims = uniform(ctx.device, [{ u32: K }, { u32: nCols }, { u32: nRows }, { u32: colTiles }]);
+  const pipe = ctx.pipelines.get("ptq1_0_q8_0_matmul");
+  const bg = bindGroup(ctx.device, pipe, [weightsPtq1, act.d, act.qs, out, dims]);
+  dispatch1D(ctx.device, pipe, bg, nRows * colTiles * 64, 64);
+}
+
+/**
+ * f32 weights × f32 activations: out[t, o] = Σ_i x[t, i] · W[o, i], W stored [nCols × K]
+ * row-major — exactly the GGUF layout (ne0 = K fastest). NO activation quantization.
+ *
+ * This is the projection for the Bonsai 2 BF16 `ssm_alpha` / `ssm_beta` tensors, which the
+ * upload path widens to f32 (bits << 16, exact — wasp/sink-webgpu.ts). The fork runs them as a
+ * BF16 mul_mat on the UNTRANSFORMED normed input (qwen35.cpp:387-396; ggml-cpu.c:407-412
+ * rounds the activation to BF16 first). Keeping the activation in f32 here is strictly more
+ * precise than the fork (~1e-3 relative), not bit-identical — BONSAI2-FORMAT.md §9(8).
+ * kernel: image_ops.wgsl::matmul_main — one workgroup (64 lanes over K) per (token, output).
+ */
+export function f32Matmul(
+  ctx: OpCtx,
+  weightsF32: GpuBufferLike,
+  x: GpuBufferLike,
+  out: GpuBufferLike,
+  nRows: number,
+  K: number,
+  nCols: number,
+): void {
+  const p = uniform(ctx.device, [{ u32: nRows }, { u32: K }, { u32: nCols }, { u32: 0 }]);
+  const pipe = ctx.pipelines.get("image_ops", "matmul_main");
+  const bg = bindGroup(ctx.device, pipe, [x, weightsF32, out, p]);
+  // ONE WORKGROUP per (token, output) with 64 cooperating lanes — the last arg is 1 on
+  // purpose, for the same reason softmaxAttnBatched documents.
+  dispatch1D(ctx.device, pipe, bg, nRows * nCols, 1);
+}
+
+/**
+ * Blockwise (1024) signed Walsh–Hadamard transform of an activation buffer [nRows × width],
+ * OUT OF PLACE into a fresh scratch buffer (WebGPU forbids read + read_write aliasing, and
+ * the untransformed buffer is still needed by the BF16 alpha/beta projections).
+ *
+ *   forward: x' = H(s ⊙ x) per 1024-block  — fork build_lora_mm, llama-graph.cpp:1504-1538
+ *   inverse: h  = s ⊙ (H z)                — fork token_embd lookup, llama-graph.cpp:2384-2395
+ *
+ * `signBuf` is the f32 ±1 vector for THIS width (feature i uses signs[i]; block b of the row
+ * uses signs[b*1024 .. +1024), fwht.cu:36). `width % 1024 != 0` THROWS, as the fork does at
+ * load (llama-model.cpp:1969-1973). kernel: fwht_1024.wgsl — one workgroup of 256 per
+ * (row, 1024-block); uniform { K, n_rows, sign_offset, inverse }.
+ */
+export function fwhtActivations(
+  ctx: OpCtx,
+  x: GpuBufferLike,
+  nRows: number,
+  width: number,
+  signBuf: GpuBufferLike,
+  inverse = false,
+): GpuBufferLike {
+  if (width % FWHT_BLOCK !== 0) {
+    throw new Error(
+      `bonsai-ops: fwhtActivations width ${width} is not a multiple of the Hadamard block ` +
+        `size ${FWHT_BLOCK}`,
+    );
+  }
+  const out = scratchBuffer(ctx, nRows * width, "fwht_out");
+  const dims = uniform(ctx.device, [
+    { u32: width },
+    { u32: nRows },
+    { u32: 0 },
+    { u32: inverse ? 1 : 0 },
+  ]);
+  const pipe = ctx.pipelines.get("fwht_1024");
+  const bg = bindGroup(ctx.device, pipe, [x, signBuf, out, dims]);
+  const nBlocks = nRows * (width / FWHT_BLOCK);
+  dispatch1D(ctx.device, pipe, bg, nBlocks * 256, 256);
+  return out;
+}
+
+/** gdn_v_grouped permutation geometry for the ssm_out input (fork llama-model.cpp:2080-2090). */
+export interface GdnPermDims {
+  /** per-v-head width = ne0 / ssm_dt_rank (128) */
+  hd: number;
+  /** k-head count = ssm.group_count (16) */
+  nk: number;
+  /** v-heads per k-head = numVHeads / numKHeads (3) */
+  rep: number;
+}
+
+/**
+ * Permute the DeltaNet output from TILED v-head order (v-head h = k + nk·r, the order
+ * deltanet_seq.wgsl / ssm_norm produce) to GROUPED order (h = r + rep·k), per token row:
+ *
+ *   grouped[hd·(r + rep·k) + i] = tiled[hd·(k + nk·r) + i]        (llama-graph.cpp:1521-1527)
+ *
+ * A per-(token, v-head) buffer copy — the same idiom as the [q|gate] deinterleave in
+ * block_full_attn.ts — recorded into the open layer batch so it stays ordered after the
+ * producer and before the fwht that consumes it.
+ */
+export function gdnVGroupedPermute(
+  ctx: OpCtx,
+  tiled: GpuBufferLike,
+  nRows: number,
+  dims: GdnPermDims,
+): GpuBufferLike {
+  const { hd, nk, rep } = dims;
+  const width = hd * nk * rep;
+  const out = scratchBuffer(ctx, nRows * width, "gdn_grouped");
+  const tgt = beginCopies(ctx.device);
+  for (let t = 0; t < nRows; t++) {
+    const rowByte = t * width * F32;
+    for (let r = 0; r < rep; r++) {
+      for (let k = 0; k < nk; k++) {
+        const src = rowByte + hd * (k + nk * r) * F32;
+        const dst = rowByte + hd * (r + rep * k) * F32;
+        tgt.enc.copyBufferToBuffer(tiled, src, out, dst, hd * F32);
+      }
+    }
+  }
+  finishCopies(ctx.device, tgt);
+  return out;
+}
+
+/**
+ * THE activation-side Hadamard insertion point. Returns the buffer to feed to the projection
+ * of `weightNames`: `x` itself when no fold applies (no spec, or none of the names are in
+ * prism.hadamard.weight_names — the Bonsai 1 path, byte-identical), otherwise
+ * `[gdn perm] -> sign -> blockwise WHT` of `x`, computed ONCE for every weight that shares
+ * this activation (the fork memoises per (activation, rot), llama-graph.cpp:1512-1519:
+ * attn_qkv+attn_gate, attn_q/k/v, ffn_gate+ffn_up each share one transform).
+ *
+ * `width` is the weights' INPUT width (= K of the projection); the sign vector is chosen by
+ * it, which is the fork's rule (llama-model.cpp:2034-2040).
+ *
+ * A group whose names disagree (some folded, some not) is refused rather than guessed at:
+ * the fork would transform them separately, and a caller that wants that passes the names
+ * in separate calls.
+ *
+ * `gdn` must be passed for the ssm_out projection; when the file sets gdn_v_grouped the
+ * permutation is applied FIRST (llama-graph.cpp:1521-1527), and its absence there throws
+ * because a grouped-column weight fed tiled columns yields fluent garbage, not an error.
+ */
+export function rotatedInput(
+  ctx: OpCtx,
+  x: GpuBufferLike,
+  nRows: number,
+  width: number,
+  weightNames: readonly string[],
+  gdn?: GdnPermDims,
+): GpuBufferLike {
+  const h = ctx.hadamard;
+  if (!h) return x;
+  const rotated = weightNames.filter((n) => isRotatedWeight(h, n));
+  if (rotated.length === 0) return x;
+  if (rotated.length !== weightNames.length) {
+    throw new Error(
+      `bonsai-ops: rotatedInput: weights sharing one activation disagree on the Hadamard ` +
+        `fold — folded: [${rotated.join(", ")}], not folded: ` +
+        `[${weightNames.filter((n) => !isRotatedWeight(h, n)).join(", ")}]. Transform them ` +
+        `in separate calls.`,
+    );
+  }
+  let src = x;
+  const perm = weightNames.filter((n) => needsGdnVGroupedPermute(h, n));
+  if (perm.length > 0) {
+    if (!gdn) {
+      throw new Error(
+        `bonsai-ops: rotatedInput: '${perm[0]}' needs the gdn_v_grouped permutation but the ` +
+          `caller passed no head geometry`,
+      );
+    }
+    if (gdn.hd * gdn.nk * gdn.rep !== width) {
+      throw new Error(
+        `bonsai-ops: rotatedInput: gdn geometry ${gdn.hd}x${gdn.nk}x${gdn.rep} != width ${width}`,
+      );
+    }
+    src = gdnVGroupedPermute(ctx, x, nRows, gdn);
+  }
+  return fwhtActivations(ctx, src, nRows, width, signBufferFor(h, ctx.device, width), false);
+}
+
+/**
  * Quantize `x` (nRows×K) then matmul by a quantized weight → out (nRows×nCols).
  *
  * NAME KEPT despite now dispatching on `ctx.quantType`: renaming would touch ~20 call sites
@@ -204,10 +415,21 @@ export function projectQ1(
   nCols: number,
 ): void {
   const act = quantizeQ8(ctx, x, nRows * K);
-  if (ctx.quantType === GgmlType.Q2_0) {
+  if (ctx.quantType === GgmlType.Q2_0 || ctx.quantType === GgmlType.PQ2_0) {
+    // PQ2_0 (142) is byte-identical to the legacy Prism Q2_0 layout — same kernel.
     q2q8Matmul(ctx, weights, act, out, nRows, K, nCols);
-  } else {
+  } else if (ctx.quantType === GgmlType.PTQ1_0) {
+    ptq1q8Matmul(ctx, weights, act, out, nRows, K, nCols);
+  } else if (ctx.quantType === undefined || ctx.quantType === GgmlType.Q1_0) {
     q1q8Matmul(ctx, weights, act, out, nRows, K, nCols);
+  } else {
+    // Fail LOUD — the context type is validated by weightQuantType(), so reaching this
+    // means a caller built a context by hand with a type no kernel exists for.
+    throw new Error(
+      `projectQ1: unsupported context quant type ${ctx.quantType} ` +
+        `(supported: Q1_0=${GgmlType.Q1_0}, Q2_0=${GgmlType.Q2_0}, PQ2_0=${GgmlType.PQ2_0}, ` +
+        `PTQ1_0=${GgmlType.PTQ1_0})`,
+    );
   }
 }
 
@@ -233,17 +455,27 @@ export function projectQuantized(
   nCols: number,
   quantType: number,
 ): void {
+  // Float weights (Bonsai 2 BF16 ssm_alpha/ssm_beta, widened to f32 on upload; F32 as-is)
+  // take the f32 path with NO activation quantization. F16 is not converted on upload and
+  // therefore not accepted here — the throw below names it.
+  if (quantType === GgmlType.BF16 || quantType === GgmlType.F32) {
+    f32Matmul(ctx, weights, x, out, nRows, K, nCols);
+    return;
+  }
   const act = quantizeQ8(ctx, x, nRows * K);
-  if (quantType === GgmlType.Q2_0) {
+  if (quantType === GgmlType.Q2_0 || quantType === GgmlType.PQ2_0) {
     q2q8Matmul(ctx, weights, act, out, nRows, K, nCols);
   } else if (quantType === GgmlType.Q1_0) {
     q1q8Matmul(ctx, weights, act, out, nRows, K, nCols);
+  } else if (quantType === GgmlType.PTQ1_0) {
+    ptq1q8Matmul(ctx, weights, act, out, nRows, K, nCols);
   } else {
     // Fail LOUD. A silently-wrong quant path produces plausible text, so an unknown type must
     // stop the load rather than be guessed at.
     throw new Error(
       `projectQuantized: unsupported weight quant type ${quantType} ` +
-      `(supported: Q1_0=${GgmlType.Q1_0}, Q2_0=${GgmlType.Q2_0})`,
+      `(supported: Q1_0=${GgmlType.Q1_0}, Q2_0=${GgmlType.Q2_0}, PQ2_0=${GgmlType.PQ2_0}, ` +
+      `PTQ1_0=${GgmlType.PTQ1_0}, BF16=${GgmlType.BF16}, F32=${GgmlType.F32})`,
     );
   }
 }

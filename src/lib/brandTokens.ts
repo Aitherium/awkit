@@ -258,8 +258,7 @@ export const AITHERIUM_BRAND: BrandTokens = {
     tagline: 'The Element of Creation',
     symbol: 'Ai',
     logo_initial: 'Ai',
-    atomic_number: 47,
-    atomic_mass: '208.043',
+    atomic_number: 0,
     favicon: '/assets/brand-assets/aitherium-logo/favicon.ico',
   },
   palette: {

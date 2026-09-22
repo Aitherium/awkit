@@ -25,6 +25,7 @@ import type { Qwen35Config, LayerKind } from "./config";
 import type { WeightStore } from "./weights";
 import type { KvMode } from "./kvcache";
 import type { SsmState } from "./ssm_state";
+import type { HadamardCtx } from "./hadamard";
 
 /** The KV slice a block reads back after an append — shared by the F32 and 4-bit caches. */
 export interface KvLayerCommon {
@@ -80,6 +81,14 @@ export interface LayerContext {
    * Set it wherever you build a LayerContext.
    */
   quantType?: number;
+  /**
+   * Bonsai 2 Hadamard fold — `createHadamardCtx(device, meta.resolveHadamard())` at load,
+   * ABSENT on a Bonsai 1 file. Satisfies {@link OpCtx.hadamard}: every block projection asks
+   * `ops.rotatedInput` whether its weight is folded, and with this unset nothing is
+   * transformed. A Bonsai 2 context that forgets it runs the folded weights on untransformed
+   * activations: no crash, fluent garbage. Set it wherever you build a LayerContext.
+   */
+  hadamard?: HadamardCtx;
 }
 
 export interface BlockIO {

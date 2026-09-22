@@ -5,7 +5,7 @@ import React from 'react'
 export interface PortalSwitcherProps {
   /** Current context: 'portal' or 'shop' */
   current: 'portal' | 'shop'
-  /** Portal URL (e.g. https://portal.aitherium.com) */
+  /** Portal URL (e.g. https://api.aitherium.com) */
   portalUrl?: string
   /** Shop/storefront URL (e.g. https://shop.aitherium.com) */
   shopUrl?: string
@@ -19,7 +19,7 @@ export interface PortalSwitcherProps {
  */
 export default function PortalSwitcher({
   current,
-  portalUrl = 'https://portal.aitherium.com',
+  portalUrl = 'https://api.aitherium.com',
   shopUrl = 'https://shop.aitherium.com',
   workspaceName = 'Workspace',
 }: PortalSwitcherProps) {

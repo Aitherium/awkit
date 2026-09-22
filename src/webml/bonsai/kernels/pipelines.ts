@@ -22,6 +22,12 @@ export type KernelName =
   | "q1_0_q8_0_matmul"
   | "q2_0_dequant"
   | "q2_0_q8_0_matmul"
+  // Bonsai 2 (PTQ1_0 = ggml type 143, 28 B / 128 trits, scale LAST). PQ2_0 (142) is
+  // byte-identical to the Q2_0 pair above and aliases onto it — no separate kernel.
+  | "ptq1_0_dequant"
+  | "ptq1_0_q8_0_matmul"
+  // Blockwise (1024) signed Walsh–Hadamard activation transform for Hadamard-folded weights.
+  | "fwht_1024"
   | "kv_quant_4bit"
   | "rmsnorm"
   | "rope_imrope"
@@ -45,6 +51,9 @@ export const KERNEL_NAMES: KernelName[] = [
   "q1_0_q8_0_matmul",
   "q2_0_dequant",
   "q2_0_q8_0_matmul",
+  "ptq1_0_dequant",
+  "ptq1_0_q8_0_matmul",
+  "fwht_1024",
   "kv_quant_4bit",
   "rmsnorm",
   "rope_imrope",

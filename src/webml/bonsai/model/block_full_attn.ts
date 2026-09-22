@@ -41,6 +41,7 @@ import {
   residualAdd,
   mulSigmoidInplace,
   scratchBuffer,
+  rotatedInput,
 } from "./ops";
 import type { LayerContext, BlockIO } from "./layers";
 import { blockTensorNames } from "./layers";
@@ -123,15 +124,18 @@ export async function runFullAttnBlock(ctx: LayerContext, layer: number, io: Blo
   // waste nTokens*nHeads*headDim floats per dense layer for a buffer nothing ever reads.
   const tempG = gated ? scratchBuffer(ctx, nTokens * nHeads * headDim, "tempG") : null;
 
-  projectQ1(ctx, h1, attnKW, tempK, nTokens, embeddingLength, nHeadsKv * headDim);
-  projectQ1(ctx, h1, attnVW, tempV, nTokens, embeddingLength, nHeadsKv * headDim);
+  // BONSAI 2: attn_q / attn_k / attn_v are Hadamard-folded along the 5120-wide input and
+  // share ONE sign⊙WHT transform of h1 (fork memoises per activation). Identity on Bonsai 1.
+  const h1r = rotatedInput(ctx, h1, nTokens, embeddingLength, [attnQName, attnKName, attnVName]);
+  projectQ1(ctx, h1r, attnKW, tempK, nTokens, embeddingLength, nHeadsKv * headDim);
+  projectQ1(ctx, h1r, attnVW, tempV, nTokens, embeddingLength, nHeadsKv * headDim);
 
   if (gated) {
     // Qwen3.5's attn_q.weight is [n_embd, 2*nHeads*headDim]: per head the output is
     // INTERLEAVED [query(headDim) | gate(headDim)], so project the full double width and
     // split it. Stock qwen3 has no gate and projects straight into tempQ below.
     const tempQG = scratchBuffer(ctx, nTokens * nHeads * headDim * 2, "tempQG");
-    projectQ1(ctx, h1, attnQW, tempQG, nTokens, embeddingLength, nHeads * headDim * 2);
+    projectQ1(ctx, h1r, attnQW, tempQG, nTokens, embeddingLength, nHeads * headDim * 2);
 
     // Deinterleave [q|g] per head via buffer copies. Recorded into the open layer batch so
     // these copies stay ordered after the projectQ1 that wrote tempQG (beginCopies).
@@ -149,7 +153,7 @@ export async function runFullAttnBlock(ctx: LayerContext, layer: number, io: Blo
     finishCopies(device, tgt);
   } else {
     // Plain qwen3: attn_q is [n_embd, nHeads*headDim]. No gate, no split.
-    projectQ1(ctx, h1, attnQW, tempQ, nTokens, embeddingLength, nHeads * headDim);
+    projectQ1(ctx, h1r, attnQW, tempQ, nTokens, embeddingLength, nHeads * headDim);
   }
 
   // Step 2b: Per-head QK-RMSNorm (Qwen3 q_norm / k_norm). A single [headDim] weight is
@@ -194,7 +198,10 @@ export async function runFullAttnBlock(ctx: LayerContext, layer: number, io: Blo
 
   // Step 6: Project attention output via attn_output.weight
   const attnOutProj = scratchBuffer(ctx, nTokens * embeddingLength, "attn_out_proj");
-  projectQ1(ctx, attnOut, attnOutW, attnOutProj, nTokens, nHeads * headDim, embeddingLength);
+  // BONSAI 2: attn_output is folded along its 6144-wide input (24 heads x 256) — its own
+  // sign vector, NO gdn permutation (the fork sets perm dims only for ".ssm_out.").
+  const attnOutR = rotatedInput(ctx, attnOut, nTokens, nHeads * headDim, [attnOutName]);
+  projectQ1(ctx, attnOutR, attnOutW, attnOutProj, nTokens, nHeads * headDim, embeddingLength);
 
   // Step 7: Residual add to hidden state
   residualAdd(ctx, hidden, attnOutProj, nTokens * embeddingLength);
@@ -210,8 +217,9 @@ export async function runFullAttnBlock(ctx: LayerContext, layer: number, io: Blo
   // Step 2: Project gate and up
   const ffnGate = scratchBuffer(ctx, nTokens * config.feedForwardLength, "ffn_gate");
   const ffnUp = scratchBuffer(ctx, nTokens * config.feedForwardLength, "ffn_up");
-  projectQ1(ctx, h2, ffnGateW, ffnGate, nTokens, embeddingLength, config.feedForwardLength);
-  projectQ1(ctx, h2, ffnUpW, ffnUp, nTokens, embeddingLength, config.feedForwardLength);
+  const h2r = rotatedInput(ctx, h2, nTokens, embeddingLength, [ffnGateName, ffnUpName]);
+  projectQ1(ctx, h2r, ffnGateW, ffnGate, nTokens, embeddingLength, config.feedForwardLength);
+  projectQ1(ctx, h2r, ffnUpW, ffnUp, nTokens, embeddingLength, config.feedForwardLength);
 
   // Step 3: SwiGLU: silu(gate) * up
   const ffnGatedUp = scratchBuffer(ctx, nTokens * config.feedForwardLength, "ffn_gated_up");
@@ -219,7 +227,8 @@ export async function runFullAttnBlock(ctx: LayerContext, layer: number, io: Blo
 
   // Step 4: Project down
   const ffnOut = scratchBuffer(ctx, nTokens * embeddingLength, "ffn_out");
-  projectQ1(ctx, ffnGatedUp, ffnDownW, ffnOut, nTokens, config.feedForwardLength, embeddingLength);
+  const ffnGatedUpR = rotatedInput(ctx, ffnGatedUp, nTokens, config.feedForwardLength, [ffnDownName]);
+  projectQ1(ctx, ffnGatedUpR, ffnDownW, ffnOut, nTokens, config.feedForwardLength, embeddingLength);
 
   // Step 5: Residual add to hidden state
   residualAdd(ctx, hidden, ffnOut, nTokens * embeddingLength);

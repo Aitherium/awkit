@@ -197,7 +197,7 @@ export class RamKvCache {
     // mapAsync on a non-mappable buffer rejects, so this method could never once
     // have completed on a real device.
     //
-    // Nothing caught it because the whole module is unreachable (D-1855) AND the
+    // Nothing caught it because the whole module is unreachable from production AND the
     // test double's `mapAsync` is a no-op that always resolves — a mock that
     // cannot express the constraint the real API enforces. Read-back therefore
     // goes through a buffer created for reading: COPY_DST | MAP_READ, filled by a

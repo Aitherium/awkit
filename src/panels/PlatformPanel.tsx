@@ -138,7 +138,7 @@ export default function PlatformPanel({ apiBase = '/api/platform' }: PlatformPan
             opacity: syncing ? 0.5 : 1 }}>
             Reindex Knowledge
           </button>
-          <a href={status?.portal || 'https://portal.aitherium.com'} target="_blank" rel="noopener"
+          <a href={status?.portal || 'https://api.aitherium.com'} target="_blank" rel="noopener"
             style={{ padding: '0.6rem 1rem', background: 'var(--accent-primary)', color: 'var(--bg-deep)',
               borderRadius: 'var(--radius)', fontSize: '0.8rem', fontWeight: 600, textDecoration: 'none',
               display: 'inline-flex', alignItems: 'center' }}>

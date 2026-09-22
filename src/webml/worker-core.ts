@@ -73,7 +73,17 @@ export function runWebMLWorker(scope: WorkerScope, deps: WebMLWorkerDeps): void 
     const req = e.data;
     if (!runtimeHandler) {
       if (req.type === "load") {
-        void handleFirstLoad(req.modelId);
+        // A throw anywhere in the load path (runtime init, model lookup, GPU
+        // setup) must NOT kill the worker silently -- an unhandled rejection in
+        // a worker posts nothing, and the loader would sit at "loading 0%"
+        // until its no-message timeout. Post the error instead (measured
+        // 2026-08-27: this was the last silent-death path).
+        void handleFirstLoad(req.modelId).catch((err: unknown) => {
+          scope.postMessage({
+            type: "error",
+            message: "runtime failed to start: " + (err instanceof Error ? err.message : String(err)),
+          });
+        });
       }
     } else {
       runtimeHandler(req);

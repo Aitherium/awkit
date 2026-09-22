@@ -67,9 +67,6 @@ export interface MicroEmbedderConfig {
   modelId: string
   /** Embedding dimension the model emits. */
   dim: number
-  /** transformers.js `model_file_name`: the ONNX stem under onnx/ (default "model"). A
-   *  release-unique stem keeps a same-named file in another release from answering. */
-  modelFile?: string
 }
 
 /**
@@ -110,15 +107,11 @@ export class MicroEmbedder implements Embedder {
       // ONNX or not mirrored refuses here.
       try {
         const { env, pipeline } = await import("@huggingface/transformers")
-        // Derive host + release prefix from the ONE config URL, so switching the model
-        // (microembedder-v1 -> v2, 2026-09-03) is a change to SESSION_MEMORY_MODEL only.
-        const mirror = new URL(this.config.url)
-        env.remoteHost = mirror.origin
-        env.remotePathTemplate = `${mirror.pathname.replace(/^\/+|\/+$/g, "")}/{file}`
+        env.remoteHost = "https://artifact.aitherium.com"
+        env.remotePathTemplate = "microembedder-v1/{file}"
         this.model = await pipeline("feature-extraction", this.config.modelId, {
           device: "wasm",
           dtype: "q8",
-          ...(this.config.modelFile ? { model_file_name: this.config.modelFile } : {}),
           local_files_only: false,
           cache_dir: "aither-session-memory",
         })

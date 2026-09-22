@@ -23,6 +23,8 @@ import { isPanelUsable, type PanelState } from './panel-state'
 // Direct imports — no lazy loading complexity needed since tree-shaking
 // handles unused panels and these are already small modules.
 
+import ExperimentsPanel from './ExperimentsPanel'
+import TrainingJobsPanel from './TrainingJobsPanel'
 import NanoBrainPanel from './NanoBrainPanel'
 import AutonomyRoadmapPanel from './AutonomyRoadmapPanel'
 import SpritePanel from './SpritePanel'
@@ -76,6 +78,8 @@ import CertificatesPanel from './CertificatesPanel'
 import PlatformPanel from './PlatformPanel'
 import LLMConfigPanel from './LLMConfigPanel'
 import SettingsPanel from './SettingsPanel'
+import AccessPolicyPanel from './AccessPolicyPanel'
+import DoorPeoplePanel from './DoorPeoplePanel'
 import PreferencesPanel from './PreferencesPanel'
 import WorkspaceAdminPanel from './WorkspaceAdminPanel'
 import AgentsPanel from './AgentsPanel'
@@ -139,6 +143,15 @@ import MigrationPanel from './MigrationPanel'
 import OnboardingPanel from './OnboardingPanel'
 import NotebooksPanel from './NotebooksPanel'
 import DecisionsPanel from './DecisionsPanel'
+import SessionsPanel from './SessionsPanel'
+import TerminalPanel from './TerminalPanel'
+import SandboxPanel from './SandboxPanel'
+import AwrtifactPanel from './AwrtifactPanel'
+import GymPanel from './GymPanel'
+// registry.ts has advertised this since 2026-09-10 and the component existed;
+// it was never imported here, so the panel rendered "no panel wired up" (RB010).
+import VolunteerComputePanel from './VolunteerComputePanel'
+import DiscordPanel from './DiscordPanel'
 import TaxDeskPanel from './TaxDeskPanel'
 
 import PortalShell from './PortalShell'
@@ -214,6 +227,8 @@ export const PANEL_COMPONENTS: Record<string, PanelEntry> = {
   'platform':            { component: PlatformPanel },
   'llm-config':          { component: LLMConfigPanel },
   'settings':            { component: SettingsPanel },
+  'access-policy':       { component: AccessPolicyPanel },
+  'door-people':         { component: DoorPeoplePanel },
   'preferences':         { component: PreferencesPanel },
   'workspace-admin':     { component: WorkspaceAdminPanel },
   'inference-config':    { component: InferenceConfigPanel },
@@ -274,11 +289,20 @@ export const PANEL_COMPONENTS: Record<string, PanelEntry> = {
   // was never imported here -- so the panel resolved to nothing and rendered
   // 'no panel wired up' (RB010). Built, declared, unreachable.
   'decisions':           { component: DecisionsPanel },
+  'sessions':            { component: SessionsPanel },
+  'terminal':            { component: TerminalPanel },
+  'sandbox':             { component: SandboxPanel },
+  'awrtifact':           { component: AwrtifactPanel },
+  'awgym':               { component: GymPanel },
+  'volunteer-compute':   { component: VolunteerComputePanel },
+  'discord':             { component: DiscordPanel },
   // Built, but unwired until 2026-08-01 — every one of these had a component
   // file sitting next to this map while the registry advertised the panel and
   // this map did not implement it. RB010 read that as "unimplemented"; the
   // implementations existed, so the defect was the WIRING, not the build.
   'nanobrain':           { component: NanoBrainPanel },
+  'experiments':         { component: ExperimentsPanel },
+  'training-jobs':       { component: TrainingJobsPanel },
   'autonomy-roadmap':    { component: AutonomyRoadmapPanel },
   'aither-sprite':       { component: SpritePanel },
   'approvals-inbox':     { component: ApprovalsInboxPanel },

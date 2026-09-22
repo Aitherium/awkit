@@ -310,6 +310,8 @@ export function runBonsaiWorker(scope: WorkerScope, deps: BonsaiWorkerDeps): voi
     stopped = false;
     try {
       const { tokenizer, config, device, pipelines, weights } = runtime.loaded;
+      // Bonsai 2 fold, or undefined on Bonsai 1 (an OpCtx without it runs no fwht at all).
+      const hadamard = runtime.loaded.hadamard ?? undefined;
       const maxTokens = req.maxTokens ?? 256;
       // Bonsai model-card defaults. Greedy (the old hardcoded temperature 0) makes a 1-bit
       // 27B loop on itself — that is the "1, 1, 1, 1" tail the owner screenshotted.
@@ -697,6 +699,7 @@ export function runBonsaiWorker(scope: WorkerScope, deps: BonsaiWorkerDeps): voi
         kvMode,
         ssm: ssmState,
         quantType,
+        hadamard,
       };
 
       // Prefill phase: embed all prompt tokens and run all blocks
@@ -993,7 +996,7 @@ export function runBonsaiWorker(scope: WorkerScope, deps: BonsaiWorkerDeps): voi
       // Only sampling runs through this one (no matmul), but it carries quantType anyway:
       // an OpCtx without it defaults to the Q1_0 kernel, so the day someone adds a
       // projection here the bug is a silently wrong answer, not an error.
-      const opCtx = { device: device as any, pipelines, quantType };
+      const opCtx = { device: device as any, pipelines, quantType, hadamard };
       // PER-PHASE DECODE TIMING (`?timing=1` in the harness → __BONSAI_TIMING).
       // The tok/s clustering across sizes (4B 6.3 / 8B 6.5 / 27B 4.1 — near-identical
       // despite 6.6x the weights) says a fixed per-token cost dominates, not compute. The

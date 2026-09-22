@@ -8,7 +8,7 @@
  * KV WINDOW PLANNING — which slices of a host-resident KV cache get streamed to
  * VRAM, in what order, for one attention call.
  *
- * Part of RAM-KV offload (D-1855). The master cache lives in host memory; only a
+ * Part of RAM-KV offload. The master cache lives in host memory; only a
  * window of positions is resident on the GPU at a time. `refKv4SoftmaxAttnChunked`
  * (kernels/reference.ts) proved the ALGEBRA is safe — online softmax makes a
  * window boundary bit-exact, not approximate. This module owns the other half:

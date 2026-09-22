@@ -31,16 +31,46 @@ import type { OpCtx } from "./ops";
 import type { Qwen35Config } from "./config";
 import type { WeightStore } from "./weights";
 import { readback, createStorage } from "../kernels/dispatch";
-import { f32Buffer, rmsnorm, projectQuantized } from "./ops";
+import { f32Buffer, rmsnorm, projectQuantized, rotatedInput } from "./ops";
 import {
   readQ1Block,
   dequantQ1Block,
   readQ2Block,
   dequantQ2Block,
+  readPtq1Block,
+  dequantPtq1Block,
 } from "../kernels/reference";
-// QK1_0 == QK2_0 == 128 weights/block, so one blocksPerRow serves both; only the BYTE
-// stride differs (20 vs 36 on GPU) and that is chosen from the tensor's declared type below.
+import { fwhtInverseRow } from "../kernels/fwht_reference";
+import { isInverseTable, isRotatedWeight } from "./hadamard";
+// QK1_0 == QK2_0 == QK_PTQ1_0 == 128 weights/block, so one blocksPerRow serves all; only the
+// BYTE stride differs (20 / 36 / 28 on GPU) and that is chosen from the tensor's declared type.
 import { QK1_0, GgmlType } from "../gguf/types";
+
+/**
+ * GPU byte stride + CPU decoder per embedding-table quant type. Strides come from the upload
+ * repack in wasp/sink-webgpu.ts: Q1_0 18 -> 20, Q2_0/PQ2_0 34 -> 36, PTQ1_0 28 -> 28 (no pad).
+ * Anything else THROWS — a wrong stride does not crash, it yields fluent garbage.
+ */
+function embedDecoder(embedType: number, name: string): {
+  gpuBytesPerBlock: number;
+  dequant: (row: Uint8Array, off: number) => Float32Array;
+} {
+  switch (embedType) {
+    case GgmlType.Q1_0:
+      return { gpuBytesPerBlock: 20, dequant: (r, o) => dequantQ1Block(readQ1Block(r, o)) };
+    case GgmlType.Q2_0:
+    case GgmlType.PQ2_0:
+      return { gpuBytesPerBlock: 36, dequant: (r, o) => dequantQ2Block(readQ2Block(r, o)) };
+    case GgmlType.PTQ1_0:
+      return { gpuBytesPerBlock: 28, dequant: (r, o) => dequantPtq1Block(readPtq1Block(r, o)) };
+    default:
+      throw new Error(
+        `bonsai-embed: '${name}' has unsupported quant type ${embedType} ` +
+          `(supported: Q1_0=${GgmlType.Q1_0}, Q2_0=${GgmlType.Q2_0}, PQ2_0=${GgmlType.PQ2_0}, ` +
+          `PTQ1_0=${GgmlType.PTQ1_0})`,
+      );
+  }
+}
 
 /**
  * Gather token embedding rows and write to GPU buffer.
@@ -94,16 +124,27 @@ export async function embedTokens(
   // to notice, and exactly the class D-812 cost days to. GPU strides come from the repack in
   // tensors/upload.ts: Q1_0 20 bytes (18 used + 2 pad), Q2_0 36 (34 + 2).
   const embedType = weights.typeOf(embeddingName);
-  const isQ2 = embedType === GgmlType.Q2_0;
-  if (!isQ2 && embedType !== GgmlType.Q1_0) {
-    throw new Error(
-      `bonsai-embed: '${embeddingName}' has unsupported quant type ${embedType} ` +
-        `(supported: Q1_0=${GgmlType.Q1_0}, Q2_0=${GgmlType.Q2_0})`,
-    );
-  }
-  const GPU_BYTES_PER_BLOCK = isQ2 ? 36 : 20;
+  const { gpuBytesPerBlock: GPU_BYTES_PER_BLOCK, dequant } = embedDecoder(embedType, embeddingName);
   const blocksPerRow = embeddingLength / QK1_0;
   const bytesPerRow = blocksPerRow * GPU_BYTES_PER_BLOCK;
+
+  // BONSAI 2: a Hadamard-latent table stores ROTATED rows z = H·S·h, and the primal
+  // embedding is restored right after the lookup as h = s ⊙ (H z) — WHT first, signs AFTER,
+  // the reverse of the activation-side order (fork llama-graph.cpp:2384-2395). Done on the
+  // CPU here because the rows are already on the CPU: this gather dequantizes on the host
+  // and writes f32 to the GPU once. Gated on inverse_weight_names, exactly like the fork:
+  // a rotated table whose flag is missing loads and speaks fluent garbage, which is the
+  // fork's behaviour too and not something the runtime can detect.
+  const hadamard = ctx.hadamard;
+  const inverseSpec = isInverseTable(hadamard, embeddingName) ? hadamard!.spec : null;
+  if (hadamard && isRotatedWeight(hadamard, embeddingName)) {
+    // The loader forbids a name in both lists; a table in weight_names alone would mean the
+    // EMBEDDING lookup needs the forward fold on its INPUT, which has no meaning for a gather.
+    throw new Error(
+      `bonsai-embed: '${embeddingName}' is listed in prism.hadamard.weight_names; an ` +
+        `embedding table can only be an inverse_weight_names entry`,
+    );
+  }
 
   // Create an f32 output buffer on CPU to accumulate dequantized embeddings.
   const f32Out = new Float32Array(nTokens * embeddingLength);
@@ -132,16 +173,16 @@ export async function embedTokens(
     const rowBytes = await readback(ctx.device, stagingBuffer, bytesPerRow);
     const rowU8 = new Uint8Array(rowBytes);
 
-    // Dequantize: extract Q1_0 blocks and convert to f32.
+    // Dequantize: extract the quant blocks and convert to f32.
+    const rowOut = t * embeddingLength;
     for (let b = 0; b < blocksPerRow; b++) {
-      const blockStart = b * GPU_BYTES_PER_BLOCK;
-      const dequantized = isQ2
-        ? dequantQ2Block(readQ2Block(rowU8, blockStart))
-        : dequantQ1Block(readQ1Block(rowU8, blockStart));
-
+      const dequantized = dequant(rowU8, b * GPU_BYTES_PER_BLOCK);
       // Copy this block's 128 f32 values into the output row.
-      const outOffset = t * embeddingLength + b * QK1_0;
-      f32Out.set(dequantized, outOffset);
+      f32Out.set(dequantized, rowOut + b * QK1_0);
+    }
+    if (inverseSpec) {
+      // h = s ⊙ (H z) per 1024-block, 5120-wide sign vector (keyed by the table's ne[0]).
+      f32Out.set(fwhtInverseRow(f32Out, embeddingLength, inverseSpec, rowOut), rowOut);
     }
   }
 
@@ -237,6 +278,20 @@ export async function projectLogits(
 
   const headWeights = weights.get(headWeightName);
 
+  // BONSAI 2: `output.weight` is in prism.hadamard.weight_names, so the LM head input — the
+  // final normed hidden state — gets sign + blockwise WHT like every other folded projection
+  // (fork qwen35.cpp:248 routes model.output through build_lora_mm). A weight-TIED head
+  // would be token_embd, which is an INVERSE table, not a forward-folded one: refuse that
+  // combination rather than guess a transform for it.
+  if (usingWeightTie && ctx.hadamard && isInverseTable(ctx.hadamard, headWeightName)) {
+    throw new Error(
+      `bonsai-lmhead: output.weight is absent and the tied '${headWeightName}' is a ` +
+        `Hadamard-latent (inverse) table; a tied LM head over a rotated embedding table is ` +
+        `not a supported combination`,
+    );
+  }
+  const headInput = rotatedInput(ctx, normedHidden, 1, embeddingLength, [headWeightName]);
+
   // Project normed_hidden [1 × embeddingLength] through head weights [vocabSize × embeddingLength]
   // to get logits [vocabSize].
   const logits = f32Buffer(ctx.device, vocabSize, "logits");
@@ -247,7 +302,7 @@ export async function projectLogits(
   // type from the header costs nothing and removes the assumption.
   projectQuantized(
     ctx,
-    normedHidden,
+    headInput,
     headWeights,
     logits,
     1,

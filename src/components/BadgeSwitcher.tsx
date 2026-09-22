@@ -26,10 +26,10 @@ interface PropertyDef {
 }
 
 const DEFAULT_PROPERTIES: PropertyDef[] = [
-  { key: 'portal', badge: 'portal:admin', label: 'Portal', url: 'https://portal.aitherium.com' },
+  { key: 'portal', badge: 'portal:admin', label: 'Portal', url: 'https://api.aitherium.com' },
   { key: 'veil', badge: 'veil:admin', label: 'Veil', url: 'https://veil.aitherium.com' },
   { key: 'shop', badge: 'shop:admin', label: 'Shop', url: 'https://shop.aitherium.com/admin' },
-  { key: 'workspace', badge: 'workspace:admin', label: 'Workspace', url: 'https://portal.aitherium.com/workspace/dashboard' },
+  { key: 'workspace', badge: 'workspace:admin', label: 'Workspace', url: 'https://api.aitherium.com/workspace/dashboard' },
 ]
 
 export interface BadgeSwitcherProps {

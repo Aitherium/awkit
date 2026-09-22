@@ -210,7 +210,7 @@ export function createIdentityTransport(opts: IdentityTransportOptions): AuthTra
 
         // Registration leaves the flow deliberately: the portal owns sign-up,
         // and coming back through the app restarts a clean authorize request.
-        registerUrl: () => 'https://portal.aitherium.com/register',
-        forgotPasswordUrl: () => 'https://portal.aitherium.com/forgot-password',
+        registerUrl: () => 'https://api.aitherium.com/register',
+        forgotPasswordUrl: () => 'https://api.aitherium.com/forgot-password',
     }
 }

@@ -60,10 +60,7 @@ export * from "./session-memory/store";
 export * from "./session-memory/embedder";
 export * from "./session-memory/capture";
 export { SessionMemory } from "./session-memory";
+export * from "./sleep-time-memory";
+export * from "./chat-memory";
+export { sessionMemorySleepStore } from "./session-memory/sleep-time";
 export type { SessionMemoryOptions } from "./session-memory";
-
-// The on-device CODE-SEARCH embedder (aither-code-embed): the pure half only — model
-// facts, query/document preparation, normalisation and the wire types. The worker that
-// runs it lives in the consuming app (Veil's code-embed-wasm-worker.ts), same rule as
-// worker-core and the session-memory embed worker: never bundled onto the main thread.
-export * from "./code-embed";

@@ -1,0 +1,8 @@
+# Generated artifacts — must never ride the build context.
+# Measured 2026-08-27: two stale tarballs (awkit-0.1.0.tgz,
+# restamped-aitheros-portal-kit-0.1.0.tgz) in this tree made the gargbot
+# Dockerfile's `mv awkit-*.tgz` match TWO files and fail the build. Pack
+# fresh inside the image; a stale copy in the context is a lie waiting to
+# ship. node_modules is excluded too (installed fresh per image).
+node_modules
+*.tgz

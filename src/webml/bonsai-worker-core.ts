@@ -96,10 +96,12 @@ export async function initBonsaiRuntime(scope: WorkerScope) {
       throw new Error("WebGPU not available on this browser");
     }
     let adapter = await gpu.requestAdapter({ powerPreference: "high-performance" });
+    let forcedFallback = false;
     if (!adapter) {
       // Chrome never volunteers the software rasteriser — ask for it explicitly
       // rather than reporting "no GPU" on a machine that can still run (slowly).
       adapter = await gpu.requestAdapter({ forceFallbackAdapter: true }).catch(() => null);
+      forcedFallback = adapter !== null;
     }
     if (!adapter) {
       throw new Error("No WebGPU adapter found");
@@ -126,8 +128,28 @@ export async function initBonsaiRuntime(scope: WorkerScope) {
     //    worker entry, was capped. A phone renders its compositor on the same GPU
     //    and has no watchdog to reset the driver, so an uncapped packet freezes
     //    the DEVICE, not the tab.
+    //    And the CLASS has to know about the fallback, or the budget is computed for
+    //    the wrong hardware. `isFallbackAdapter` is the field classifyAdapter reads
+    //    FIRST and cannot derive -- a software rasteriser reports an EMPTY vendor,
+    //    which this classifier routes down the DISCRETE fast path, so SwiftShader was
+    //    being treated as a real GPU (~125x slower, silent). Read all three sources:
+    //    the field lives on the ADAPTER in the shipped Chrome IDL and has been moving
+    //    toward adapter.info, and the browser can hand back a fallback unasked, in
+    //    which case our own `forcedFallback` is false.
     const mobile = isMobileDevice();
-    const budget = maxDispatchesPerSubmit(classifyAdapter(adapter.info), {
+    const adapterAny = adapter as unknown as { isFallbackAdapter?: boolean };
+    const adapterInfo = (adapter.info ?? {}) as {
+      vendor?: string;
+      architecture?: string;
+      isFallbackAdapter?: boolean;
+    };
+    const budget = maxDispatchesPerSubmit(classifyAdapter({
+      ...adapterInfo,
+      isFallbackAdapter:
+        forcedFallback ||
+        adapterAny.isFallbackAdapter === true ||
+        adapterInfo.isFallbackAdapter === true,
+    }), {
       windowsTdr: typeof navigator !== "undefined" && /Windows/i.test(navigator.userAgent ?? ""),
       mobile,
     });

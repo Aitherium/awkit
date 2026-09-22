@@ -21,9 +21,11 @@
  */
 import { runBonsaiWorker } from "./bonsai/worker/bonsai-worker-core";
 import { WGSL_SOURCES } from "./bonsai/kernels/wgsl-sources";
-import { setSubmitBudget } from "./bonsai/kernels/dispatch";
 import { resolveBonsaiUrl, suggestBonsaiModelId } from "./bonsai-models";
-import { classifyAdapter, isMobileDevice, maxDispatchesPerSubmit, type AdapterHint } from "./device-class";
+import { classifyAdapter, maxDispatchesPerSubmit } from "./bonsai/gpu-class";
+import type { AdapterHint } from "./bonsai/gpu-class";
+import { setSubmitBudget } from "./bonsai/kernels/dispatch";
+import { isMobileDevice } from "./device-class";
 import type { GpuDeviceLike } from "./bonsai/kernels/gpu-min";
 
 runBonsaiWorker(self as unknown as Parameters<typeof runBonsaiWorker>[0], {
@@ -33,8 +35,10 @@ runBonsaiWorker(self as unknown as Parameters<typeof runBonsaiWorker>[0], {
       gpu?: {
         requestAdapter(opts?: { powerPreference?: string; forceFallbackAdapter?: boolean }): Promise<{
           limits: Record<string, number>;
-          isFallbackAdapter?: boolean;
-          info?: { vendor?: string; architecture?: string };
+          // Chrome 128+ only; Safari exposes nothing. classifyAdapter() is written to
+          // answer 'unknown' for both, which is exactly why the mobile branch below
+          // sits ABOVE the class question rather than inside it.
+          info?: AdapterHint;
           requestDevice(desc?: { requiredLimits?: Record<string, number> }): Promise<unknown>;
         } | null>;
       };
@@ -65,17 +69,40 @@ runBonsaiWorker(self as unknown as Parameters<typeof runBonsaiWorker>[0], {
       if (typeof v === "number" && v > 0) requiredLimits[key] = v;
     }
     const device = (await adapter.requestDevice({ requiredLimits })) as GpuDeviceLike;
-    // TDR cap (BIH007): the budget is computed HERE, where the device is acquired,
-    // and APPLIED — a budget computed and dropped is the silent no-op this family
-    // keeps re-finding. Uncapped packets are what froze a Pixel 10 to a reboot
-    // (measured 2026-08-22): a phone's compositor shares the GPU and mobile browsers
-    // have no TDR to reset the driver, so a burst of slow dispatches freezes the
-    // DEVICE, not the tab. The phone gate refuses the whole lane now, but the cap
-    // stays load-bearing for Windows TDR contention (an RTX 5090 lost its device
-    // mid-prefill under external load, measured 2026-08-07).
-    const hint: AdapterHint = forcedFallback
-      ? { isFallbackAdapter: true }
-      : (adapter as unknown as AdapterHint);
+    // `forcedFallback` is no longer discarded. AdapterHint.isFallbackAdapter is the
+    // field classifyAdapter reads FIRST and the one it cannot derive: a software
+    // rasteriser routinely reports an EMPTY vendor, which this file's classifier routes
+    // down the DISCRETE fast path -- so SwiftShader was being treated as a 5090 (measured
+    // 2026-07-31: 0.33 tok/s against 41 on real hardware, blamed on fleet contention for
+    // an hour). We are the only code that knows we asked for the fallback, so we must say so.
+
+    // THE SUBMIT BUDGET, and it has to be set HERE.
+    //
+    // `runBonsaiWorker` takes the device from `deps.acquireDevice` and never caps it —
+    // the capping lives in the OTHER worker core (webml/bonsai-worker-core.ts), which
+    // acquires its own device and is the lane this file does not use. So this entry was
+    // a second, independent acquisition path submitting UNCAPPED packets while its
+    // sibling was capped: the exact split that let the same defect recur, and the
+    // sibling's own docstring already records it happening twice ("a fix that lands in
+    // a function nobody invokes is indistinguishable from no fix").
+    //
+    // Why it matters more here than on a desktop: a phone renders its compositor on the
+    // same GPU and has no TDR to reset the driver, so an uncapped packet freezes the
+    // DEVICE, not the tab (measured 2026-08-22, Pixel 10 / Chromium — the 1.7B loaded,
+    // started answering, and locked the whole phone).
+    // Read isFallbackAdapter from ALL THREE places, the way the Living OS copy does.
+    // The field lives on the ADAPTER in the shipped Chrome IDL and has been moving toward
+    // adapter.info across revisions, and the browser can hand back a fallback we did not
+    // ask for -- in which case `forcedFallback` alone is false. Getting `false` from the
+    // wrong object is indistinguishable from a real GPU, which is the exact failure this
+    // is here to catch.
+    const a = adapter as unknown as { isFallbackAdapter?: boolean };
+    const info = adapter.info ?? {};
+    const hint: AdapterHint = {
+      ...info,
+      isFallbackAdapter:
+        forcedFallback || a.isFallbackAdapter === true || info.isFallbackAdapter === true,
+    };
     const budget = maxDispatchesPerSubmit(classifyAdapter(hint), {
       windowsTdr: typeof navigator !== "undefined" && /Windows/i.test(navigator.userAgent ?? ""),
       mobile: isMobileDevice(),

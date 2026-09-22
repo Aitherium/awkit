@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import LLMConfigPanel from './LLMConfigPanel'
+import AccessPolicyPanel from './AccessPolicyPanel'
+import DoorPeoplePanel from './DoorPeoplePanel'
 
 interface ProviderInfo {
   provider: string
@@ -24,7 +26,7 @@ interface EmbedConfig {
 
 export default function SettingsPanel() {
   const { user } = useAuth()
-  const isAdmin = (user as any)?.role === 'admin'
+  const isAdmin = (user as any)?.role === 'admin' || (user as any)?.role === 'owner'
   const [provider, setProvider] = useState<ProviderInfo | null>(null)
   const [platform, setPlatform] = useState<PlatformStatus | null>(null)
   const [stats, setStats] = useState<any>(null)
@@ -50,6 +52,15 @@ export default function SettingsPanel() {
 
       {/* LLM Provider — admins get the full editable config (primary/fallback
           providers, keys, test-connection); members see the read-only summary. */}
+      {/* Front-door doors (guest / invitation / identity / device) -- the
+          workspace's OWN decision, taken here (owner, 2026-09-18). Members see
+          the read-only state; the backend re-checks admin on every write. */}
+      <AccessPolicyPanel />
+
+      {/* Who gets in: invitations, grants and the door's own audited history.
+          The endpoints existed since the door shipped and nothing called them. */}
+      <DoorPeoplePanel />
+
       {isAdmin ? (
         <section style={{ marginBottom: '2rem' }}>
           <LLMConfigPanel />

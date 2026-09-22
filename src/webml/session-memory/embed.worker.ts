@@ -19,23 +19,14 @@ import { createMicroEmbedder, type MicroEmbedderConfig } from "./embedder"
 
 /**
  * The mirror config for the CPU embedding lane. Null = unarmed (refuses).
- * The artifact is live on the mirror: `microembedder-v2` release in
- * Aitherium/aitherkvcache (all-MiniLM-L6-v2 fine-tune, ONNX fp32 + q8, Apache-2.0),
- * served at artifact.aitherium.com/microembedder-v2/<file> via the
+ * The artifact is live on the mirror: `microembedder-v1` release in
+ * Aitherium/aitherkvcache (all-MiniLM-L6-v2 ONNX, fp32 + q8, Apache-2.0),
+ * served at artifact.aitherium.com/microembedder-v1/<file> via the
  * awrtifact prefix route. The lane arms itself; no other code changes.
  */
 export const SESSION_MEMORY_MODEL: MicroEmbedderConfig = {
-  // microembedder-v2: the all-MiniLM-L6-v2 architecture fine-tuned on browser-agent
-  // session-memory pairs. The ONNX carries its own file name so the release prefix
-  // route cannot hand back v1's bytes.
-  //
-  // The internal recipe path and its held-out benchmark numbers were removed from
-  // this comment 2026-09-05: this package ships to strangers, and training results
-  // plus an internal config filename are the shape of the platform rather than a
-  // credential -- no secret scanner fires on either. They live in the monorepo.
-  url: "https://artifact.aitherium.com/microembedder-v2/",
+  url: "https://artifact.aitherium.com/microembedder-v1/",
   modelId: "aitherium/microembedder",
-  modelFile: "browser_embed",
   dim: 384,
 }
 

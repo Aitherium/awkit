@@ -35,6 +35,8 @@
  * Pure and GPU-free on purpose — this is the decision, and it is the part worth testing.
  */
 
+import { kvBudgetFromDeviceMemory } from "../wasp/budget";
+
 export interface KvGeometry {
   /** Layers that actually carry a KV cache. On a hybrid (27B) most layers do NOT. */
   fullAttnLayerCount: number;
@@ -61,12 +63,20 @@ export function kvBytesPerPosition(g: KvGeometry, bytesPerElement = 4.0): number
  *
  * Unknown -> the conservative floor, which is the case every non-Chromium visitor gets.
  */
+/**
+ * DELEGATES to `wasp/budget.ts`. The arithmetic is unchanged and deliberately so: this
+ * function is desktop behaviour that works, and the WASP front is behaviour-neutral off
+ * mobile. What changed is that there is now ONE implementation of "how much KV can this
+ * device afford" instead of two, because the budget module needs the same number and a
+ * second copy is how a feature ships switched on and inert.
+ *
+ * `deviceMemory` is still the only signal a page gets for this: Chrome CAPS it at 8,
+ * reports SYSTEM RAM rather than anything the GPU owns, and Safari/Firefox omit it. A
+ * coarse signal beats a constant that is wrong on every device; the fraction stays small
+ * because the failure mode of guessing high is an allocation error mid-turn.
+ */
 export function kvBudgetBytes(deviceMemoryGb?: number): number {
-  const MB = 1024 * 1024;
-  const FLOOR = 256 * MB;   // what we assume when the browser tells us nothing
-  const CEIL = 1024 * MB;   // never reserve more than this for KV, however big the machine
-  if (!deviceMemoryGb || !Number.isFinite(deviceMemoryGb) || deviceMemoryGb <= 0) return FLOOR;
-  return Math.max(FLOOR, Math.min(CEIL, Math.floor(deviceMemoryGb * 128 * MB)));
+  return kvBudgetFromDeviceMemory(deviceMemoryGb);
 }
 
 export interface KvPlanInput {

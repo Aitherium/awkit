@@ -26,6 +26,17 @@ export interface MemoryChunk {
   contentHash?: string
   /** Optional precomputed embedding (vector store writes it after embed). */
   embedding?: number[]
+  /**
+   * Sleep-time memory (../sleep-time-memory.ts). `updateQueue` is filled on capture with
+   * no model call; the idle pass decides update/delete/ignore per queued chunk. A
+   * `delete` TOMBSTONES the chunk (`tombstoned` + `supersededBy`) — nothing is removed,
+   * `query()` filters it and a bad decision is one flag flip from undone.
+   */
+  updateQueue?: Array<{ id: string; score: number }>
+  tombstoned?: boolean
+  supersededBy?: string
+  tombstonedAt?: number
+  consolidatedAt?: number
 }
 
 export interface QueryOptions {

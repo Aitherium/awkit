@@ -38,6 +38,7 @@
  */
 
 import { dequantQ2Bytes, f16ToF32 } from "../kernels/reference";
+import { bf16BytesToF32 } from "../gguf/bf16";
 import { GgmlType, QK2_0, Q2_0_BYTES } from "../gguf/types";
 import type { WeightFn } from "./mmdit";
 
@@ -78,6 +79,7 @@ export function tensorBytes(t: GgufTensorLoc): number {
   switch (t.type) {
     case GgmlType.F32: return n * 4;
     case GgmlType.F16: return n * 2;
+    case GgmlType.BF16: return n * 2;
     case GgmlType.Q2_0: {
       if (n % QK2_0 !== 0) {
         throw new Error(
@@ -108,6 +110,9 @@ export function dequantTensor(
       for (let i = 0; i < n; i++) out[i] = f16ToF32(dv.getUint16(i * 2, true));
       return out;
     }
+    case GgmlType.BF16:
+      // bf16 is the top half of an f32: a pure bit shift, no rounding (gguf/bf16.ts).
+      return bf16BytesToF32(raw, 0, n);
     case GgmlType.Q2_0: {
       const out = new Float32Array(n);
       const blocks = n / QK2_0;

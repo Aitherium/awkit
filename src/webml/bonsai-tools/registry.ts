@@ -13,8 +13,10 @@
  * because an empty string here is indistinguishable from 'nothing matched'.
  */
 
+import { createBrowserSessionTools } from './browser-session-tools';
 import { pushImage } from './image-sink';
 import { LOCAL_PIM_TOOLS } from './local-pim-tools';
+import { createPageTools, PAGE_TOOL_NAMES } from './page-tools';
 
 import type { ToolFunction } from '../bonsai/tokenizer/chat_template';
 
@@ -23,6 +25,20 @@ export type ToolExecutor = (args: Record<string, any>) => Promise<string>;
 export interface RegisteredTool {
   definition: ToolFunction;
   execute: ToolExecutor;
+  /**
+   * May a visitor with NO ACCOUNT be offered this tool?
+   *
+   * Required, not optional-with-a-default. A default would decide the question for every
+   * tool added after this comment, and it would decide it in whichever direction the
+   * author of the default guessed — silently granting an anonymous page an authenticated
+   * tool, or silently hiding a perfectly public one. Making it a required field means
+   * the person adding a tool answers it, and the type checker is what asks.
+   *
+   * `false` is filtered out of `getToolDefinitionsForModel(size, { anon: true })` AND
+   * refused by `executeTool` when the context says the caller is anonymous. Two layers:
+   * the first is advertising, the second is the gate.
+   */
+  anonSafe: boolean;
 }
 
 /** Get the current date and time in the user's timezone. */
@@ -116,6 +132,33 @@ export interface ToolContext {
    */
   anonToken?: string;
   apiBase?: string;
+  /**
+   * The awiam gate session (`X-Gate-Session`) proving a human check was taken.
+   *
+   * Supplied by the main thread for the same reason `anonToken` is: it lives in
+   * `sessionStorage`, which a Worker cannot see. `verifyGuest()` needs BOTH headers —
+   * one without the other is a 401 — so a browse tool handed only the anon token would
+   * fail every time with a message about proving you are human, on a page where the
+   * visitor already had.
+   */
+  gateSession?: string;
+  /**
+   * Is this an anonymous visitor? Decides which tools are advertised AND which will run.
+   *
+   * Defaults to FALSE when the host does not say, which is the permissive direction —
+   * deliberately, because every existing caller predates this field and every existing
+   * tool is anon-safe, so a default of `true` would silently un-tool signed-in surfaces
+   * that never opted in. The public surfaces that need the filter pass it explicitly.
+   */
+  anon?: boolean;
+  /**
+   * Page tools the HOST PAGE really registered (`lib/webmcp/page-tools.ts`).
+   *
+   * The whitelist, not a hint — same rule as `apps`. Page tools need `document`, and
+   * `executeTool` runs in a Worker on the WebGPU rung; advertising `page_read_dom` on a
+   * page that never installed the bridge costs the visitor a turn to discover.
+   */
+  pageToolsAvailable?: string[];
 }
 
 let toolContext: ToolContext = {};
@@ -1057,6 +1100,7 @@ async function executeSearchWikipedia(args: Record<string, any>): Promise<string
 
 export const BONSAI_TOOLS: Record<string, RegisteredTool> = {
   get_current_time: {
+    anonSafe: true,
     definition: {
       name: 'get_current_time',
       description: 'Get the current date and time in the user\'s timezone',
@@ -1068,6 +1112,7 @@ export const BONSAI_TOOLS: Record<string, RegisteredTool> = {
     execute: executeGetCurrentTime,
   },
   evaluate_math: {
+    anonSafe: true,
     definition: {
       name: 'evaluate_math',
       description: 'Evaluate a mathematical expression and return the result',
@@ -1085,6 +1130,7 @@ export const BONSAI_TOOLS: Record<string, RegisteredTool> = {
     execute: executeEvaluateMath,
   },
   list_apps: {
+    anonSafe: true,
     definition: {
       name: 'list_apps',
       description:
@@ -1095,6 +1141,7 @@ export const BONSAI_TOOLS: Record<string, RegisteredTool> = {
     execute: executeListApps,
   },
   open_app: {
+    anonSafe: true,
     definition: {
       name: 'open_app',
       description:
@@ -1114,6 +1161,7 @@ export const BONSAI_TOOLS: Record<string, RegisteredTool> = {
     execute: executeOpenApp,
   },
   web_search: {
+    anonSafe: true,
     definition: {
       name: 'web_search',
       description:
@@ -1131,6 +1179,7 @@ export const BONSAI_TOOLS: Record<string, RegisteredTool> = {
     execute: executeWebSearch,
   },
   search_knowledge: {
+    anonSafe: true,
     definition: {
       name: 'search_knowledge',
       description:
@@ -1150,6 +1199,7 @@ export const BONSAI_TOOLS: Record<string, RegisteredTool> = {
     execute: executeSearchKnowledge,
   },
   search_aitherium: {
+    anonSafe: true,
     definition: {
       name: 'search_aitherium',
       description:
@@ -1172,6 +1222,7 @@ export const BONSAI_TOOLS: Record<string, RegisteredTool> = {
     execute: executeSearchAitherium,
   },
   search_wikipedia: {
+    anonSafe: true,
     definition: {
       name: 'search_wikipedia',
       description:
@@ -1191,6 +1242,7 @@ export const BONSAI_TOOLS: Record<string, RegisteredTool> = {
     execute: executeSearchWikipedia,
   },
   deep_research: {
+    anonSafe: true,
     definition: {
       name: 'deep_research',
       description:
@@ -1215,6 +1267,7 @@ export const BONSAI_TOOLS: Record<string, RegisteredTool> = {
     execute: executeDeepResearch,
   },
   generate_image: {
+    anonSafe: true,
     definition: {
       name: 'generate_image',
       description:
@@ -1234,6 +1287,7 @@ export const BONSAI_TOOLS: Record<string, RegisteredTool> = {
     execute: executeGenerateImage,
   },
   remember: {
+    anonSafe: true,
     definition: {
       name: 'remember',
       description:
@@ -1253,6 +1307,7 @@ export const BONSAI_TOOLS: Record<string, RegisteredTool> = {
     execute: executeRemember,
   },
   recall: {
+    anonSafe: true,
     definition: {
       name: 'recall',
       description:
@@ -1272,6 +1327,7 @@ export const BONSAI_TOOLS: Record<string, RegisteredTool> = {
     execute: executeRecall,
   },
   get_page_context: {
+    anonSafe: true,
     definition: {
       name: 'get_page_context',
       description: 'Get information about the current page and browser environment',
@@ -1286,11 +1342,98 @@ export const BONSAI_TOOLS: Record<string, RegisteredTool> = {
   // their device, no login. Defined in local-pim-tools.ts so the store + executors stay
   // in one place; this spread is what wires them into getToolDefinitions()/executeTool().
   ...LOCAL_PIM_TOOLS,
+  // browse_*: drive the remote browser session a guest is ALREADY entitled to. The
+  // getter is passed rather than the context itself because `toolContext` is replaced
+  // wholesale on every turn by `setToolContext`, and a captured copy would pin the
+  // first turn's anon token for the life of the page.
+  ...createBrowserSessionTools(() => toolContext),
+  // page_*: act on the page the person is looking at. Definitions always present;
+  // whether they are ADVERTISED is decided per page by `pageToolsAvailable`.
+  ...createPageTools(),
 };
 
+/* ════════════════════════════════════════════════════════════════════════════
+   TOOLS THAT ARE NOT KNOWN AT BUILD TIME.
+
+   The platform's MCP gateway exposes ~1500 tools and which of them a visitor may
+   use is a property of THEIR identity, discovered by asking (`mcp-client-tools.ts`
+   → `initialize` → `tools/list`). They cannot be a literal in `BONSAI_TOOLS`, and
+   they must not be MERGED into it either: `BONSAI_TOOLS` is imported and iterated
+   by `gobbonet-entry.ts` and by the worker, and a set that changed under them
+   after a sign-in would make "the tools this build has" unanswerable.
+
+   So they live beside it, and every reader goes through `allTools()`.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+let dynamicTools: Record<string, RegisteredTool> = {};
+
+/** Add tools discovered at run time. Replaces any previous set — this is a
+ *  SNAPSHOT of what the current identity may use, not an accumulator, because a
+ *  sign-out must not leave the previous visitor's tools advertised. */
+export function setDynamicTools(tools: Record<string, RegisteredTool>): void {
+  dynamicTools = { ...tools };
+}
+
+/** Drop every dynamically discovered tool. Called on sign-out and by the tests. */
+export function clearDynamicTools(): void {
+  dynamicTools = {};
+}
+
+/** Names currently contributed by the dynamic set. Reporting and tests. */
+export function dynamicToolNames(): string[] {
+  return Object.keys(dynamicTools).sort();
+}
+
+/** Every tool this page can run right now: the build-time set plus whatever was
+ *  discovered. Build-time tools win a name collision — a remote catalogue must not
+ *  be able to shadow `remember` or `open_app` with something of its own. */
+function allTools(): Record<string, RegisteredTool> {
+  return { ...dynamicTools, ...BONSAI_TOOLS };
+}
+
+/**
+ * Who is asking, for the two questions that are not about model size.
+ *
+ * Both default to the PERMISSIVE answer when omitted, and both defaults are chosen
+ * against the same rule: an existing caller that predates this options bag must get
+ * exactly what it got before. `anon` defaults to the tool context's own flag (itself
+ * defaulting to false), and `pageTools` to the context's list — so a host that says
+ * nothing keeps today's behaviour and a host that filters says so.
+ */
+export interface ToolAudience {
+  /** Filter out every tool whose `anonSafe` is false. */
+  anon?: boolean;
+  /** Page tools the host page really registered. `undefined` = read the tool context. */
+  pageTools?: string[];
+}
+
+/** Is this tool one of the page tools, i.e. gated on the host having registered it? */
+function isPageTool(name: string): boolean {
+  return (PAGE_TOOL_NAMES as readonly string[]).includes(name);
+}
+
+/**
+ * The tools this audience may be offered — the one filter every other reader goes
+ * through, so "advertised" and "runnable" cannot answer differently.
+ */
+export function getToolsFor(audience: ToolAudience = {}): Record<string, RegisteredTool> {
+  const anon = audience.anon ?? toolContext.anon ?? false;
+  const pageTools = audience.pageTools ?? toolContext.pageToolsAvailable;
+  const out: Record<string, RegisteredTool> = {};
+  for (const [name, tool] of Object.entries(allTools())) {
+    if (anon && !tool.anonSafe) continue;
+    // A page tool the host never registered is not advertised. `undefined` means the
+    // host said nothing, and the old behaviour — no page tools existed — is the honest
+    // reading of silence here: a host that wants them says which.
+    if (isPageTool(name) && !(pageTools ?? []).includes(name)) continue;
+    out[name] = tool;
+  }
+  return out;
+}
+
 /** Get all tool definitions for passing to the model. */
-export function getToolDefinitions(): ToolFunction[] {
-  return Object.values(BONSAI_TOOLS).map((t) => t.definition);
+export function getToolDefinitions(audience: ToolAudience = {}): ToolFunction[] {
+  return Object.values(getToolsFor(audience)).map((t) => t.definition);
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
@@ -1339,12 +1482,36 @@ const TOOL_PRIORITY: readonly string[] = [
   'search_aitherium',    // ~156 tok — grounding; the corpus exists to stop invention
   'list_apps',          // ~57 tok — makes open_app usable instead of guessed
   'evaluate_math',      // ~73 tok — small models are bad at arithmetic, this is cheap
+  // page_read_dom ranks HIGH and above every search tool on purpose. "What does this
+  // say?", "summarise this page", "what am I looking at" are the questions an agent
+  // living IN a page is asked first, and until now it could answer none of them: the
+  // model could search the whole web and not read the paragraph next to it. It is only
+  // advertised where a host registered it, so on a page without the bridge this line
+  // costs nothing at all.
+  'page_read_dom',
+  'page_read_selection',
   'recall',
   'remember',
   'get_page_context',
   'web_search',
+  // THE BROWSE FAMILY RANKS BELOW `web_search`, AND THAT IS A MEASURED ORDERING.
+  // Ranking it above cost `web_search` its place in the 400-token budget, and
+  // `gobbonet-tools.test.ts` caught it: the GobboNet surface offers neither app tool,
+  // so the browse pair displaced the one grounding tool that works on every origin.
+  // browse_* also needs `/api/browser-session`, which the STATIC apex does not serve —
+  // so it is the narrower tool of the two and sorts after the general one.
+  // browse_open leads its own family: opening is the call that makes the other two
+  // mean anything, and admitting browse_act without it advertises a verb with no subject.
+  'browse_open',
+  'browse_read',
+  'browse_act',
   'search_wikipedia',
   'search_knowledge',
+  'page_fill_form',
+  'page_clipboard_read',
+  'page_storage_get',
+  'page_clipboard_write',
+  'page_download',
   'generate_image',
   'deep_research',
 ];
@@ -1385,9 +1552,12 @@ function priorityIndex(name: string): number {
  *   `undefined` is treated as the SMALLEST budget — an unknown model is not a
  *   licence to send 2,769 tokens.
  */
-export function getToolDefinitionsForModel(sizeMb?: number): ToolFunction[] {
+export function getToolDefinitionsForModel(
+  sizeMb?: number,
+  audience: ToolAudience = {},
+): ToolFunction[] {
   const budget = toolTokenBudget(sizeMb);
-  const all = getToolDefinitions();
+  const all = getToolDefinitions(audience);
   if (budget === null) return all;
 
   const ranked = [...all].sort(
@@ -1405,24 +1575,33 @@ export function getToolDefinitionsForModel(sizeMb?: number): ToolFunction[] {
 }
 
 /** What the budget actually did, for a log line or a test. Reporting only. */
-export function toolBudgetReport(sizeMb?: number): {
+export function toolBudgetReport(sizeMb?: number, audience: ToolAudience = {}): {
   budget: number | null; sent: string[]; dropped: string[]; tokens: number;
 } {
-  const sent = getToolDefinitionsForModel(sizeMb);
+  const sent = getToolDefinitionsForModel(sizeMb, audience);
   const sentNames = new Set(sent.map((d) => d.name));
   return {
     budget: toolTokenBudget(sizeMb),
     sent: sent.map((d) => d.name),
-    dropped: getToolDefinitions().map((d) => d.name).filter((n) => !sentNames.has(n)),
+    dropped: getToolDefinitions(audience).map((d) => d.name).filter((n) => !sentNames.has(n)),
     tokens: sent.reduce((a, d) => a + approxTokens(d), 0),
   };
 }
 
 /** Execute a tool by name with the given arguments. */
 export async function executeTool(name: string, args: Record<string, any>): Promise<string> {
-  const tool = BONSAI_TOOLS[name];
+  const tool = allTools()[name];
   if (!tool) {
     return `Error: unknown tool "${name}"`;
+  }
+  // 🚩 THE GATE, not the advertisement. `getToolDefinitionsForModel` decides what the
+  // model is TOLD about; this decides what runs. They are separate because a model can
+  // emit a call for a tool it was never offered — it has seen thousands of tool names in
+  // training — and on an anonymous page that call must not execute just because nobody
+  // filtered the prompt correctly.
+  if ((toolContext.anon ?? false) && !tool.anonSafe) {
+    return `The "${name}" tool needs an Aitherium account. Tell the person that, and `
+      + 'offer to do it another way — do not retry it.';
   }
   try {
     return await tool.execute(args);

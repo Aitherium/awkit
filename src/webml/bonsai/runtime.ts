@@ -30,6 +30,7 @@ import {
 } from "./model/config";
 import { BonsaiTokenizer } from "./tokenizer/load";
 import { WeightStore } from "./model/weights";
+import { createHadamardCtx, type HadamardCtx } from "./model/hadamard";
 import type { GpuDeviceLike } from "./kernels/gpu-min";
 import { PipelineCache, type KernelSources } from "./kernels/pipelines";
 
@@ -57,6 +58,11 @@ export interface LoadedModel {
   tokenizer: BonsaiTokenizer;
   pipelines: PipelineCache;
   weights: WeightStore;
+  /**
+   * Bonsai 2 Hadamard fold (`prism.hadamard.*`), sign vectors already on the GPU — or null
+   * on a Bonsai 1 file. Thread it into every LayerContext / OpCtx; see model/hadamard.ts.
+   */
+  hadamard: HadamardCtx | null;
   scheduleOk: boolean;
   scheduleMessage: string;
 }
@@ -125,6 +131,35 @@ export class BonsaiRuntime {
 
     p({ phase: "globals", percent: 75, detail: "uploading embeddings + LM head + norms" });
     const weights = new WeightStore(this.deps.device, registry, fetchRange);
+    // Bonsai 2: validate the fold contract the way the fork does at load (throws on every
+    // rule it throws on), cross-check every rotated tensor's input width against the sign
+    // table and block size, and upload the sign vectors ONCE. Null on a Bonsai 1 file.
+    const hadamardSpec = meta.resolveHadamard();
+    let hadamard: HadamardCtx | null = null;
+    if (hadamardSpec) {
+      for (const name of hadamardSpec.weightNames) {
+        if (!registry.has(name)) continue; // the fork tolerates a listed-but-absent tensor
+        const width = registry.get(name).dims[0];
+        if (width % hadamardSpec.blockSize !== 0) {
+          throw new Error(
+            `bonsai-runtime: prism.hadamard weight '${name}' has input width ${width}, not a ` +
+              `multiple of block_size ${hadamardSpec.blockSize}`,
+          );
+        }
+        if (hadamardSpec.signMode === "explicit" && !hadamardSpec.signsByWidth.has(width)) {
+          throw new Error(
+            `bonsai-runtime: prism.hadamard weight '${name}' has input width ${width} but ` +
+              `sign_widths declares only [${hadamardSpec.signWidths.join(", ")}]`,
+          );
+        }
+      }
+      hadamard = createHadamardCtx(this.deps.device, hadamardSpec);
+      console.log(
+        `bonsai: Hadamard fold active — ${hadamardSpec.weightNames.size} rotated tensors, ` +
+          `block ${hadamardSpec.blockSize}, signs ${hadamardSpec.signMode} ` +
+          `[${hadamardSpec.signWidths.join(", ")}], gdn_v_grouped=${hadamardSpec.gdnVGrouped}`,
+      );
+    }
     // Upload global tensors in two passes: REQUIRED first, then optional.
     // token_embd.weight and output_norm.weight are NON-NEGOTIABLE — without them, generation
     // will always fail at embedTokens/projectLogits with a confusing "not loaded" error that
@@ -163,6 +198,7 @@ export class BonsaiRuntime {
       tokenizer,
       pipelines,
       weights,
+      hadamard,
       scheduleOk: schedule.ok,
       scheduleMessage: schedule.message,
     };

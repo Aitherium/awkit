@@ -309,7 +309,7 @@ export default function PortalShell({
         {/* Powered by */}
         {poweredBy && !collapsed && (
           <div style={{ padding: '8px 14px 10px', borderTop: '1px solid var(--divider, var(--glass-border))', background: 'var(--bg-deep)' }}>
-            <a href="https://portal.aitherium.com" target="_blank" rel="noopener"
+            <a href="https://api.aitherium.com" target="_blank" rel="noopener"
               style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textDecoration: 'none', letterSpacing: '0.04em' }}>
               Powered by {platformName}
             </a>

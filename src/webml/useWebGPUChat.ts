@@ -2,11 +2,19 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { grantModelConsent, hasModelConsent } from "./consent";
+import { scheduleSleepPasses, type ConsolidateResult } from "./sleep-time-memory";
+import { defaultChatMemory, type ChatMemory } from "./chat-memory";
 import { getWebMLModel, isWebGPUAvailable } from "./models";
 import { suggestBonsaiModelId } from "./bonsai-models";
 import type { ChatMessage, WorkerResponse } from "./protocol";
 // The deadline lives with the runtime that has to meet it — never a literal here (BIH002).
-import { FIRST_TOKEN_FAIL_MS, gpuLaneAllowed, isPhoneDevice } from "./device-class";
+import {
+  FIRST_TOKEN_FAIL_MS,
+  gpuLaneAllowed,
+  isPhoneDevice,
+  phoneLaneAllowed,
+  type PhoneLaneBudget,
+} from "./device-class";
 import {
   MAX_TOOL_ROUNDS,
   parseToolCalls,
@@ -16,9 +24,61 @@ import {
 
 export type ChatStatus = "unsupported" | "idle" | "loading" | "ready" | "generating" | "error";
 
+/** Which runtime is actually carrying this session. */
+export type WebMLLane = "webgpu" | "wasm";
+
 export interface UseWebGPUChatOptions {
+  /**
+   * Sleep-time memory (./sleep-time-memory.ts). Pass anything with a `consolidate()` —
+   * a `SessionMemory`, a `SleepTimeMemory` over your own store — and the hook runs the
+   * deferred update/delete/ignore pass while the tab is HIDDEN and the model is ready,
+   * through `generateRaw` (never the visible chat). Consent is re-checked inside the
+   * pass, before the first generate(). Omit it and nothing is scheduled.
+   */
+  /**
+   * Conversation memory. DEFAULT `"auto"`: the kit's own `ChatMemory` (IndexedDB per
+   * origin, keyword recall until `configureChatMemoryEmbedder()` wires the microembedder)
+   * remembers every turn, prepends a recall block, and runs the sleep-time
+   * consolidation pass while the tab is hidden. `false` opts out entirely. Pass a
+   * `ChatMemory` of your own to keep the behaviour on a store you control.
+   */
+  memory?: "auto" | false | ChatMemory;
+  /** Which conversation the turns belong to (default `"default"`). */
+  conversationId?: string;
+  onSleepPass?: (r: ConsolidateResult) => void;
   /** Consumer-provided factory — each app instantiates its own bundler-resolvable Worker. */
   workerFactory: () => Worker;
+  /**
+   * The CPU (wasm) worker, for devices with no usable WebGPU.
+   *
+   * 🚨 THE HOOK HAD NO CPU LANE AT ALL, and that was the whole gap. Veil's Living OS has
+   * had one for weeks (`brain.startCpu()`); this hook — the one every OTHER surface
+   * imports — could only answer "unsupported", so an iPhone visitor to any non-Veil
+   * surface was offered nothing while the same model ran fine one app over.
+   *
+   * OPTIONAL, and its ABSENCE is what keeps this change behaviour-neutral: with no
+   * factory the lane resolution below can only ever pick `webgpu`, which is exactly what
+   * every existing consumer gets today. A surface opts in by passing one.
+   */
+  wasmWorkerFactory?: () => Worker;
+  /**
+   * Which runtime to use. `"auto"` (default) prefers WebGPU and falls back to the wasm
+   * worker when one is supplied; `"webgpu"` and `"wasm"` pin it.
+   *
+   * Pinning matters for more than testing: a device CAN have WebGPU and still be the
+   * wrong place to use it (a phone whose compositor shares the GPU), and the decision
+   * about that belongs to the ratchet and the budget, not to feature detection.
+   */
+  lane?: WebMLLane | "auto";
+  /**
+   * What this device can hold, for the phone ratchet.
+   *
+   * Supplied by the host (which owns the catalogue and the adapter) rather than
+   * measured here, so there is one budget per session instead of one per consumer.
+   * Omitted, the ratchet refuses -- a phone allowed without knowing what it can hold
+   * is the exact claim that produced the freeze.
+   */
+  phoneBudget?: PhoneLaneBudget;
   modelId?: string;
   /** Optional system prompt prepended to the conversation. */
   system?: string;
@@ -60,7 +120,27 @@ export interface UseWebGPUChat {
   error: string | null;
   tokensPerSecond: number | null;
   load: () => void;
+  /**
+   * Load on the CPU (wasm) lane explicitly.
+   *
+   * Named `startCpu` to match the verb the Living OS already exposes, so the two surfaces
+   * describe the same act the same way. A no-op when no `wasmWorkerFactory` was supplied,
+   * and it SAYS so through `error` rather than failing silently — a button that does
+   * nothing is the shape this whole family of gates exists to catch.
+   */
+  startCpu: () => void;
+  /** Which lane the current session is on; null before a load has been attempted. */
+  lane: WebMLLane | null;
   send: (text: string) => void;
+  /**
+   * One-shot generate on the SAME worker that never touches `messages`/`streaming` —
+   * the backend call a kit consumer (sleep-time memory, a tool, a tenant feature) uses
+   * when it needs the model's answer and not a chat turn. Refuses unless status is
+   * "ready" so it can never queue in front of a user's send.
+   */
+  generateRaw: (prompt: string, opts?: { maxTokens?: number }) => Promise<string>;
+  /** The conversation memory in use (null when `memory: false`). */
+  memory: ChatMemory | null;
   interrupt: () => void;
   reset: () => void;
   /**
@@ -113,7 +193,7 @@ export function disposeWarmWebGPUWorkers(): void {
 export function useWebGPUChat(opts: UseWebGPUChatOptions): UseWebGPUChat {
   // Device-sized default, never the flat catalogue default: DEFAULT_WEBML_MODEL_ID
   // is bonsai-27b-text (3.6 GB) and an un-sized default put a 3.6 GB download in
-  // front of every tenant visitor (measured 2026-08-30 on two tenant apps, which
+  // front of every tenant visitor (measured 2026-08-30 on vibe/jgames, which
   // bundle this hook). suggestBonsaiModelId errs small (saveData/slow-link →
   // 1.7b; mobile → 4b/1.7b; desktop ≥8 GB → 8b; else 4b) — the same sizing
   // aitherium.com's own brain uses. Consumers may still pin a model explicitly.
@@ -125,6 +205,14 @@ export function useWebGPUChat(opts: UseWebGPUChatOptions): UseWebGPUChat {
   const [currentFile, setCurrentFile] = useState<string | null>(null);
   const filesRef = useRef<Record<string, { loaded: number; total: number }>>({});
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // Conversation memory: default-on, one per origin. Resolved once per mount.
+  const memoryRef = useRef<ChatMemory | null>(null);
+  if (memoryRef.current === null && opts.memory !== false) {
+    memoryRef.current = opts.memory && opts.memory !== "auto" ? opts.memory : defaultChatMemory();
+  }
+  const conversationId = opts.conversationId ?? "default";
+  // generateRaw side channel: while set, token/done/error route HERE, not to the chat.
+  const rawRef = useRef<{ buf: string; resolve: (t: string) => void; reject: (e: Error) => void } | null>(null);
   const [streaming, setStreaming] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [tps, setTps] = useState<number | null>(null);
@@ -144,9 +232,37 @@ export function useWebGPUChat(opts: UseWebGPUChatOptions): UseWebGPUChat {
   const toolsRef = useRef(opts.tools);
   toolsRef.current = opts.tools;
 
+  // Which lane this session is on. A REF as well as state: `ensureWorker` runs inside
+  // callbacks that captured an earlier render, and picking the factory from a stale
+  // closure is how a surface ends up constructing the wrong worker for its own lane.
+  const [lane, setLane] = useState<WebMLLane | null>(null);
+  const laneRef = useRef<WebMLLane | null>(null);
+  // What this device can hold, when the host has measured it. A REF so the ratchet
+  // reads the current value from callbacks that captured an earlier render; undefined
+  // is the safe default, because phoneLaneAllowed() refuses without a budget.
+  const phoneBudgetRef = useRef<PhoneLaneBudget | undefined>(opts.phoneBudget);
+  phoneBudgetRef.current = opts.phoneBudget;
+
+  /**
+   * The lane this device should take, or null when neither is available.
+   *
+   * BEHAVIOUR-NEUTRAL BY CONSTRUCTION: with no `wasmWorkerFactory` every branch below
+   * either answers `webgpu` or null, which is precisely today's `gpuLaneAllowed() &&
+   * isWebGPUAvailable()`. The wasm answers are reachable only for a consumer that opted in.
+   */
+  const resolveLane = useCallback((forced?: WebMLLane): WebMLLane | null => {
+    const wasmOk = !!opts.wasmWorkerFactory;
+    const gpuOk = gpuLaneAllowed() && isWebGPUAvailable();
+    const want = forced ?? opts.lane ?? "auto";
+    if (want === "wasm") return wasmOk ? "wasm" : null;
+    if (want === "webgpu") return gpuOk ? "webgpu" : null;
+    if (gpuOk) return "webgpu";
+    return wasmOk ? "wasm" : null;
+  }, [opts.lane, opts.wasmWorkerFactory]);
+
   useEffect(() => {
-    if (!gpuLaneAllowed() || !isWebGPUAvailable()) setStatus("unsupported");
-  }, []);
+    if (!resolveLane()) setStatus("unsupported");
+  }, [resolveLane]);
 
   // Detach this instance's handler on unmount, but do NOT terminate the worker:
   // it holds the loaded weights and the next mount reuses them. Dropping the
@@ -173,7 +289,13 @@ export function useWebGPUChat(opts: UseWebGPUChatOptions): UseWebGPUChat {
     if (workerRef.current) return workerRef.current;
     const warm = WARM_WORKERS.get(modelId);
     // Re-bind onmessage below: the handler closes over THIS mount's setters.
-    const w = warm ?? opts.workerFactory();
+    // THE FACTORY FOLLOWS THE LANE. Reading `opts.workerFactory` unconditionally here
+    // would construct a WebGPU worker for a session that resolved to wasm -- which does
+    // not throw, it just never answers, because the wrong worker ignores the protocol.
+    const factory = laneRef.current === "wasm" && opts.wasmWorkerFactory
+      ? opts.wasmWorkerFactory
+      : opts.workerFactory;
+    const w = warm ?? factory();
     w.onmessage = (e: MessageEvent<WorkerResponse>) => {
       const msg = e.data;
       switch (msg.type) {
@@ -205,6 +327,10 @@ export function useWebGPUChat(opts: UseWebGPUChatOptions): UseWebGPUChat {
             clearTimeout(firstTokenTimerRef.current);
             firstTokenTimerRef.current = null;
           }
+          if (rawRef.current) {
+            rawRef.current.buf += msg.text;
+            break;
+          }
           streamRef.current += msg.text;
           setStreaming(streamRef.current);
           break;
@@ -212,6 +338,14 @@ export function useWebGPUChat(opts: UseWebGPUChatOptions): UseWebGPUChat {
           if (firstTokenTimerRef.current) {
             clearTimeout(firstTokenTimerRef.current);
             firstTokenTimerRef.current = null;
+          }
+          if (rawRef.current) {
+            const raw = rawRef.current;
+            rawRef.current = null;
+            setTps(msg.tokensPerSecond ?? null);
+            setStatus("ready");
+            raw.resolve(msg.text || raw.buf);
+            break;
           }
           const finalText = msg.text || streamRef.current;
           streamRef.current = "";
@@ -228,6 +362,7 @@ export function useWebGPUChat(opts: UseWebGPUChatOptions): UseWebGPUChat {
           const next = [...messagesRef.current, { role: "assistant" as const, content: finalText }];
           messagesRef.current = next;
           setMessages(next);
+          void memoryRef.current?.remember(conversationId, "assistant", finalText);
 
           if (tools && calls.length > 0 && toolRoundsRef.current < MAX_TOOL_ROUNDS) {
             toolRoundsRef.current += 1;
@@ -264,6 +399,11 @@ export function useWebGPUChat(opts: UseWebGPUChatOptions): UseWebGPUChat {
           if (firstTokenTimerRef.current) {
             clearTimeout(firstTokenTimerRef.current);
             firstTokenTimerRef.current = null;
+          }
+          if (rawRef.current) {
+            const raw = rawRef.current;
+            rawRef.current = null;
+            raw.reject(new Error(msg.message));
           }
           setError(msg.message);
           setStatus("error");
@@ -306,13 +446,25 @@ export function useWebGPUChat(opts: UseWebGPUChatOptions): UseWebGPUChat {
     // everything that can change.
   }, [opts]);
 
-  const load = useCallback(() => {
+  const load = useCallback((forcedLane?: WebMLLane) => {
     // A PHONE NEVER LOADS A MODEL AT ALL (owner directive 2026-09-01; isPhoneDevice is the
     // BCG014 anchor): its memory-killed worker fires no event and cannot be cleaned up, and
     // even the smallest model on the CPU lane froze a Pixel 10 to a reboot. This hook has no
     // CPU lane, so the honest answer is "unsupported" — before consent, so "assume-granted"
     // cannot route around it.
-    if (isPhoneDevice() || !gpuLaneAllowed() || !isWebGPUAvailable()) return setStatus("unsupported");
+    // RATCHET, not a flag. Every WASP_PHONE_RATCHET cell is `banned` today, so
+    // phoneLaneAllowed() is false on every phone and this refuses exactly as the bare
+    // isPhoneDevice() did. What changes is that lifting the ban is a TABLE edit with a
+    // measured report behind it (BIH015), not an edit to each of these call sites --
+    // which is how the previous mobile fixes came to disagree with each other.
+    const wanted = resolveLane(forcedLane);
+    if (isPhoneDevice() && !phoneLaneAllowed(wanted ?? "wasm", phoneBudgetRef.current)) {
+      return setStatus("unsupported");
+    }
+    const picked = wanted;
+    if (!picked) return setStatus("unsupported");
+    laneRef.current = picked;
+    setLane(picked);
     // ── CONSENT ── before anything that can start a download, and before the warm-adopt
     // branch below: adopting a warm worker is cheap, but reaching it means a load already
     // happened, and this hook must never be the reason one did.
@@ -334,16 +486,27 @@ export function useWebGPUChat(opts: UseWebGPUChatOptions): UseWebGPUChat {
     setStatus("loading");
     setProgress(0);
     ensureWorker().postMessage({ type: "load", modelId });
-  }, [ensureWorker, modelId, opts.consent]);
+  }, [ensureWorker, modelId, opts.consent, resolveLane]);
+
+  /** Force the CPU lane. See `startCpu` on the return type for why it is named that. */
+  const startCpu = useCallback(() => {
+    if (!opts.wasmWorkerFactory) {
+      setError("No CPU runtime is wired into this surface (pass wasmWorkerFactory).");
+      setStatus("unsupported");
+      return;
+    }
+    load("wasm");
+  }, [load, opts.wasmWorkerFactory]);
 
   // System turn(s) for every generate: the app's prompt plus, when tools are
   // registered, the template-compatible <tools> declaration block.
-  const systemMessages = useCallback((): ChatMessage[] => {
+  const systemMessages = useCallback((recallBlock?: string): ChatMessage[] => {
     const parts: string[] = [];
     if (opts.system) parts.push(opts.system);
     if (toolsRef.current?.specs?.length) {
       parts.push(renderToolsSystemBlock(toolsRef.current.specs));
     }
+    if (recallBlock) parts.push(recallBlock);
     return parts.length ? [{ role: "system" as const, content: parts.join("\n\n") }] : [];
   }, [opts.system]);
 
@@ -354,7 +517,16 @@ export function useWebGPUChat(opts: UseWebGPUChatOptions): UseWebGPUChat {
       // send() reaches ensureWorker() too — a phone must not construct one this way either.
       // isPhoneDevice() is explicit here (not just gpuLaneAllowed) so the device gate is a
       // named anchor BCG014 can assert on the second door, assume-granted included.
-      if (isPhoneDevice() || !gpuLaneAllowed()) { setStatus("unsupported"); return; }
+      const lanePicked = resolveLane();
+      // send() reaches ensureWorker() without passing through load(), so the ratchet is
+      // asked on this door too -- one chokepoint is only a chokepoint if every path
+      // really goes through it.
+      if (!lanePicked
+        || (isPhoneDevice()
+          && !phoneLaneAllowed(lanePicked, phoneBudgetRef.current))) {
+        setStatus("unsupported"); return;
+      }
+      if (!laneRef.current) laneRef.current = lanePicked;
       // send() reaches ensureWorker() too, so a turn sent from 'idle' would construct a
       // worker without ever passing through load(). Gate the second door as well — the
       // whole lesson of this change is that one chokepoint is only a chokepoint if every
@@ -364,11 +536,7 @@ export function useWebGPUChat(opts: UseWebGPUChatOptions): UseWebGPUChat {
         return;
       }
       toolRoundsRef.current = 0; // fresh budget per user turn
-      const convo: ChatMessage[] = [
-        ...systemMessages(),
-        ...messagesRef.current,
-        { role: "user" as const, content: trimmed },
-      ];
+      const priorTurns = messagesRef.current;
       const shown = [...messagesRef.current, { role: "user" as const, content: trimmed }];
       messagesRef.current = shown;
       setMessages(shown);
@@ -389,10 +557,67 @@ export function useWebGPUChat(opts: UseWebGPUChatOptions): UseWebGPUChat {
         );
         setStatus("error");
       }, FIRST_TOKEN_FAIL_MS);
-      ensureWorker().postMessage({ type: "generate", messages: convo });
+      // Memory: recall BEFORE the turn is posted (the block rides in the system message),
+      // remember the user turn, then generate. Both are guarded — a memory failure never
+      // blocks the send; the recall simply comes back empty.
+      const mem = memoryRef.current;
+      void (async () => {
+        let recallBlock = "";
+        if (mem) {
+          try {
+            recallBlock = await mem.recallBlock(conversationId, trimmed);
+          } catch {
+            recallBlock = "";
+          }
+          void mem.remember(conversationId, "user", trimmed);
+        }
+        const convo: ChatMessage[] = [
+          ...systemMessages(recallBlock || undefined),
+          ...priorTurns,
+          { role: "user" as const, content: trimmed },
+        ];
+        ensureWorker().postMessage({ type: "generate", messages: convo });
+      })();
     },
-    [ensureWorker, systemMessages, status, opts.consent],
+    [ensureWorker, systemMessages, status, opts.consent, conversationId],
   );
+
+  const generateRaw = useCallback(
+    (prompt: string, rawOpts: { maxTokens?: number } = {}): Promise<string> => {
+      if (status !== "ready") return Promise.reject(new Error(`generateRaw refused: model is ${status}, not ready`));
+      if (rawRef.current) return Promise.reject(new Error("generateRaw refused: a raw generate is already in flight"));
+      if (!prompt.trim()) return Promise.reject(new Error("generateRaw refused: empty prompt"));
+      return new Promise<string>((resolve, reject) => {
+        rawRef.current = { buf: "", resolve, reject };
+        setStatus("generating");
+        try {
+          ensureWorker().postMessage({ type: "generate", messages: [{ role: "user", content: prompt }], maxTokens: rawOpts.maxTokens } as never);
+        } catch (e) {
+          rawRef.current = null;
+          setStatus("ready");
+          reject(e instanceof Error ? e : new Error(String(e)));
+        }
+      });
+    },
+    [ensureWorker, status],
+  );
+
+  // Sleep-time memory: the kit schedules the pass itself when a consumer hands it a memory.
+  const statusRef = useRef(status);
+  useEffect(() => { statusRef.current = status; }, [status]);
+  const generateRawRef = useRef(generateRaw);
+  useEffect(() => { generateRawRef.current = generateRaw; }, [generateRaw]);
+  const memory = memoryRef.current;
+  const onSleepPass = opts.onSleepPass;
+  useEffect(() => {
+    if (!memory) return;
+    return scheduleSleepPasses({
+      status: () => statusRef.current,
+      generate: (prompt) => generateRawRef.current(prompt, { maxTokens: 160 }),
+      memory,
+      onResult: onSleepPass,
+    });
+  }, [memory, onSleepPass]);
 
   const interrupt = useCallback(() => {
     workerRef.current?.postMessage({ type: "interrupt" });
@@ -442,7 +667,7 @@ export function useWebGPUChat(opts: UseWebGPUChatOptions): UseWebGPUChat {
 
   return {
     status, progress, loadedBytes, totalBytes, currentFile,
-    messages, streaming, error, tokensPerSecond: tps, load, send, interrupt, reset,
+    messages, streaming, error, tokensPerSecond: tps, load, startCpu, lane, send, generateRaw, memory: memoryRef.current, interrupt, reset,
     consentNeeded, grantConsent, declineConsent,
   };
 }

@@ -1082,7 +1082,7 @@ export default function SignIn({
 const DEFAULT_SELF_HOST = {
     command: 'curl -fsSL https://aitherium.com/install.sh | bash',
     install_url: 'https://aitherium.com/install.sh',
-    docs_url: 'https://portal.aitherium.com/get',
+    docs_url: 'https://api.aitherium.com/get',
 } as const
 
 function SelfHostHandoff() {

@@ -73,6 +73,21 @@ export const WEBML_MODELS: WebMLModel[] = [
     ready: true,
   },
   {
+    // Bonsai 2 27B (PrismML, 2026-09-17): PTQ1_0 = 5,946,648,928 B (1.75 bpw), the
+    // build the weights mirror serves. `ready: false` on purpose -- the weights are
+    // Walsh-Hadamard-rotated (prism.hadamard.version=1) and the clean-room kernels
+    // do not apply the transform yet; only the PrismML llama.cpp fork serves it.
+    // Flip when the Bonsai 2 kernels land in their own PR.
+    id: "bonsai2-27b",
+    label: "Bonsai 2 27B",
+    repo: "prism-ml/Ternary-Bonsai-2-27B-gguf",
+    runtime: "bonsai-kernels",
+    task: "text-generation",
+    approxDownloadMB: 5671,
+    blurb: "Next-generation 27B, 5.7 GB at 1.75 bpw. WebGPU kernels not yet wired -- self-host it.",
+    ready: false,
+  },
+  {
     // Gemma via transformers.js needs an ONNX build; the mobile-QAT repo has none
     // (it's for custom kernels, like the webml-community Space). Not runnable on
     // the transformers.js path — kept as a slot until we ship Gemma WGSL kernels.

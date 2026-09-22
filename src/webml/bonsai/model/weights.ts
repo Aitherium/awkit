@@ -17,8 +17,19 @@
 import type { GpuDeviceLike, GpuBufferLike } from "../kernels/gpu-min";
 import type { TensorRegistry } from "../tensors/registry";
 import { GgmlType } from "../gguf/types";
-import { uploadCoalescedRange, type UploadedTensor } from "../tensors/upload";
-import type { RangeFetcher } from "../gguf/reader";
+import { uploadStreaming, type UploadedTensor, type UploadStreamingOptions } from "../wasp/sink-webgpu";
+import type { RangeFetcher } from "../wasp/source";
+
+/** Block quant types a matmul kernel exists for (ops.ts projectQ1 / projectQuantized). */
+const SUPPORTED_BLOCK_QUANT_TYPES = new Set<number>([
+  GgmlType.Q1_0,
+  GgmlType.Q2_0,
+  GgmlType.PQ2_0,
+  GgmlType.PTQ1_0,
+]);
+
+/** The only block tensors allowed to be BF16 alongside quantized blocks (Bonsai 2). */
+const BF16_ALLOWED_BLOCK_TENSOR = /^blk\.\d+\.ssm_(alpha|beta)\.weight$/;
 
 export class WeightStore {
   private buffers = new Map<string, GpuBufferLike>();
@@ -26,10 +37,19 @@ export class WeightStore {
   /** Layers whose upload has STARTED but not finished — see ensureLayer's re-entrancy note. */
   private inflight = new Map<number, Promise<void>>();
 
+  /**
+   * `uploadOpts` carries the MOBILE pacing down to the sink.
+   *
+   * It is a constructor argument rather than something the sink sniffs for itself because
+   * the store is the only thing here that knows whether it is serving a phone, and a
+   * module that decides "am I on mobile?" independently is a second copy of a question
+   * BIH004 already exists to keep singular.
+   */
   constructor(
     private device: GpuDeviceLike,
     private registry: TensorRegistry,
     private fetchRange: RangeFetcher,
+    private uploadOpts: UploadStreamingOptions = {},
   ) {}
 
   has(name: string): boolean {
@@ -77,8 +97,17 @@ export class WeightStore {
     if (this.blockQuantType !== undefined) return this.blockQuantType;
 
     const isFloat = (t: number) => t === GgmlType.F32 || t === GgmlType.F16;
+    // THE ONE ALLOWED MIX: Bonsai 2 ships `blk.*.ssm_alpha.weight` / `ssm_beta.weight` as
+    // BF16 next to PTQ1_0 blocks (measured 2026-09-17; the fork runs them as a plain BF16
+    // mul_mat, qwen35.cpp:387-396). They never go through the context-typed projectQ1 —
+    // block_deltanet.ts dispatches them per tensor via projectQuantized(weights.typeOf()) —
+    // so they are excluded from the homogeneity check BY NAME. A BF16 tensor anywhere else
+    // in a block still trips the unsupported-type throw below: it would otherwise be fed to
+    // the block kernel and read as packed trits.
+    const isBf16GateProjection = (e: { name: string; type: number }) =>
+      e.type === GgmlType.BF16 && BF16_ALLOWED_BLOCK_TENSOR.test(e.name);
     const quantized = this.registry.ordered.filter(
-      (e) => e.name.startsWith("blk.") && !isFloat(e.type),
+      (e) => e.name.startsWith("blk.") && !isFloat(e.type) && !isBf16GateProjection(e),
     );
     if (quantized.length === 0) {
       throw new Error(
@@ -91,10 +120,11 @@ export class WeightStore {
     for (const e of quantized) if (!byType.has(e.type)) byType.set(e.type, e.name);
 
     for (const [t, example] of byType) {
-      if (t !== GgmlType.Q1_0 && t !== GgmlType.Q2_0) {
+      if (!SUPPORTED_BLOCK_QUANT_TYPES.has(t)) {
         throw new Error(
           `bonsai-weights: block tensor '${example}' has unsupported quant type ${t} ` +
-            `(supported: Q1_0=${GgmlType.Q1_0}, Q2_0=${GgmlType.Q2_0})`,
+            `(supported: Q1_0=${GgmlType.Q1_0}, Q2_0=${GgmlType.Q2_0}, ` +
+            `PQ2_0=${GgmlType.PQ2_0}, PTQ1_0=${GgmlType.PTQ1_0})`,
         );
       }
     }
@@ -122,7 +152,7 @@ export class WeightStore {
   async loadGlobals(names: string[]): Promise<void> {
     const entries = names.filter((n) => this.registry.has(n)).map((n) => this.registry.get(n));
     for (const range of this.registry.coalesce(entries)) {
-      this.register(await uploadCoalescedRange(this.device, this.fetchRange, range));
+      this.register(await uploadStreaming(this.device, this.fetchRange, range, this.uploadOpts));
     }
   }
 
@@ -148,7 +178,7 @@ export class WeightStore {
 
   private async loadLayer(layerIndex: number): Promise<void> {
     for (const range of this.registry.coalesceBlock(layerIndex)) {
-      this.register(await uploadCoalescedRange(this.device, this.fetchRange, range));
+      this.register(await uploadStreaming(this.device, this.fetchRange, range, this.uploadOpts));
     }
     this.loadedLayers.add(layerIndex);
   }

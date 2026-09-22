@@ -58,6 +58,39 @@ export interface CompanyRoomProps {
    * not offered (same enabled-filter rule as on-device).
    */
   enableHardware?: boolean
+  /**
+   * Take the composer's SAY instead of posting it to the room.
+   *
+   * MEASURED 2026-09-13: `room.say` POSTs `{apiBase}/room/messages`, and on the
+   * platform that route is a 501 stub -- `/room/stream` and `/room/agents` do not
+   * exist and `state/route.ts` always answers `messages: []`. So the composer a GUEST
+   * is shown has never worked: they type, an optimistic bubble appears, the POST 501s,
+   * the bubble is marked failed. Real room chat is a Team-plan WebSocket.
+   *
+   * The 501 route is CORRECT and stays. What was wrong is showing a guest a composer
+   * wired to it. A host that supplies `onSay` answers the guest itself -- in Veil, on
+   * the Sprite lane through `useBrain()` -- and `room.say` is never called, so nothing
+   * is posted to a door that would refuse it.
+   *
+   * Absent → unchanged: members post to the room exactly as before.
+   */
+  onSay?: (text: string) => void | Promise<void>
+  /**
+   * Messages the HOST is holding, shown after whatever the room returned.
+   *
+   * `useRoom`'s own `pending` list is reconciled against the next poll and a message
+   * the server never echoes stays in it forever; these are explicitly the host's, are
+   * never reconciled, and never travel anywhere.
+   */
+  localMessages?: RoomMessage[]
+  /**
+   * Hide the whole `/summons` catalogue.
+   *
+   * For a guest, every summons behind it (mail, fleet, notes, the fleet panels) is a
+   * signed-in surface. Offering the menu and refusing each entry is a worse first
+   * impression than a composer that only talks.
+   */
+  hideSummons?: boolean
 }
 
 /** Imperative handle — lets a host (e.g. the first-run tour) open a summons. */
@@ -92,6 +125,9 @@ const CompanyRoom = forwardRef<CompanyRoomHandle, CompanyRoomProps>(function Com
   onDeviceSystem,
   onDeviceTools,
   enableHardware = false,
+  onSay,
+  localMessages,
+  hideSummons = false,
 }: CompanyRoomProps, ref) {
   const room = useRoom(apiBase)
   const [summoned, setSummoned] = useState<{ s: Summons; q: string } | null>(null)
@@ -126,12 +162,23 @@ const CompanyRoom = forwardRef<CompanyRoomHandle, CompanyRoomProps>(function Com
     [room.agents],
   )
 
+  // What the sheet actually renders: the room's own messages, then the host's.
+  // ONE list, derived once -- the blank-state check and the map below read the same
+  // thing, and a guest whose only messages are local must not still be told "nothing
+  // said yet" underneath their own conversation.
+  const shownMessages = useMemo(
+    () => (localMessages && localMessages.length
+      ? [...room.messages, ...localMessages]
+      : room.messages),
+    [room.messages, localMessages],
+  )
+
   // Follow the conversation, but never yank the sheet away from someone reading
   // back through it.
   useEffect(() => {
     const el = sheetRef.current
     if (el && atBottom.current) el.scrollTop = el.scrollHeight
-  }, [room.messages])
+  }, [shownMessages])
 
   const onScroll = () => {
     const el = sheetRef.current
@@ -209,7 +256,7 @@ const CompanyRoom = forwardRef<CompanyRoomHandle, CompanyRoomProps>(function Com
           aria-hidden="true"
         />
 
-        {!room.loading && room.messages.length === 0 && (
+        {!room.loading && shownMessages.length === 0 && (
           <div className="room-blank">
             <div />
             <div className="room-blank-body">
@@ -226,7 +273,7 @@ const CompanyRoom = forwardRef<CompanyRoomHandle, CompanyRoomProps>(function Com
           </div>
         )}
 
-        {room.messages.map((m, i) => {
+        {shownMessages.map((m, i) => {
           const voice = voiceOf(m, agentNicks)
           return (
             <article
@@ -339,12 +386,16 @@ const CompanyRoom = forwardRef<CompanyRoomHandle, CompanyRoomProps>(function Com
       <RoomComposer
         agents={room.agents.map((a) => a.nick)}
         busy={false}
-        onSay={(text) => room.say(text)}
+        // `onSay ?? room.say` and NOT "call both": posting to the 501 route as well
+        // would put a failed bubble beside every answer the host just produced.
+        onSay={(text) => { void (onSay ? onSay(text) : room.say(text)) }}
         onSummon={(s, q) => { setSummoned({ s, q }); setBlockOpen(true) }}
-        hiddenSummons={[
-          ...(onDeviceWorker ? [] : ['on-device'] as const),
-          ...(enableHardware ? [] : ['hardware'] as const),
-        ]}
+        hiddenSummons={hideSummons
+          ? SUMMONS.map((s) => s.id)
+          : [
+            ...(onDeviceWorker ? [] : ['on-device'] as const),
+            ...(enableHardware ? [] : ['hardware'] as const),
+          ]}
       />
     </div>
   )

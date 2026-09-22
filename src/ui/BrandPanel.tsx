@@ -230,7 +230,7 @@ export function BrandPanel({ baseUrl = '', readOnly = false, tokens: tokensProp 
                 Monospace — JetBrains Mono
               </div>
               <div style={{ fontSize: '0.9rem', fontFamily: 'var(--font-mono)', color: 'var(--accent-primary)' }}>
-                {identity?.atomic_number ?? 47} &middot; {identity?.symbol ?? 'Ai'} &middot; {identity?.atomic_mass ?? '208.043'}
+                {identity?.atomic_number ?? 0} &middot; {identity?.symbol ?? 'Ai'}
               </div>
             </div>
           </div>

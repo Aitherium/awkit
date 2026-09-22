@@ -11,6 +11,12 @@
  *   - Q1_0 dequant/quant ............. ggml/src/ggml-quants.c:40-71, 419-437
  *   - q1_0·q8_0 dot .................. ggml/src/ggml-cpu/quants.c:127-175 (ggml_vec_dot_q1_0_q8_0)
  *   - Q8_0 quant ..................... ggml/src/ggml-quants.c (quantize_row_q8_0)
+ *   - PTQ1_0 quant/dequant ........... ggml/src/ggml-quants.c:2203-2285 (quantize_row_ptq1_0_ref,
+ *                                      dequantize_row_ptq1_0, stages {32,16,8}, pow3 chain)
+ *   - PTQ1_0 element accessor ........ ggml/src/ggml-cuda/common.cuh:999-1015 (ptq1_0_trit),
+ *                                      proven == CPU traversal by tests/test-ptq1_0-element-map.cpp
+ *   - ptq1_0·q8_0 dot ................ ggml/src/ggml-cpu/quants.c:281-347 (ggml_vec_dot_ptq1_0_q8_0_generic)
+ *   - PQ2_0 dequant / dot ............ ggml/src/ggml-quants.c:494-511; ggml-cpu/quants.c:232-279
  *
  * PURPOSE. This module is the pure-TypeScript SCALAR REFERENCE for every numerically
  * critical kernel. It exists so the two riskiest kernels (Q1_0 dequant and the
@@ -24,12 +30,35 @@
  * clearly labelled as such.
  */
 
-import { QK1_0, QK2_0, QK8_0, Q1_0_BYTES, Q2_0_BYTES, Q8_0_BYTES } from "../gguf/types";
+import {
+  QK1_0,
+  QK2_0,
+  QK8_0,
+  Q1_0_BYTES,
+  Q2_0_BYTES,
+  Q8_0_BYTES,
+  QK_PQ2_0,
+  PQ2_0_BYTES,
+  QK_PTQ1_0,
+  PTQ1_0_BYTES,
+  PTQ1_0_QS_BYTES,
+  PTQ1_0_QH_BYTES,
+  PTQ1_0_D_OFFSET,
+} from "../gguf/types";
 
 // ---------------------------------------------------------------------------
 // f16 <-> f32. WGSL stores the Q1_0 per-128 scale (d0) and Q8_0 per-32 scale (d1)
 // as f16. To match GPU output bit-for-bit the reference must round scales through
 // f16 exactly the same way, so we implement an IEEE-754 half round-trip here.
+//
+// CAVEAT (measured 2026-09-17, selftest/webgpu-ptq1-harness.html on NVIDIA Blackwell /
+// Chrome, Windows): WGSL leaves the f32->f16 rounding DIRECTION of pack2x16float
+// implementation-defined, and that adapter rounds TOWARD ZERO — the Q8_0 scale that
+// quantize_q8_0.wgsl stores was 1 f16 ulp below this RNE value on 73 of 128 blocks. The
+// weight scales (d0) are read from the file, so only the activation scale (d1) is affected:
+// ~2e-3 normalised on a projection, the same on every Q1_0/Q2_0/PTQ1_0 path. RNE here is
+// the fork's CPU rule (ggml_compute_fp32_to_fp16); a GPU-vs-CPU differential must either
+// detect the adapter's mode (the harness does) or budget for it.
 // ---------------------------------------------------------------------------
 
 const _f32 = new Float32Array(1);
@@ -355,6 +384,283 @@ export function q1q8DotRow(wBytes: Uint8Array, aBlocks: Q8Block[], K: number): n
 }
 
 // ---------------------------------------------------------------------------
+// PQ2_0 (Bonsai 2, ggml type 142) — fork block_pq2_0 { f16 d; u8 qs[32] } = 34 B / 128 w.
+// BYTE-IDENTICAL to the legacy Prism "Q2_0" layout above (fork ggml-common.h:199-207):
+// positional LSB-first 2-bit codes, value = (q - 1) * d (ggml-quants.c:494-511). The
+// functions are named for the type they serve so a caller dispatching on 142 never has to
+// know about the alias; they share one decoder so the two cannot drift apart.
+// ---------------------------------------------------------------------------
+
+export type Pq2Block = Q2Block;
+
+/** Read a PQ2_0 block from 34 raw little-endian bytes (d FIRST, bytes 0..1). */
+export function readPq2Block(bytes: Uint8Array, off = 0): Pq2Block {
+  if (bytes.length - off < PQ2_0_BYTES) throw new Error("readPq2Block: need 34 bytes");
+  return readQ2Block(bytes, off);
+}
+
+/** Dequantize a PQ2_0 block: y[j] = ((qs[j/4] >> ((j%4)*2)) & 3) - 1) * d. */
+export function dequantPq2Block(block: Pq2Block): Float32Array {
+  return dequantQ2Block(block);
+}
+
+/** Dequant straight from raw 34 bytes. */
+export function dequantPq2Bytes(bytes: Uint8Array, off = 0): Float32Array {
+  return dequantPq2Block(readPq2Block(bytes, off));
+}
+
+/** SYNTHETIC-TEST ONLY: pack 128 codes q ∈ {0,1,2,3} (dequant (q-1)*d) into 34 bytes. */
+export function packPq2Block(d: number, values: ArrayLike<number>): Uint8Array {
+  return packQ2Block(d, values);
+}
+
+/**
+ * ggml_vec_dot_pq2_0_q8_0_generic (fork ggml-cpu/quants.c:232-279): per 128-block,
+ * four Q8_0 sub-blocks, int32 Σ ((q-1)·q8) per 32, `sumi += d1 * sumi_block` in f32,
+ * `sumf += d0 * sumi`. Identical accumulation shape to q2q8DotBlock.
+ */
+export function pq2q8DotBlock(w: Pq2Block, a: [Q8Block, Q8Block, Q8Block, Q8Block]): number {
+  return q2q8DotBlock(w, a);
+}
+
+/** Full pq2_0 · q8_0 dot over K weights (K a multiple of 128), 34-byte block stride. */
+export function pq2q8DotRow(wBytes: Uint8Array, aBlocks: Q8Block[], K: number): number {
+  if (K % QK_PQ2_0 !== 0) throw new Error(`pq2q8DotRow: K=${K} not multiple of ${QK_PQ2_0}`);
+  const nBlocks = K / QK_PQ2_0;
+  if (aBlocks.length < nBlocks * 4) throw new Error("pq2q8DotRow: not enough Q8 blocks");
+  let sum = 0;
+  for (let i = 0; i < nBlocks; i++) {
+    const w = readPq2Block(wBytes, i * PQ2_0_BYTES);
+    sum += pq2q8DotBlock(w, [
+      aBlocks[i * 4],
+      aBlocks[i * 4 + 1],
+      aBlocks[i * 4 + 2],
+      aBlocks[i * 4 + 3],
+    ]);
+  }
+  return sum;
+}
+
+// ---------------------------------------------------------------------------
+// PTQ1_0 (Bonsai 2, ggml type 143) — fork block_ptq1_0 (ggml-common.h:209-220):
+//   { u8 qs[24]; u8 qh[2]; f16 d } = 28 bytes, 128 ternary weights, 1.75 bpw.
+//   THE SCALE IS LAST (bytes 26..27) — unlike Q1_0 / Q2_0 / PQ2_0.
+//
+// Trits are base-3 packed, 5 per qs byte and 4 per qh byte, and the element order is NOT
+// positional. The CPU codec (ggml-quants.c:2203, `ptq1_0_stages = {32,16,8}`) walks qs in
+// chunks of c bytes (as many whole chunks of each width as fit in 24 bytes: one 16-byte
+// chunk = 80 values, then one 8-byte chunk = 40 values; the 32 stage never fits), and
+// inside a chunk byte m holds the 5 values x[m + n*c], n = 0..4, n = 0 most significant.
+//
+// Byte encoding (quantize_row_ptq1_0_ref, :2226-2232): trit+1 ∈ {0,1,2}; code = Σ xi·3^(4-n);
+// byte = ceil(code·256/243) = (code·256 + 242) / 243. qh packs 4 trits then `q *= 3` once
+// more (:2246-2250) so the first value sits in the most significant trit slot.
+// Decode (dequantize_row_ptq1_0, :2255-2285): q = (u8)(byte·pow3[n]); xi = (q·3) >> 8;
+// value = (xi - 1)·d. The CUDA/Vulkan accessor form (common.cuh:999-1015) is
+// v = byte; repeat n times v = (v·3) & 0xFF; trit = (v·3) >> 8. Both are transcribed here
+// and the layout test asserts they agree for every element of random blocks, exactly as
+// the fork's tests/test-ptq1_0-element-map.cpp does.
+// ---------------------------------------------------------------------------
+
+export interface Ptq1Block {
+  qs: Uint8Array; // 24 bytes, 5 trits each -> 120 values
+  qh: Uint8Array; // 2 bytes, 4 trits each -> 8 values
+  d: number; // f16-rounded scale (stored LAST in the block)
+}
+
+const PTQ1_0_STAGES = [32, 16, 8] as const; // fork ggml-quants.c:2203
+const PTQ1_0_POW3 = [1, 3, 9, 27, 81, 243] as const; // fork ggml-quants.c:2259
+
+/** Read a PTQ1_0 block from 28 raw little-endian bytes. `d` comes from bytes 26..27. */
+export function readPtq1Block(bytes: Uint8Array, off = 0): Ptq1Block {
+  if (bytes.length - off < PTQ1_0_BYTES) throw new Error("readPtq1Block: need 28 bytes");
+  const qs = new Uint8Array(bytes.subarray(off, off + PTQ1_0_QS_BYTES));
+  const qh = new Uint8Array(
+    bytes.subarray(off + PTQ1_0_QS_BYTES, off + PTQ1_0_QS_BYTES + PTQ1_0_QH_BYTES),
+  );
+  const dBits = bytes[off + PTQ1_0_D_OFFSET] | (bytes[off + PTQ1_0_D_OFFSET + 1] << 8);
+  return { qs, qh, d: f16ToF32(dBits) };
+}
+
+/**
+ * Random-access trit for element e ∈ [0,128) — transcription of the fork's CUDA/Vulkan
+ * accessor `ptq1_0_trit` (ggml-cuda/common.cuh:999-1015). Returns -1, 0 or +1.
+ */
+export function ptq1Trit(block: Ptq1Block, e: number): number {
+  let b: number;
+  let n: number;
+  if (e < 80) {
+    // qs[0..15], chunk of 16
+    b = block.qs[e & 15];
+    n = e >> 4;
+  } else if (e < 120) {
+    // qs[16..23], chunk of 8
+    const t = e - 80;
+    b = block.qs[16 + (t & 7)];
+    n = t >> 3;
+  } else {
+    // qh[0..1], four trits per byte
+    const t = e - 120;
+    b = block.qh[t & 1];
+    n = t >> 1;
+  }
+  let v = b;
+  for (let i = 0; i < n; i++) v = (v * 3) & 0xff;
+  return ((v * 3) >> 8) - 1;
+}
+
+/**
+ * Decode a PTQ1_0 block into 128 trits (Int8Array of -1/0/+1) in ELEMENT ORDER, using the
+ * CPU codec's stage traversal verbatim (dequantize_row_ptq1_0 / the dot's decode loop).
+ * This is the order the Q8_0 activation pairs with.
+ */
+export function decodePtq1Trits(block: Ptq1Block): Int8Array {
+  const q = new Int8Array(QK_PTQ1_0);
+  let o = 0;
+  let j = 0;
+  for (let s = 0; s < 3; s++) {
+    const c = PTQ1_0_STAGES[s];
+    for (; j + c <= PTQ1_0_QS_BYTES; j += c) {
+      for (let n = 0; n < 5; n++) {
+        for (let m = 0; m < c; m++) {
+          const v = (block.qs[j + m] * PTQ1_0_POW3[n]) & 0xff; // uint8_t wrap
+          const xi = (v * 3) >> 8;
+          q[o++] = xi - 1;
+        }
+      }
+    }
+  }
+  for (let n = 0; n < 4; n++) {
+    for (let h = 0; h < PTQ1_0_QH_BYTES; h++) {
+      const v = (block.qh[h] * PTQ1_0_POW3[n]) & 0xff;
+      const xi = (v * 3) >> 8;
+      q[o++] = xi - 1;
+    }
+  }
+  if (o !== QK_PTQ1_0) throw new Error(`decodePtq1Trits: decoded ${o} values, expected 128`);
+  return q;
+}
+
+/** Dequantize a PTQ1_0 block to 128 f32 weights: w[e] = trit[e] * d. */
+export function dequantPtq1Block(block: Ptq1Block): Float32Array {
+  const trits = decodePtq1Trits(block);
+  const out = new Float32Array(QK_PTQ1_0);
+  for (let e = 0; e < QK_PTQ1_0; e++) out[e] = trits[e] * block.d;
+  return out;
+}
+
+/** Dequant straight from raw 28 bytes. */
+export function dequantPtq1Bytes(bytes: Uint8Array, off = 0): Float32Array {
+  return dequantPtq1Block(readPtq1Block(bytes, off));
+}
+
+/**
+ * Build a PTQ1_0 block (28 bytes) from a scale + 128 trits ∈ {-1,0,+1} in element order —
+ * the packing half of quantize_row_ptq1_0_ref (ggml-quants.c:2205-2253) with the
+ * `lroundf(x*id)` step already done. SYNTHETIC-TEST ONLY — real weights arrive packed.
+ * A trit outside {-1,0,1} throws (the fork does not clamp; a real ternary checkpoint
+ * never produces one and silently wrapping it would corrupt four neighbours).
+ */
+export function packPtq1Block(d: number, trits: ArrayLike<number>): Uint8Array {
+  if (trits.length < QK_PTQ1_0) throw new Error("packPtq1Block: need 128 trits");
+  const bytes = new Uint8Array(PTQ1_0_BYTES);
+  const xi = (e: number): number => {
+    const t = trits[e];
+    if (t !== -1 && t !== 0 && t !== 1) throw new Error(`packPtq1Block: trit[${e}]=${t} not in {-1,0,1}`);
+    return t + 1; // -1, 0, 1 -> 0, 1, 2
+  };
+  let x = 0; // element cursor (the fork advances the x pointer by 5*c per chunk)
+  let j = 0;
+  for (let s = 0; s < 3; s++) {
+    const c = PTQ1_0_STAGES[s];
+    for (; j + c <= PTQ1_0_QS_BYTES; j += c) {
+      for (let m = 0; m < c; m++) {
+        let q = 0;
+        for (let n = 0; n < 5; n++) q = q * 3 + xi(x + m + n * c);
+        // ceiling division (243 == pow(3, 5))
+        bytes[j + m] = Math.floor((q * 256 + 242) / 243);
+      }
+      x += 5 * c;
+    }
+  }
+  // 4 elements per byte
+  for (let h = 0; h < PTQ1_0_QH_BYTES; h++) {
+    let q = 0;
+    for (let m = 0; m < 4; m++) q = q * 3 + xi(x + h + m * PTQ1_0_QH_BYTES);
+    // shift the first value to the most significant trit
+    q *= 3;
+    bytes[PTQ1_0_QS_BYTES + h] = Math.floor((q * 256 + 242) / 243);
+  }
+  const hbits = f32ToF16(d);
+  bytes[PTQ1_0_D_OFFSET] = hbits & 0xff;
+  bytes[PTQ1_0_D_OFFSET + 1] = (hbits >> 8) & 0xff;
+  return bytes;
+}
+
+/**
+ * quantize_row_ptq1_0_ref for one 128-wide block of f32 (fork ggml-quants.c:2205-2253):
+ * d = max|x| (NOT /127), id = d ? 1/d : 0, trit = round(x*id) (no clamp). SYNTHETIC-TEST
+ * ONLY. `Math.round` ties differ from lroundf (half away from zero) only at exactly ±0.5,
+ * which a ternary input never hits; a non-ternary input is refused by packPtq1Block.
+ */
+export function quantizePtq1Block(x: Float32Array | number[], off = 0): Uint8Array {
+  let amax = 0;
+  for (let j = 0; j < QK_PTQ1_0; j++) amax = Math.max(amax, Math.abs(x[off + j]));
+  const d = amax;
+  const id = d ? 1 / d : 0;
+  const trits = new Int8Array(QK_PTQ1_0);
+  for (let j = 0; j < QK_PTQ1_0; j++) {
+    const v = x[off + j] * id;
+    trits[j] = v < 0 ? -Math.round(-v) : Math.round(v); // lroundf: half away from zero
+  }
+  return packPtq1Block(d, trits);
+}
+
+/**
+ * ggml_vec_dot_ptq1_0_q8_0_generic (fork ggml-cpu/quants.c:281-347), one 128-block:
+ * decode the trits to element order FIRST, then the exact two-level loop —
+ *   for k in 0..3:  sumi_block(i32) = Σ_{b<32} q[k*32+b] * y[4i+k].qs[b]
+ *                   sumi(f32)      += d1_k * sumi_block
+ *   result          = d0 * sumi
+ */
+export function ptq1q8DotBlock(w: Ptq1Block, a: [Q8Block, Q8Block, Q8Block, Q8Block]): number {
+  const q = decodePtq1Trits(w);
+  const d0 = w.d;
+  let sumi = 0;
+  for (let k = 0; k < 4; k++) {
+    const d1 = a[k].d;
+    const qs8 = a[k].qs;
+    let sumiBlock = 0; // integer accumulation
+    for (let b = 0; b < 32; b++) sumiBlock += q[k * 32 + b] * qs8[b];
+    sumi += d1 * sumiBlock;
+  }
+  return d0 * sumi;
+}
+
+/**
+ * Full ptq1_0 · q8_0 dot over K weights (K a multiple of 128). `wBytes` is the raw weight
+ * row (K/128 * 28 bytes); `aBlocks` the activation row quantized to Q8_0 (K/32 blocks).
+ * PTQ1_0 block i pairs with Q8_0 blocks 4i..4i+3. Mirrors what a ptq1_0_q8_0 matmul kernel
+ * computes per output element.
+ */
+export function ptq1q8DotRow(wBytes: Uint8Array, aBlocks: Q8Block[], K: number): number {
+  if (K % QK_PTQ1_0 !== 0) throw new Error(`ptq1q8DotRow: K=${K} not multiple of ${QK_PTQ1_0}`);
+  const nBlocks = K / QK_PTQ1_0;
+  if (aBlocks.length < nBlocks * 4) throw new Error("ptq1q8DotRow: not enough Q8 blocks");
+  let sum = 0;
+  for (let i = 0; i < nBlocks; i++) {
+    const w = readPtq1Block(wBytes, i * PTQ1_0_BYTES);
+    sum += ptq1q8DotBlock(w, [
+      aBlocks[i * 4],
+      aBlocks[i * 4 + 1],
+      aBlocks[i * 4 + 2],
+      aBlocks[i * 4 + 3],
+    ]);
+  }
+  return sum;
+}
+
+// ---------------------------------------------------------------------------
 // Standard-precision reference kernels (RMSNorm, SiLU/SwiGLU) — f32 accumulation.
 // ---------------------------------------------------------------------------
 
@@ -507,7 +813,7 @@ export function refKv4SoftmaxAttn(
    The KV cache is the binding memory constraint for in-browser context: at 28
    layers / 128 head-dim, f32 KV costs ~224 KB per token, so a 2,787-token prompt
    is ~600 MB of KV on a browser GPU budget. RAM offload (model/ram_kv_offload.ts,
-   D-1855) exists to lift that ceiling by keeping the master cache in a host
+   the RAM-KV offload) exists to lift that ceiling by keeping the master cache in a host
    ArrayBuffer and streaming a WINDOW of positions to VRAM.
 
    That is only possible if attention can be computed a window at a time, and it
@@ -638,4 +944,15 @@ export function refKv4SoftmaxAttnChunked(
   return out;
 }
 
-export const REF_BLOCKS = { QK1_0, QK2_0, QK8_0, Q1_0_BYTES, Q2_0_BYTES, Q8_0_BYTES } as const;
+export const REF_BLOCKS = {
+  QK1_0,
+  QK2_0,
+  QK8_0,
+  Q1_0_BYTES,
+  Q2_0_BYTES,
+  Q8_0_BYTES,
+  QK_PQ2_0,
+  PQ2_0_BYTES,
+  QK_PTQ1_0,
+  PTQ1_0_BYTES,
+} as const;

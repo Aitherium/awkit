@@ -327,6 +327,7 @@ async function execKbGet(args: Record<string, any>): Promise<string> {
 
 export const LOCAL_PIM_TOOLS: Record<string, RegisteredTool> = {
   notes_create: {
+    anonSafe: true,
     definition: {
       name: 'notes_create',
       description:
@@ -345,6 +346,7 @@ export const LOCAL_PIM_TOOLS: Record<string, RegisteredTool> = {
     execute: execNotesCreate,
   },
   notes_search: {
+    anonSafe: true,
     definition: {
       name: 'notes_search',
       description:
@@ -361,6 +363,7 @@ export const LOCAL_PIM_TOOLS: Record<string, RegisteredTool> = {
     execute: execNotesSearch,
   },
   notes_get: {
+    anonSafe: true,
     definition: {
       name: 'notes_get',
       description: 'Read a full note by its id, or the best match for a search.',
@@ -374,6 +377,7 @@ export const LOCAL_PIM_TOOLS: Record<string, RegisteredTool> = {
     execute: execNotesGet,
   },
   notes_update: {
+    anonSafe: true,
     definition: {
       name: 'notes_update',
       description:
@@ -392,6 +396,7 @@ export const LOCAL_PIM_TOOLS: Record<string, RegisteredTool> = {
     execute: execNotesUpdate,
   },
   notes_delete: {
+    anonSafe: true,
     definition: {
       name: 'notes_delete',
       description: 'Delete a note by its id. Confirm before using.',
@@ -406,6 +411,7 @@ export const LOCAL_PIM_TOOLS: Record<string, RegisteredTool> = {
     execute: execNotesDelete,
   },
   calendar_today: {
+    anonSafe: true,
     definition: {
       name: 'calendar_today',
       description:
@@ -419,6 +425,7 @@ export const LOCAL_PIM_TOOLS: Record<string, RegisteredTool> = {
     execute: execCalendarToday,
   },
   calendar_list: {
+    anonSafe: true,
     definition: {
       name: 'calendar_list',
       description:
@@ -435,6 +442,7 @@ export const LOCAL_PIM_TOOLS: Record<string, RegisteredTool> = {
     execute: execCalendarList,
   },
   calendar_create_event: {
+    anonSafe: true,
     definition: {
       name: 'calendar_create_event',
       description:
@@ -456,6 +464,7 @@ export const LOCAL_PIM_TOOLS: Record<string, RegisteredTool> = {
     execute: execCalendarCreateEvent,
   },
   tasks_add: {
+    anonSafe: true,
     definition: {
       name: 'tasks_add',
       description:
@@ -475,6 +484,7 @@ export const LOCAL_PIM_TOOLS: Record<string, RegisteredTool> = {
     execute: execTasksAdd,
   },
   tasks_list: {
+    anonSafe: true,
     definition: {
       name: 'tasks_list',
       description:
@@ -485,6 +495,7 @@ export const LOCAL_PIM_TOOLS: Record<string, RegisteredTool> = {
     execute: execTasksList,
   },
   tasks_complete: {
+    anonSafe: true,
     definition: {
       name: 'tasks_complete',
       description: 'Mark a task done by its id (from tasks_list). Use when they say they did it.',
@@ -499,6 +510,7 @@ export const LOCAL_PIM_TOOLS: Record<string, RegisteredTool> = {
     execute: execTasksComplete,
   },
   tasks_delete: {
+    anonSafe: true,
     definition: {
       name: 'tasks_delete',
       description: 'Delete a task by its id. Confirm before using.',
@@ -513,6 +525,7 @@ export const LOCAL_PIM_TOOLS: Record<string, RegisteredTool> = {
     execute: execTasksDelete,
   },
   kb_save: {
+    anonSafe: true,
     definition: {
       name: 'kb_save',
       description:
@@ -532,6 +545,7 @@ export const LOCAL_PIM_TOOLS: Record<string, RegisteredTool> = {
     execute: execKbSave,
   },
   kb_search: {
+    anonSafe: true,
     definition: {
       name: 'kb_search',
       description:
@@ -548,6 +562,7 @@ export const LOCAL_PIM_TOOLS: Record<string, RegisteredTool> = {
     execute: execKbSearch,
   },
   kb_get: {
+    anonSafe: true,
     definition: {
       name: 'kb_get',
       description: 'Read a full knowledge-base item by its id (from kb_search).',
