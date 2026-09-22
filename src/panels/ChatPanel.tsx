@@ -11,6 +11,7 @@ import { useTheme } from '../ui/ThemeProvider'
 import { markFile } from '../lib/brandTokens'
 import { useVoiceChat } from '../voice/useVoiceChat'
 import { VoiceMicButton } from '../voice/VoiceMicButton'
+import { getApiBase } from '../lib/apiBase'
 
 interface LLMUsage {
   provider: string
@@ -622,7 +623,7 @@ export default function ChatPanel({ conversationId, onNewConversation, externalI
     form.append('file', file)
     form.append('auto_extract', 'true')
     try {
-      const res = await fetch('/api/documents/upload', { method: 'POST', body: form })
+      const res = await fetch(`${getApiBase()}/api/documents/upload`, { method: 'POST', body: form })
       if (res.ok) {
         const data = await res.json()
         return `Uploaded ${file.name} (${data.chunks_created ?? data.chunk_count ?? '?'} chunks ingested)`
@@ -678,7 +679,7 @@ export default function ChatPanel({ conversationId, onNewConversation, externalI
     try {
       const controller = new AbortController()
       const connectTimeout = setTimeout(() => controller.abort(), 60_000)
-      const resp = await fetch('/api/chat/aither', {
+      const resp = await fetch(`${getApiBase()}/api/chat/aither`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -856,7 +857,7 @@ export default function ChatPanel({ conversationId, onNewConversation, externalI
     let usage: LLMUsage | undefined
 
     try {
-      const resp = await fetch('/api/chat/stream', {
+      const resp = await fetch(`${getApiBase()}/api/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: msg, conversation_id: conversationId || undefined }),
@@ -1010,7 +1011,7 @@ export default function ChatPanel({ conversationId, onNewConversation, externalI
   const handleSelection = async (msg: Message, chosen: { name: string }, reasoning: string) => {
     if (!msg.selection) return
     try {
-      await fetch('/api/selections', {
+      await fetch(`${getApiBase()}/api/selections`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

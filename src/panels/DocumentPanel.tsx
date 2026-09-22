@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useRef, useCallback } from 'react'
+import { getApiBase } from '../lib/apiBase'
 
 interface Doc {
   id: string
@@ -86,7 +87,7 @@ export default function DocumentPanel() {
   }
 
   const fetchDocs = () => {
-    fetch('/api/documents')
+    fetch(`${getApiBase()}/api/documents`)
       .then(r => r.json())
       .then(setDocs)
       .catch(() => {})
@@ -101,7 +102,7 @@ export default function DocumentPanel() {
     form.append('file', file)
     form.append('auto_extract', 'true')
     try {
-      const resp = await fetch('/api/documents/upload', { method: 'POST', body: form })
+      const resp = await fetch(`${getApiBase()}/api/documents/upload`, { method: 'POST', body: form })
       if (resp.ok) {
         const data = await resp.json()
         if (data.job_id) {
@@ -128,7 +129,7 @@ export default function DocumentPanel() {
     form.append('doc_type', 'other')
 
     try {
-      const resp = await fetch('/api/documents/batch', { method: 'POST', body: form })
+      const resp = await fetch(`${getApiBase()}/api/documents/batch`, { method: 'POST', body: form })
       if (resp.status === 404) {
         await uploadSequential(fileList)
         return
@@ -163,7 +164,7 @@ export default function DocumentPanel() {
       form.append('file', file)
       form.append('auto_extract', 'true')
       try {
-        const resp = await fetch('/api/documents/upload', { method: 'POST', body: form })
+        const resp = await fetch(`${getApiBase()}/api/documents/upload`, { method: 'POST', body: form })
         if (resp.ok) { done++ } else { errors++ }
       } catch { errors++ }
     }

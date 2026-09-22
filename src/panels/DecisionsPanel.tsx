@@ -7,6 +7,7 @@
 
 import React, { useEffect, useState } from "react";
 import { AlertCircle, CheckCircle, XCircle, Clock } from "lucide-react";
+import { getApiBase } from '../lib/apiBase'
 
 interface DecisionOption {
   key: string;
@@ -47,7 +48,7 @@ export const DecisionsPanel: React.FC = () => {
 
   const fetchDecisions = async () => {
     try {
-      const response = await fetch("/api/v1/decisions?status=open&limit=50");
+      const response = await fetch(`${getApiBase()}/api/v1/decisions?status=open&limit=50`);
       if (!response.ok) throw new Error(response.statusText);
       const data = await response.json();
       setDecisions(data.decisions || []);

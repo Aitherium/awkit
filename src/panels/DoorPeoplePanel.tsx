@@ -16,6 +16,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../hooks/useAuth'
+import { getApiBase } from '../lib/apiBase'
 
 interface Grant {
   id: string
@@ -76,8 +77,8 @@ export default function DoorPeoplePanel() {
     setError('')
     try {
       const [g, a] = await Promise.all([
-        fetch('/api/gate/grants', { credentials: 'include' }),
-        fetch('/api/gate/audit?limit=50', { credentials: 'include' }),
+        fetch(`${getApiBase()}/api/gate/grants`, { credentials: 'include' }),
+        fetch(`${getApiBase()}/api/gate/audit?limit=50`, { credentials: 'include' }),
       ])
       if (g.ok) setGrants((await g.json()).grants || [])
       if (a.ok) {
@@ -97,7 +98,7 @@ export default function DoorPeoplePanel() {
     if (!to.trim()) return
     setBusy(true); setError(''); setMinted(null)
     try {
-      const r = await fetch('/api/gate/invite', {
+      const r = await fetch(`${getApiBase()}/api/gate/invite`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -120,7 +121,7 @@ export default function DoorPeoplePanel() {
   const revoke = useCallback(async (id: string) => {
     setBusy(true); setError('')
     try {
-      const r = await fetch('/api/gate/revoke', {
+      const r = await fetch(`${getApiBase()}/api/gate/revoke`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },

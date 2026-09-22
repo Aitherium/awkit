@@ -16,6 +16,7 @@ import {
   Users,
 } from "lucide-react";
 import { getToken, getStoredUser, clearToken, clearStoredUser } from "./AdminAPI";
+import { getApiBase } from '../lib/apiBase'
 
 export interface AdminNavItem {
   href: string;
@@ -85,7 +86,7 @@ export default function AdminShell({
     // where it exists; this client check keeps the admin UI itself honest.
     const legacyOk = !!stored && ["admin", "owner"].includes(stored.role);
     let cancelled = false;
-    fetch("/api/auth/me", { headers: { Authorization: `Bearer ${token}` } })
+    fetch(`${getApiBase()}/api/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
       .then((res) => (res.ok ? res.json() : null))
       .then((me) => {
         if (cancelled) return;

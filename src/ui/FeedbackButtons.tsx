@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { getApiBase } from '../lib/apiBase'
 /* No router import here on purpose. portal-kit is consumed by AitherVeil, a
    Next app, and `react-router-dom` is not a declared dependency of portal-kit
    OR of AitherVeil — so the moment anything pulled this component into the Veil
@@ -42,7 +43,7 @@ export default function FeedbackButtons({ messageId, sessionId, tenantId, agentI
       // window is present in every path that actually reaches it.
       const route = typeof window !== 'undefined' ? window.location.pathname : ''
 
-      await fetch('/api/feedback', {
+      await fetch(`${getApiBase()}/api/feedback`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -12,6 +12,7 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import type { VoiceTier, VoiceMode } from './voice-types'
 import { useVoiceInput } from './useVoiceInput'
 import { useSpeechOutput } from './useSpeechOutput'
+import { getApiBase } from '../lib/apiBase'
 
 export interface UseVoiceChatOptions {
   enabled?: boolean
@@ -149,7 +150,7 @@ export function useVoiceChat(options: UseVoiceChatOptions): UseVoiceChatReturn {
       }
       const base64 = btoa(binary)
 
-      const resp = await fetch('/api/voice/transcribe', {
+      const resp = await fetch(`${getApiBase()}/api/voice/transcribe`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ audio_base64: base64 }),

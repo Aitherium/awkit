@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import ChannelManagementPanel from './ChannelManagementPanel'
+import { getApiBase } from '../lib/apiBase'
 
 interface Props { apiBase?: string }
 
@@ -89,17 +90,17 @@ export default function WorkspaceAdminPanel({ apiBase = '/api/platform' }: Props
 
   const fetchIdentity = useCallback(async () => {
     try {
-      const r = await fetch('/api/auth/m365/status')
+      const r = await fetch(`${getApiBase()}/api/auth/m365/status`)
       if (r.ok) setM365Status(await r.json())
     } catch {}
     // Check LDAP — if the endpoint exists, it's configured
     try {
-      const r = await fetch('/api/auth/ldap/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+      const r = await fetch(`${getApiBase()}/api/auth/ldap/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
       setLdapStatus(r.status === 501 ? 'not_configured' : 'configured')
     } catch { setLdapStatus('unknown') }
     // Fetch IdP status (SAML SPs + OIDC clients)
     try {
-      const r = await fetch('/api/admin/saml-idp')
+      const r = await fetch(`${getApiBase()}/api/admin/saml-idp`)
       if (r.ok) {
         const d = await r.json()
         setSamlSPs(d.service_providers || d.sps || [])
@@ -108,7 +109,7 @@ export default function WorkspaceAdminPanel({ apiBase = '/api/platform' }: Props
       }
     } catch {}
     try {
-      const r = await fetch('/api/admin/oidc')
+      const r = await fetch(`${getApiBase()}/api/admin/oidc`)
       if (r.ok) {
         const d = await r.json()
         setOidcClients(d.clients || [])
@@ -118,7 +119,7 @@ export default function WorkspaceAdminPanel({ apiBase = '/api/platform' }: Props
 
   const fetchDirectory = useCallback(async () => {
     try {
-      const r = await fetch('/api/directory/members')
+      const r = await fetch(`${getApiBase()}/api/directory/members`)
       if (r.ok) {
         const d = await r.json()
         const items = d.data || d.items || d
@@ -388,7 +389,7 @@ export default function WorkspaceAdminPanel({ apiBase = '/api/platform' }: Props
                 }}>Download SAML IdP Metadata XML</a>
                 <button onClick={async () => {
                   try {
-                    const r = await fetch('/api/admin/saml-idp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'github-config' }) })
+                    const r = await fetch(`${getApiBase()}/api/admin/saml-idp`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'github-config' }) })
                     if (r.ok) { const d = await r.json(); navigator.clipboard?.writeText(JSON.stringify(d, null, 2)); setSpRegStatus('GitHub config copied to clipboard') }
                   } catch {}
                   setTimeout(() => setSpRegStatus(''), 3000)
@@ -398,7 +399,7 @@ export default function WorkspaceAdminPanel({ apiBase = '/api/platform' }: Props
             {!idpHasKeypair && (
               <button onClick={async () => {
                 try {
-                  await fetch('/api/admin/saml-idp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'generate-keypair', common_name: 'AitherOS IdP', validity_years: 3 }) })
+                  await fetch(`${getApiBase()}/api/admin/saml-idp`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'generate-keypair', common_name: 'AitherOS IdP', validity_years: 3 }) })
                   fetchIdentity()
                   setSpRegStatus('Signing keypair generated')
                 } catch { setSpRegStatus('Failed to generate keypair') }
@@ -459,7 +460,7 @@ export default function WorkspaceAdminPanel({ apiBase = '/api/platform' }: Props
                       <button onClick={async () => {
                         if (!newSpEntityId || !newSpAcsUrl) { setSpRegStatus('Entity ID and ACS URL required'); return }
                         try {
-                          const r = await fetch('/api/admin/saml-idp', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                          const r = await fetch(`${getApiBase()}/api/admin/saml-idp`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ action: 'register-sp', sp_id: newSpName?.toLowerCase().replace(/\s+/g, '-') || 'custom-sp', entity_id: newSpEntityId, acs_url: newSpAcsUrl, name: newSpName }) })
                           if (r.ok) { setSpRegStatus('SP registered'); setNewSpName(''); setNewSpEntityId(''); setNewSpAcsUrl(''); fetchIdentity() }
                           else { const d = await r.json(); setSpRegStatus(d.detail || 'Registration failed') }
@@ -471,7 +472,7 @@ export default function WorkspaceAdminPanel({ apiBase = '/api/platform' }: Props
                       }}>Register SP</button>
                       <button onClick={async () => {
                         try {
-                          const r = await fetch('/api/admin/saml-idp', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                          const r = await fetch(`${getApiBase()}/api/admin/saml-idp`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ action: 'register-github', org_name: newSpName || 'my-org' }) })
                           if (r.ok) { setSpRegStatus('GitHub org registered'); fetchIdentity() }
                         } catch {}
@@ -525,7 +526,7 @@ export default function WorkspaceAdminPanel({ apiBase = '/api/platform' }: Props
                     <button onClick={async () => {
                       if (!newOidcName || !newOidcRedirect) { setOidcRegStatus('Name and redirect URI required'); return }
                       try {
-                        const r = await fetch('/api/admin/oidc', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        const r = await fetch(`${getApiBase()}/api/admin/oidc`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({ name: newOidcName, redirect_uris: [newOidcRedirect] }) })
                         if (r.ok) {
                           const d = await r.json()
@@ -581,7 +582,7 @@ export default function WorkspaceAdminPanel({ apiBase = '/api/platform' }: Props
                   if (!csvText.trim()) return
                   setImportStatus('Importing...')
                   try {
-                    const r = await fetch('/api/directory/members/import-csv', {
+                    const r = await fetch(`${getApiBase()}/api/directory/members/import-csv`, {
                       method: 'POST', headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ csv_data: csvText }),
                     })
@@ -607,7 +608,7 @@ export default function WorkspaceAdminPanel({ apiBase = '/api/platform' }: Props
                   if (!idpCredentials.trim()) return
                   setImportStatus('Importing...')
                   try {
-                    const r = await fetch('/api/directory/members/import-external', {
+                    const r = await fetch(`${getApiBase()}/api/directory/members/import-external`, {
                       method: 'POST', headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({
                         source: importSource === 'google' ? 'google_workspace' : 'microsoft_graph',

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { useAuth } from '../hooks/useAuth'
+import { getApiBase } from '../lib/apiBase'
 
 interface Doc {
   id: string
@@ -107,7 +108,7 @@ export default function ESignPanel() {
   const fileRef = useRef<HTMLInputElement>(null)
 
   const fetchDocs = () => {
-    fetch('/api/documents')
+    fetch(`${getApiBase()}/api/documents`)
       .then(r => r.json())
       .then(data => {
         // FastAPI backends return {documents:[{id,...}]}; Veil/Genesis returns {documents:[{doc_id,...}]}
@@ -119,7 +120,7 @@ export default function ESignPanel() {
   }
 
   const fetchShares = () => {
-    fetch('/api/esign/shares')
+    fetch(`${getApiBase()}/api/esign/shares`)
       .then(r => (r.ok ? r.json() : Promise.reject()))
       .then(data => {
         const raw: any[] = data.shares || data || []
@@ -277,7 +278,7 @@ export default function ESignPanel() {
     form.append('file', file)
     form.append('doc_type', 'contract')
     try {
-      const resp = await fetch('/api/documents/upload', { method: 'POST', body: form })
+      const resp = await fetch(`${getApiBase()}/api/documents/upload`, { method: 'POST', body: form })
       if (resp.ok) {
         const data = await resp.json()
         fetchDocs()

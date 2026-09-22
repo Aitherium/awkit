@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { getApiBase } from '../lib/apiBase'
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -216,7 +217,7 @@ export default function ApprovalQueue() {
   /* -- Fetch pending badge count ----------------------------------- */
   const fetchPendingCount = useCallback(async () => {
     try {
-      const res = await fetch('/api/approvals/pending')
+      const res = await fetch(`${getApiBase()}/api/approvals/pending`)
       if (res.ok) {
         const data = await res.json()
         const items = data.approvals ?? data.pending ?? data ?? []

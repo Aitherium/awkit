@@ -7,6 +7,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react'
 import type { VoiceTier } from './voice-types'
+import { getApiBase } from '../lib/apiBase'
 
 export interface UseSpeechOutputOptions {
   tier?: VoiceTier
@@ -88,7 +89,7 @@ export function useSpeechOutput(options: UseSpeechOutputOptions = {}): UseSpeech
     setIsSpeaking(true)
 
     try {
-      const resp = await fetch('/api/voice/synthesize', {
+      const resp = await fetch(`${getApiBase()}/api/voice/synthesize`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text, voice: voice || 'nova', speed: rate }),
