@@ -256,7 +256,7 @@ export default function LoginPage({
               border: 'none', padding: 0, cursor: 'pointer', font: 'inherit',
             }}>Create one now</button>
           ) : (
-            <a href="https://portal.aitherium.com/register" target="_blank" rel="noopener noreferrer"
+            <a href="https://api.aitherium.com/register" target="_blank" rel="noopener noreferrer"
               style={{ color: 'var(--accent-primary)', fontWeight: 500, textDecoration: 'none' }}>
               {whiteLabel ? 'Create an account' : `Sign up on ${platformName}`}
             </a>

@@ -97,6 +97,14 @@
       "types": "./src/webml/bonsai-worker-core.ts",
       "import": "./src/webml/bonsai-worker-core.ts"
     },
+    "./webml/bonsai/wasp": {
+      "types": "./src/webml/bonsai/wasp/index.ts",
+      "import": "./src/webml/bonsai/wasp/index.ts"
+    },
+    "./webml/device-class": {
+      "types": "./src/webml/device-class.ts",
+      "import": "./src/webml/device-class.ts"
+    },
     "./sync": {
       "types": "./src/sync/index.ts",
       "import": "./src/sync/index.ts"
@@ -189,6 +197,14 @@
         "types": "./dist/webml/bonsai-worker-core.d.ts",
         "import": "./dist/webml/bonsai-worker-core.js"
       },
+      "./webml/bonsai/wasp": {
+        "types": "./dist/webml/bonsai/wasp/index.d.ts",
+        "import": "./dist/webml/bonsai/wasp/index.js"
+      },
+      "./webml/device-class": {
+        "types": "./dist/webml/device-class.d.ts",
+        "import": "./dist/webml/device-class.js"
+      },
       "./sync": {
         "types": "./dist/sync/index.d.ts",
         "import": "./dist/sync/index.js"
@@ -196,6 +212,22 @@
       "./channel-frames": {
         "types": "./dist/channel-frames/index.d.ts",
         "import": "./dist/channel-frames/index.js"
+      },
+      "./panels/*": {
+        "types": "./dist/panels/*.d.ts",
+        "import": "./dist/panels/*.js"
+      },
+      "./panels/registry": {
+        "types": "./dist/panels/registry.d.ts",
+        "import": "./dist/panels/registry.js"
+      },
+      "./terminal": {
+        "types": "./dist/terminal/index.d.ts",
+        "import": "./dist/terminal/index.js"
+      },
+      "./terminal/wrapped-links": {
+        "types": "./dist/terminal/wrapped-links.d.ts",
+        "import": "./dist/terminal/wrapped-links.js"
       }
     },
     "registry": "https://npm.pkg.github.com",

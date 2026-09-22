@@ -94,7 +94,7 @@ export default function RegisterPage({
           ))}
         </ul>
         <div style={{ marginTop: 48, fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-          Powered by <a href="https://portal.aitherium.com" target="_blank" rel="noopener" style={{ color: 'var(--accent-primary)', textDecoration: 'none' }}>Aitherium</a>
+          Powered by <a href="https://api.aitherium.com" target="_blank" rel="noopener" style={{ color: 'var(--accent-primary)', textDecoration: 'none' }}>Aitherium</a>
         </div>
       </div>
 

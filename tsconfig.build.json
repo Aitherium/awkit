@@ -7,7 +7,12 @@
     "strict": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
-    "lib": ["ES2020", "DOM", "DOM.Iterable", "WebWorker"],
+    "lib": [
+      "ES2020",
+      "DOM",
+      "DOM.Iterable",
+      "WebWorker"
+    ],
     "types": [
       "node",
       "@webgpu/types"
@@ -17,7 +22,15 @@
     "sourceMap": false,
     "outDir": "dist",
     "rootDir": "src",
-    "emitDeclarationOnly": false
+    "emitDeclarationOnly": false,
+    "paths": {
+      "awkit/lib": [
+        "./src/lib/index"
+      ],
+      "awkit/*": [
+        "./src/*"
+      ]
+    }
   },
   "include": [
     "src"
