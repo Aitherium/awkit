@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { AlertCircle, Loader2, Package, ExternalLink, RefreshCw, Trash2, PlayCircle, PauseCircle, Activity, ArrowUpCircle } from 'lucide-react'
+import { getApiBase } from '../lib/apiBase'
 
 interface Deployment {
   deployment_id: string
@@ -41,7 +42,7 @@ export default function DeployedAppsPanel() {
 
   const fetchDeployments = useCallback(async () => {
     try {
-      const res = await fetch('/api/apps/deployments', {
+      const res = await fetch(`${getApiBase()}/api/apps/deployments`, {
         headers: { 'Content-Type': 'application/json' },
       })
 
@@ -86,7 +87,7 @@ export default function DeployedAppsPanel() {
       // nothing about admin rights. Ask the server who the caller is; restart/scale are
       // admin-gated server-side regardless of what this flag renders.
       try {
-        const meRes = await fetch('/api/workspace/members', {
+        const meRes = await fetch(`${getApiBase()}/api/workspace/members`, {
           headers: { 'Content-Type': 'application/json' },
         })
         setIsAdmin(meRes.ok && (await meRes.json()).caller_is_admin === true)

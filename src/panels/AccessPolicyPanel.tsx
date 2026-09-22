@@ -14,6 +14,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../hooks/useAuth'
+import { getApiBase } from '../lib/apiBase'
 
 interface Doors {
   identity: boolean
@@ -83,7 +84,7 @@ export default function AccessPolicyPanel() {
       if (nextDomains !== undefined) {
         payload.allowed_domains = nextDomains.split(/[,\s]+/).map(s => s.trim()).filter(Boolean)
       }
-      const r = await fetch('/api/gate/policy', {
+      const r = await fetch(`${getApiBase()}/api/gate/policy`, {
         method: 'PUT',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },

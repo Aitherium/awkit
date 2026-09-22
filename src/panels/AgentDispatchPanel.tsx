@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
+import { getApiBase } from '../lib/apiBase'
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -115,7 +116,7 @@ export default function AgentDispatchPanel() {
     setError(null)
     setPlatformUnavailable(false)
     try {
-      const res = await fetch('/api/intelligence/agents')
+      const res = await fetch(`${getApiBase()}/api/intelligence/agents`)
       if (res.status === 501) {
         setPlatformUnavailable(true)
         setAgents([])
@@ -154,7 +155,7 @@ export default function AgentDispatchPanel() {
     setResult(null)
     setDispatchError(null)
     try {
-      const res = await fetch('/api/intelligence/forge', {
+      const res = await fetch(`${getApiBase()}/api/intelligence/forge`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

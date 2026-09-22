@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { AlertCircle, Loader2, Mail, User, Trash2, ChevronDown, Plus, X } from 'lucide-react'
+import { getApiBase } from '../lib/apiBase'
 
 interface Member {
   email: string
@@ -50,7 +51,7 @@ export default function WorkspaceMembersPanel() {
 
   const fetchChannels = useCallback(async () => {
     try {
-      const res = await fetch('/api/relay/v1/channels', {
+      const res = await fetch(`${getApiBase()}/api/relay/v1/channels`, {
         headers: { 'Content-Type': 'application/json' },
       })
       if (res.ok) {
@@ -67,10 +68,10 @@ export default function WorkspaceMembersPanel() {
     setError(null)
     try {
       const [membersRes, invitesRes] = await Promise.all([
-        fetch('/api/workspace/members', {
+        fetch(`${getApiBase()}/api/workspace/members`, {
           headers: { 'Content-Type': 'application/json' },
         }),
-        fetch('/api/workspace/invites', {
+        fetch(`${getApiBase()}/api/workspace/invites`, {
           headers: { 'Content-Type': 'application/json' },
         }).catch(() => null),
       ])
@@ -174,7 +175,7 @@ export default function WorkspaceMembersPanel() {
       setError(null)
 
       try {
-        const res = await fetch('/api/workspace/directory/invite', {
+        const res = await fetch(`${getApiBase()}/api/workspace/directory/invite`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

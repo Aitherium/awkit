@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { getApiBase } from '../lib/apiBase'
 
 interface ProviderDef {
   id: string
@@ -63,7 +64,7 @@ export default function LLMConfigPanel() {
 
   const fetchConfig = useCallback(async () => {
     try {
-      const resp = await fetch('/api/settings/llm')
+      const resp = await fetch(`${getApiBase()}/api/settings/llm`)
       if (!resp.ok) throw new Error(`${resp.status}`)
       setConfig(await resp.json())
       setError(null)
@@ -82,7 +83,7 @@ export default function LLMConfigPanel() {
   ) => {
     setSaving(true)
     try {
-      const resp = await fetch('/api/settings/llm', {
+      const resp = await fetch(`${getApiBase()}/api/settings/llm`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ provider, ...updates }),
@@ -105,7 +106,7 @@ export default function LLMConfigPanel() {
   const setFallback = async (pid: string | null) => {
     setSaving(true)
     try {
-      const resp = await fetch('/api/settings/llm', {
+      const resp = await fetch(`${getApiBase()}/api/settings/llm`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fallback: pid || '' }),
@@ -125,7 +126,7 @@ export default function LLMConfigPanel() {
     setTesting(pid)
     setTestResult(null)
     try {
-      const resp = await fetch('/api/settings/llm/test', {
+      const resp = await fetch(`${getApiBase()}/api/settings/llm/test`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ provider: pid }),

@@ -8,6 +8,7 @@
  */
 
 import { useState, useEffect } from 'react'
+import { getApiBase } from '../lib/apiBase'
 
 interface PlatformInfo {
   id: string
@@ -99,7 +100,7 @@ export default function PostComposerPanel({
   const handleAI = async () => {
     setAiLoading(true)
     try {
-      const res = await fetch('/api/content/caption', {
+      const res = await fetch(`${getApiBase()}/api/content/caption`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -5,6 +5,7 @@ import { useAuth } from '../hooks/useAuth'
 import LLMConfigPanel from './LLMConfigPanel'
 import AccessPolicyPanel from './AccessPolicyPanel'
 import DoorPeoplePanel from './DoorPeoplePanel'
+import { getApiBase } from '../lib/apiBase'
 
 interface ProviderInfo {
   provider: string
@@ -33,10 +34,10 @@ export default function SettingsPanel() {
   const [embedConfig, setEmbedConfig] = useState<EmbedConfig | null>(null)
 
   useEffect(() => {
-    fetch('/api/config/provider').then(r => r.json()).then(setProvider).catch(() => {})
-    fetch('/api/platform/status').then(r => r.json()).then(setPlatform).catch(() => {})
-    fetch('/api/stats').then(r => r.json()).then(setStats).catch(() => {})
-    fetch('/api/config/embed').then(r => r.json()).then(setEmbedConfig).catch(() => {})
+    fetch(`${getApiBase()}/api/config/provider`).then(r => r.json()).then(setProvider).catch(() => {})
+    fetch(`${getApiBase()}/api/platform/status`).then(r => r.json()).then(setPlatform).catch(() => {})
+    fetch(`${getApiBase()}/api/stats`).then(r => r.json()).then(setStats).catch(() => {})
+    fetch(`${getApiBase()}/api/config/embed`).then(r => r.json()).then(setEmbedConfig).catch(() => {})
   }, [])
 
   const appUrl = embedConfig?.app_url || window.location.hostname

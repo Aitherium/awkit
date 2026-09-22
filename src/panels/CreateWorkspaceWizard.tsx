@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useCallback, useEffect } from 'react'
+import { getApiBase } from '../lib/apiBase'
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -261,7 +262,7 @@ export default function CreateWorkspaceWizard() {
     }
 
     try {
-      const res = await fetch('/api/platform/workspaces', {
+      const res = await fetch(`${getApiBase()}/api/platform/workspaces`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(spec),
@@ -430,7 +431,7 @@ export default function CreateWorkspaceWizard() {
   const renderAgentStep = () => {
     // Lazy-load packs on first render of this step
     if (agentPacks.length === 0) {
-      fetch('/api/marketplace/packs?type=agent&per_page=6')
+      fetch(`${getApiBase()}/api/marketplace/packs?type=agent&per_page=6`)
         .then(r => r.ok ? r.json() : { packs: [] })
         .then(d => setAgentPacks(d.packs || []))
         .catch(() => {})

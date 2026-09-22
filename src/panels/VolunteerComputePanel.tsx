@@ -19,6 +19,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react'
+import { getApiBase } from '../lib/apiBase'
 
 interface RosterEntry {
   peer_id: string
@@ -59,7 +60,7 @@ export function VolunteerComputePanel() {
   const load = useCallback(async () => {
     setLoadError(null)
     try {
-      const res = await fetch('/api/volunteer/roster', { cache: 'no-store' })
+      const res = await fetch(`${getApiBase()}/api/volunteer/roster`, { cache: 'no-store' })
       if (!res.ok) {
         setLoadError(
           res.status === 401
@@ -85,7 +86,7 @@ export function VolunteerComputePanel() {
     setBusy(true)
     setActionError(null)
     try {
-      const res = await fetch('/api/volunteer/admin/drain', {
+      const res = await fetch(`${getApiBase()}/api/volunteer/admin/drain`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ confirmed: true }),

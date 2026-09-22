@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
+import { getApiBase } from '../lib/apiBase'
 
 interface ApprovalItem {
   id: string
@@ -43,7 +44,7 @@ export default function ApprovalsInboxPanel() {
 
   const fetchApprovals = async () => {
     try {
-      const res = await fetch('/api/approvals/inbox')
+      const res = await fetch(`${getApiBase()}/api/approvals/inbox`)
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         throw new Error(data.error || data.detail || `Failed to fetch approvals (${res.status})`)
