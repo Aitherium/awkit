@@ -68,6 +68,7 @@ import SagaPlayPanel from './SagaPlayPanel'
 import StudioPanel from './StudioPanel'
 import IrisPanel from './IrisPanel'
 import ProvisionPanel from './ProvisionPanel'
+import AwprovePanel from './AwprovePanel'
 import GeneratePanel from './GeneratePanel'
 import SocialPanel from './SocialPanel'
 import IntegrationsPanel from './IntegrationsPanel'
@@ -144,6 +145,7 @@ import SupportPanel from './SupportPanel'
 import CapturePanel from './CapturePanel'
 import AitherDurabilityPanel from './Aither-DurabilityPanel'
 import TunnelPanel from './TunnelPanel'
+import StrataPanel from './StrataPanel'
 import ElysiumCreditsPanel from './ElysiumCreditsPanel'
 import SproutStudioPanel from './SproutStudioPanel'
 import AiSearchPanel from './AiSearchPanel'
@@ -214,6 +216,7 @@ export const PANEL_COMPONENTS: Record<string, PanelEntry> = {
   'secretguard':         { component: SecretguardPanel },
   'durability':          { component: AitherDurabilityPanel },
   'tunnel':              { component: TunnelPanel },
+  'strata':              { component: StrataPanel },
   'booking':             { component: BookingPanel },
   'planb-ledger':        { component: PlanBLedgerPanel },
   'forms':               { component: FormsPanel },
@@ -240,6 +243,9 @@ export const PANEL_COMPONENTS: Record<string, PanelEntry> = {
   'studio':              { component: StudioPanel },
   'iris':                { component: IrisPanel },
   'provision':           { component: ProvisionPanel },
+  // Declared in registry.ts (apiPrefix auto-wires apiBase) but never keyed
+  // here, so it rendered 'no panel wired up' (RB010, 2026-09-27).
+  'awprove':             { component: AwprovePanel },
   'generate':            { component: GeneratePanel },
   'sound-library':       { component: SoundLibraryPanel },
   'social':              { component: SocialPanel },

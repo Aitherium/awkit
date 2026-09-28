@@ -12,10 +12,10 @@
  * AUTO-GENERATED from `AitherOS/config/registry-unified.json`
  * DO NOT EDIT by hand. Run: python AitherOS/dev/tools/generate_panel_state.py
  *
- * Generated: 2026-09-21T17:25:45.055317
+ * Generated: 2026-09-27T12:21:23.211770
  * Source: AitherOS/config/registry-unified.json
- * Panels: 124 total
- * State breakdown: demo: 1, usable: 123
+ * Panels: 142 total
+ * State breakdown: demo: 2, unbuilt: 1, usable: 139
  */
 
 export type PanelState = 'usable' | 'demo' | 'gated' | 'unbuilt'
@@ -39,6 +39,10 @@ export interface PanelStateEntry {
  *   unbuilt → do not render, do not list, hide from marketplace
  */
 export const PANEL_STATE_MAP: Record<string, PanelState> = {
+  'academy-analytics': 'usable',
+  'academy-lesson-studio': 'usable',
+  'academy-lessons': 'usable',
+  'academy-student-profiles': 'usable',
   'access-policy': 'usable',
   'activity-feed': 'usable',
   'agent-builder': 'usable',
@@ -54,6 +58,7 @@ export const PANEL_STATE_MAP: Record<string, PanelState> = {
   'audit': 'usable',
   'autonomy-roadmap': 'usable',
   'awgym': 'usable',
+  'awprove': 'unbuilt',
   'awrtifact': 'usable',
   'batch-upload': 'usable',
   'beadspace': 'usable',
@@ -64,9 +69,12 @@ export const PANEL_STATE_MAP: Record<string, PanelState> = {
   'calendar': 'usable',
   'certificates': 'usable',
   'chat': 'usable',
+  'classroom-publisher': 'usable',
+  'classroom-site-viewer': 'usable',
   'clients': 'usable',
   'cms': 'usable',
   'comms': 'usable',
+  'connectivity-wizard': 'usable',
   'contacts': 'usable',
   'content-studio': 'usable',
   'dashboard': 'usable',
@@ -82,6 +90,7 @@ export const PANEL_STATE_MAP: Record<string, PanelState> = {
   'door-people': 'usable',
   'durability': 'demo',
   'elysium-credits': 'usable',
+  'erase': 'usable',
   'escalations': 'usable',
   'esign': 'usable',
   'execution-audit': 'usable',
@@ -95,9 +104,11 @@ export const PANEL_STATE_MAP: Record<string, PanelState> = {
   'generate': 'usable',
   'github-repos': 'usable',
   'gobbonet': 'usable',
+  'grid': 'usable',
   'inference-config': 'usable',
   'integrations': 'usable',
   'invoicing': 'usable',
+  'iris': 'demo',
   'knowledge-rag': 'usable',
   'landing-page': 'usable',
   'llm-config': 'usable',
@@ -130,12 +141,15 @@ export const PANEL_STATE_MAP: Record<string, PanelState> = {
   'proton-pass': 'usable',
   'proton-suite': 'usable',
   'proton-vpn': 'usable',
+  'provision': 'usable',
   'quick-actions': 'usable',
   'relationship-dashboard': 'usable',
   'relay-channels': 'usable',
   'reliability-dashboard': 'usable',
   'requests': 'usable',
+  'saga-play': 'usable',
   'sandbox': 'usable',
+  'secretguard': 'usable',
   'secrets': 'usable',
   'sessions': 'usable',
   'settings': 'usable',
@@ -147,14 +161,18 @@ export const PANEL_STATE_MAP: Record<string, PanelState> = {
   'sso-oidc': 'usable',
   'sso-settings': 'usable',
   'storefront-shell': 'usable',
+  'strata': 'usable',
   'stream-tugofwar': 'usable',
   'stripe-commerce': 'usable',
+  'studio': 'usable',
   'support': 'usable',
   'task-board': 'usable',
   'tasks': 'usable',
   'taxdesk': 'usable',
   'terminal': 'usable',
+  'themis-legal': 'usable',
   'training-jobs': 'usable',
+  'tunnel': 'usable',
   'volunteer-compute': 'usable',
   'webhooks': 'usable',
   'workspace-admin': 'usable',
