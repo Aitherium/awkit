@@ -15,6 +15,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef, ReactNode } from 'react'
+import SpriteGuideCard from './SpriteGuideCard'
 
 interface SpriteStatus {
   name: string
@@ -27,6 +28,8 @@ interface SpriteStatus {
   age_days: number
   knowledge_count?: number
   intellect?: { tier: number; label: string }
+  // Autonomous micro-behavior while left alone (SpriteEngine.idle_behavior).
+  behavior?: { action: 'attend' | 'nap' | 'wander' | 'rest'; idle_seconds: number; target_x: number }
 }
 
 interface KnowledgeEntry {
@@ -108,7 +111,7 @@ export default function SpritePanel({ apiBase = '/api/sprite', extraHeaders = {}
   const [needsHatch, setNeedsHatch] = useState(false)
   // Sprite requires an authenticated user. Without this, a 401 fell through the
   // generic `!r.ok` branch and the panel rendered "Sprite service unreachable",
-  // reporting a sign-in requirement as an outage (D-814).
+  // reporting a sign-in requirement as an outage.
   const [needsAuth, setNeedsAuth] = useState(false)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState<string | null>(null)  // which action is in flight
@@ -460,6 +463,33 @@ export default function SpritePanel({ apiBase = '/api/sprite', extraHeaders = {}
     if (data) setSprite(prev => ({ ...(prev as SpriteStatus), ...data }))
   }
 
+  // Data ownership: DELETE /me removes the sprite, its care history and its whole
+  // knowledge base. Genesis demands the parental PIN (X-Parental-Pin) when one is set.
+  const handleWipe = async () => {
+    if (!sprite) return
+    if (!window.confirm(`Delete ${sprite.name}, its history and everything it learned? This cannot be undone.`)) return
+    setBusy('wipe')
+    try {
+      const doWipe = (pin?: string) => fetch(`${apiBase}/me`, {
+        method: 'DELETE',
+        headers: pin ? { ...extraHeaders, 'X-Parental-Pin': pin } : extraHeaders,
+      })
+      let r = await doWipe()
+      if (r.status === 403) {
+        const pin = window.prompt('Parental PIN required to delete this sprite:') || ''
+        if (!pin) return
+        r = await doWipe(pin)
+      }
+      if (r.ok) {
+        setSprite(null); setKnowledge([]); setShowMind(false); setNeedsHatch(true)
+      } else {
+        const data = await r.json().catch(() => null)
+        window.alert(`Could not delete: ${data?.detail || r.status}`)
+      }
+    } catch { /* sprite stays */ }
+    finally { setBusy(null) }
+  }
+
   // ── The Mind: knowledge base (teaching IS feeding) ──────────────────────
   const loadKnowledge = useCallback(async () => {
     try {
@@ -661,11 +691,25 @@ export default function SpritePanel({ apiBase = '/api/sprite', extraHeaders = {}
           </div>
         ))}
 
-        <CreatureView
-          sprite={sprite} loop={loop} still={still} blink={blink} idle={idle}
-          theme={theme} apiBase={apiBase} reaction={reaction} artImgRef={artImgRef}
-          onPetClick={handlePet} appearance={appearance}
-        />
+        <div style={{
+          // wander: drift toward the server-picked spot; nap: settle and dim
+          transform: sprite.behavior?.action === 'wander'
+            ? `translateX(${Math.round(sprite.behavior.target_x * 60)}px)` : 'none',
+          opacity: sprite.behavior?.action === 'nap' ? 0.8 : 1,
+          transition: 'transform 6s ease-in-out, opacity 1.5s',
+        }}>
+          <CreatureView
+            sprite={sprite} loop={loop} still={still} blink={blink} idle={idle}
+            theme={theme} apiBase={apiBase} reaction={reaction} artImgRef={artImgRef}
+            onPetClick={handlePet} appearance={appearance}
+          />
+        </div>
+        {sprite.behavior?.action === 'nap' && !sprite.dormant && (
+          <div aria-label={`${sprite.name} is napping`} style={{
+            position: 'absolute', top: 12, right: 16, fontSize: '1.1rem',
+            color: 'var(--text-muted)', pointerEvents: 'none', zIndex: 2,
+          }}>💤</div>
+        )}
 
         {sprite.dormant && (
           <div style={{
@@ -750,6 +794,9 @@ export default function SpritePanel({ apiBase = '/api/sprite', extraHeaders = {}
           </button>
         ))}
       </div>
+
+      {/* Spirit guide + training (SpriteGuide.py) */}
+      <SpriteGuideCard apiBase={apiBase} extraHeaders={extraHeaders} name={sprite.name} onChange={fetchStatus} />
 
       {/* The Mind — wiki-style knowledge base the owner curates */}
       {showMind && (
@@ -935,6 +982,13 @@ export default function SpritePanel({ apiBase = '/api/sprite', extraHeaders = {}
               </div>
             )
             })}
+          </div>
+          <div style={{ marginTop: 12, textAlign: 'right' }}>
+            <button onClick={handleWipe} disabled={busy !== null}
+              title="Delete this sprite, its history and its whole knowledge base"
+              style={{ ...btnStyle(false, busy === 'wipe'), color: 'var(--danger, #e5484d)' }}>
+              🗑 Delete sprite &amp; its memory
+            </button>
           </div>
         </div>
       )}

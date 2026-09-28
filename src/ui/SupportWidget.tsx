@@ -14,7 +14,7 @@ import { relayWsUrl as buildRelayWsUrl } from '../lib/relayWsUrl'
  *
  * Usage:
  *   import { SupportWidget } from '@aitherium/awkit'
- *   <SupportWidget apiBase="" appName="Garg" />
+ *   <SupportWidget apiBase="" appName="Acme" />
  */
 
 export interface SupportWidgetProps {

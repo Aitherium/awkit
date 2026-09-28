@@ -12,6 +12,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { PILLARS, type Pillar } from '../../aither-events.generated'
+
 /** Ring cap: a long-lived room must not grow this array without bound. */
 const MAX_EVENTS = 500
 
@@ -27,9 +29,11 @@ export interface PillarEvent {
   stage?: string
 }
 
-export type Pillar = 'intent' | 'context' | 'reasoning' | 'orchestration' | 'learning' | 'automation'
-
-export const PILLARS: Pillar[] = ['intent', 'context', 'reasoning', 'orchestration', 'learning', 'automation']
+// The lane vocabulary comes from the generated mirror of AitherEventSpine.Pillar
+// (AE004 keeps it current; AE009 refuses a hand-typed copy here), so a pillar rename
+// in the spine reaches these lanes by regeneration, never by someone remembering.
+export { PILLARS }
+export type { Pillar }
 
 export interface PillarState {
   events: PillarEvent[]

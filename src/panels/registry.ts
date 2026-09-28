@@ -82,7 +82,10 @@ export const PANEL_REGISTRY: PanelMeta[] = [
     description: 'Tiny models that learn your platform — trained in seconds, served in milliseconds, no GPU',
     category: 'intelligence',
     icon: 'brain-circuit',
-    apiPrefix: '/api/v1/nanobrain',
+    // Served by Veil's dedicated bearer-only proxy (app/api/nanobrain/[...path] ->
+    // Genesis) and by awkit-backend's nanobrain.py alias of /api/v1/nanobrain, so a
+    // DynamicPanelRenderer consumer gets a working base on either host.
+    apiPrefix: '/api/nanobrain',
     requiresBackend: ['nanobrain.py'],
     planRequirement: 'free',
     domain: 'training',
@@ -280,8 +283,11 @@ export const PANEL_REGISTRY: PanelMeta[] = [
     description: 'Client relationship management with projects and billing',
     category: 'business',
     icon: 'building-2',
-    apiPrefix: '/api/bridge/genesis/api/v1/commerce',
-    requiresBackend: ['clients.py'],
+    // ClientsPanel reads /api/billing (awkit-backend billing.py) and falls back to
+    // /api/invoicing. It was declared on Veil's /api/bridge/genesis commerce proxy,
+    // which no tenant backend serves (measured 2026-09-25).
+    apiPrefix: '/api/billing',
+    requiresBackend: ['billing.py', 'invoicing.py'],
   },
   {
     id: 'invoicing',
@@ -314,6 +320,24 @@ export const PANEL_REGISTRY: PanelMeta[] = [
     domain: 'storage',
   },
   {
+    id: 'awprove',
+    name: 'awprove — Prove It Rendered',
+    description: 'List proofs, check one offline (every assertion can fail), and run it live for PASS/FAIL per assertion plus the evidence screenshot — live runs are platform-only',
+    category: 'utility',
+    icon: 'badge-check',
+    apiPrefix: '/api/bridge/genesis/api/v1/awprove',
+    requiresBackend: ['awprove.py'],
+    planRequirement: 'free',
+    domain: 'development',
+  },
+  {
+    id: 'provision',
+    name: 'Company Provisioning',
+    description: 'One company.yaml provisions every agent: edit the company and its agents, get the YAML and the exact per-agent adk up plan (runs in the browser; provisions nothing itself)',
+    category: 'infrastructure',
+    icon: 'building-2',
+  },
+  {
     id: 'taxdesk',
     name: 'TaxDesk',
     description: 'Personal tax prep & CPA partner — ingest bank statements, tax forms, receipts; build a deduplicated ledger; organize by category and Schedule C lines. Privacy-first, local models, tenant-scoped data.',
@@ -323,6 +347,28 @@ export const PANEL_REGISTRY: PanelMeta[] = [
     planRequirement: 'pro',
     domain: 'finance',
     tenantIsolated: true,
+  },
+  {
+    id: 'themis-legal',
+    name: 'Themis Legal',
+    description: 'Contract review & legal document desk — flag predatory clauses with suggested redlines, ingest and search legal documents, draft negotiation letters. Deterministic clause detection; not legal advice.',
+    category: 'business',
+    icon: 'scale',
+    apiPrefix: '/api/bridge/genesis/api/v1/themis-legal',
+    planRequirement: 'pro',
+    domain: 'legal',
+    tenantIsolated: true,
+  },
+  {
+    id: 'secretguard',
+    name: 'SecretGuard',
+    description: 'Git secret detection & history purge — gitleaks scans of the working tree or history, .gitleaks.toml allowlist management, git-filter-repo purges (dry run first). Platform-operator surface.',
+    category: 'admin',
+    icon: 'shield-alert',
+    apiPrefix: '/api/bridge/genesis/api/v1/secretguard',
+    requiresBackend: ['secretguard.py'],
+    domain: 'security',
+    tiers: ['platform'],
   },
   {
     id: 'aither-sprite',
@@ -575,6 +621,32 @@ export const PANEL_REGISTRY: PanelMeta[] = [
     requiresBackend: ['content.py'],
   },
   {
+    id: 'saga-play',
+    name: 'Saga Play',
+    description: 'Play an interactive story: narrate, speak or act, roll dice, and explore MCTS branches',
+    category: 'creative',
+    icon: 'book-open',
+    apiPrefix: '/api/saga',
+  },
+  {
+    id: 'studio',
+    name: 'Studio',
+    description: 'Run Media Forge ops from the live /ops catalogue — images, sprites, animation, audio',
+    category: 'creative',
+    icon: 'wand-2',
+    apiPrefix: '/api/studio',
+  },
+  {
+    id: 'iris',
+    name: 'Iris',
+    description: 'Visual artisan: brief -> planned pipeline -> critique -> refine, through /api/iris/* to the Iris agent',
+    category: 'creative',
+    icon: 'sparkles',
+    apiPrefix: '/api/iris',
+    // Beta until the Veil /api/iris/* routes are deployed and the loop is proven live.
+    state: 'demo',
+  },
+  {
     id: 'generate',
     name: 'Generate',
     description: 'AI content generation for text, images, and documents',
@@ -776,17 +848,28 @@ export const PANEL_REGISTRY: PanelMeta[] = [
   {
     id: 'durability',
     name: 'Aither Durability',
-    description: 'Per-user encrypted GitHub backup and DR restore — scope-diffed, key-rotated, write-back capable',
+    description: 'Per-user encrypted GitHub backup and DR restore — scope-diffed, per-user keyed, write-back capable',
     category: 'infrastructure',
     icon: 'shield',
-    // The backend lives on SecurityCore at /recover/user-backup/* (compound
-    // mount), NOT a Veil /api/v1/durability route — there is no Veil proxy for
-    // it yet. apiPrefix records the REAL backend so tooling doesn't assume a
-    // Veil router exists. Panel is a demo shell until a proxy is wired.
-    apiPrefix: '/recover',
+    // Veil proxies /api/v1/durability/* -> SecurityCore /recover/* forwarding
+    // the portal user's own credential; SecurityCore decides (platform
+    // operators back up anyone, a user may restore only themselves).
+    apiPrefix: '/api/v1/durability',
     requiresBackend: ['AitherRecover.py'],
-    state: 'demo',
     planRequirement: 'free',
+    domain: 'infrastructure',
+  },
+  {
+    id: 'tunnel',
+    name: 'AitherTunnel',
+    description: 'Public hostnames, peers and port forwards on the platform tunnel (read-only; writes go through the gated awrun tunnel queue)',
+    category: 'infrastructure',
+    icon: 'globe',
+    // Veil proxies /api/tunnel?endpoint=<name> -> AitherTunnel :8310 with the
+    // user's own credential; the service decides what the caller may see.
+    apiPrefix: '/api/tunnel',
+    requiresBackend: ['AitherTunnel.py'],
+    defaultEnabled: false,
     domain: 'infrastructure',
   },
   {
@@ -1094,6 +1177,30 @@ export const PANEL_REGISTRY: PanelMeta[] = [
     planRequirement: 'pro',
   },
   {
+    id: 'grid',
+    name: 'Grid',
+    description: 'AitherGrid node topology: health and models of every LAN grid node, plus enrolled mesh nodes',
+    category: 'infrastructure',
+    icon: 'network',
+    // Served by the ADK node server (awdk/adk/server.py GET /grid/status), not
+    // by awkit-backend: the panel is hosted next to a node, so no pack enables
+    // it until a tenant backend proxies that route.
+    apiPrefix: '/grid',
+    planRequirement: 'pro',
+  },
+  {
+    id: 'erase',
+    name: 'AitherErase',
+    description: 'Personal-data removal: set up your profile and consent, track every data-broker deletion request, see your coverage report and export the dated audit trail',
+    category: 'utility',
+    icon: 'shield-off',
+    // Served by Genesis apps/AitherGenesis/routers/aither_erase.py; Veil serves
+    // it at app/api/v1/aither-erase (a proxy). Owner + tenant come from
+    // the authenticated caller server-side (.PRODUCTS/.ERASE layer 5).
+    apiPrefix: '/api/v1/aither-erase',
+    tenantIsolated: true,
+  },
+  {
     id: 'model-browser',
     name: 'Model Browser',
     description: 'Hardware-aware model selector with recommendations based on your GPU',
@@ -1397,6 +1504,87 @@ export const PANEL_REGISTRY: PanelMeta[] = [
     requiresBackend: ['volunteer.py'],
     planRequirement: 'free',
     domain: 'infrastructure',
+    tenantIsolated: true,
+    state: 'usable',
+  },
+  // Aither Academy (.PRODUCTS/.ACADEMY). Served by the GENESIS router
+  // apps/AitherGenesis/routers/academy.py, not awkit-backend (no requiresBackend);
+  // writes need can_teach / can_selfhost (plan >= pro). Pinned by
+  // test_awkit_academy_panels_wired.
+  {
+    id: 'academy-lesson-studio',
+    name: 'Lesson Studio',
+    description: 'Classes and differentiated lessons, from draft to approved to published',
+    category: 'business',
+    icon: 'graduation-cap',
+    apiPrefix: '/api/v1/academy',
+    planRequirement: 'pro',
+    tenantIsolated: true,
+    state: 'usable',
+  },
+  {
+    id: 'academy-student-profiles',
+    name: 'Student Profiles',
+    description: 'Enroll students by first name or alias, record how they learn, read their progress',
+    category: 'business',
+    icon: 'users',
+    apiPrefix: '/api/v1/academy',
+    planRequirement: 'pro',
+    tenantIsolated: true,
+    state: 'usable',
+  },
+  {
+    id: 'academy-analytics',
+    name: 'Class Analytics',
+    description: 'Mastery per standard, engagement and lesson effectiveness by tier for a class',
+    category: 'analytics',
+    icon: 'bar-chart-3',
+    apiPrefix: '/api/v1/academy',
+    planRequirement: 'pro',
+    tenantIsolated: true,
+    state: 'usable',
+  },
+  {
+    id: 'academy-lessons',
+    name: 'Lessons',
+    description: 'Find a lesson, download its artifacts, issue and revoke expiring share links',
+    category: 'business',
+    icon: 'book-open',
+    apiPrefix: '/api/v1/academy',
+    planRequirement: 'pro',
+    tenantIsolated: true,
+    state: 'usable',
+  },
+  {
+    id: 'classroom-publisher',
+    name: 'Classroom Publisher',
+    description: 'Configure a class site (GitHub repo, domain, theme), request a publish, read the publish log',
+    category: 'business',
+    icon: 'upload-cloud',
+    apiPrefix: '/api/v1/academy',
+    planRequirement: 'pro',
+    tenantIsolated: true,
+    state: 'usable',
+  },
+  {
+    id: 'classroom-site-viewer',
+    name: 'Classroom Site',
+    description: 'A class site\'s configuration, the published lessons it serves, and whether publishing is wired',
+    category: 'business',
+    icon: 'globe',
+    apiPrefix: '/api/v1/academy',
+    planRequirement: 'pro',
+    tenantIsolated: true,
+    state: 'usable',
+  },
+  {
+    id: 'connectivity-wizard',
+    name: 'Self-Host Connectivity',
+    description: 'Step-by-step wizard that hands a teacher the exact commands to host Academy on their own machine',
+    category: 'infrastructure',
+    icon: 'plug',
+    apiPrefix: '/api/v1/academy',
+    planRequirement: 'pro',
     tenantIsolated: true,
     state: 'usable',
   },

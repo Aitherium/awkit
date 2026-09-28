@@ -307,7 +307,9 @@ const CompanyRoom = forwardRef<CompanyRoomHandle, CompanyRoomProps>(function Com
         {summoned && (
           <div className="room-summoned">{(() => {
             const onClose = () => { setSummoned(null); setBlockOpen(false) }
-            const onCite = (text: string) => room.say(text)
+            // A cite is a SAY: when the host took the composer (`onSay`), a cite from a
+            // summons panel must go the same way, not to the `room.say` door it replaced.
+            const onCite = (text: string) => { void (onSay ? onSay(text) : room.say(text)) }
 
             switch (summoned.s.id) {
               case 'mail':

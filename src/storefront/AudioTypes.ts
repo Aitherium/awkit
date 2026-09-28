@@ -30,7 +30,7 @@ export interface AudioProfile {
 }
 
 // Built-in profiles matching THEME_PRESETS
-// The wildroot profile was REMOVED 2026-09-05 alongside its theme preset:
+// A customer-named profile was REMOVED 2026-09-05 alongside its theme preset:
 // a customer's name in a package strangers install. AWK003 refuses to
 // publish over it, and nothing consumed it -- the profile was reachable
 // only from the preset that named the same customer.

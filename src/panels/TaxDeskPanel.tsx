@@ -5,6 +5,11 @@
  *
  * Six tabs: Documents, Ledger, Review, Bills, Worksheets, Package.
  *
+ * Review carries a per-transaction category selector: the options come from
+ * `GET /taxdesk/categories` (the ledger enums, never a hard-coded list) and a
+ * choice is written through `POST /taxdesk/review-txn`. Ledger exports the
+ * workbook via `POST /taxdesk/export-ledger-xlsx`.
+ *
  * Every tab used to render a sentence of placeholder prose ("Deduplicated
  * transaction ledger appears here") over a backend that could already answer
  * all of it. The panel now calls the Genesis /taxdesk router for real.
@@ -93,6 +98,9 @@ export default function TaxDeskPanel({ apiBase = '/api/taxdesk' }: TaxDeskPanelP
   const [bills, setBills] = useState<TabState<any>>({ data: null, loading: false, error: '' })
   const [worksheet, setWorksheet] = useState<TabState<any>>({ data: null, loading: false, error: '' })
   const [pkg, setPkg] = useState<TabState<any>>({ data: null, loading: false, error: '' })
+  const [categories, setCategories] = useState<{ tax_classes: string[]; expense_categories: string[] } | null>(null)
+  const [savingTxn, setSavingTxn] = useState<string>('')
+  const [exporting, setExporting] = useState(false)
 
   const dragRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -201,6 +209,76 @@ export default function TaxDeskPanel({ apiBase = '/api/taxdesk' }: TaxDeskPanelP
     if (tab === 'review') loadInto(setReview, '/review-queue?limit=50')
     if (tab === 'bills') loadInto(setBills, '/bills-overview', { method: 'POST' })
   }, [tab, entitlement.entitled, loadInto])
+
+  // The selector's vocabulary, fetched once when Review is first opened.
+  useEffect(() => {
+    if (!entitlement.entitled || tab !== 'review' || categories) return
+    api('/categories')
+      .then(c => setCategories({ tax_classes: c.tax_classes || [], expense_categories: c.expense_categories || [] }))
+      .catch(e => setError(`Could not load categories: ${e instanceof Error ? e.message : String(e)}`))
+  }, [tab, entitlement.entitled, categories, api])
+
+  /**
+   * Confirm one transaction with the reviewer's choice. `value` is either an
+   * expense category (implies tax_class=expense) or a non-expense tax class.
+   */
+  const categorizeTxn = async (txnId: string, value: string) => {
+    if (!value) return
+    const isExpense = !!categories?.expense_categories.includes(value)
+    const qs = new URLSearchParams({ txn_id: txnId })
+    if (isExpense) {
+      qs.set('tax_class', 'expense')
+      qs.set('expense_category', value)
+    } else {
+      qs.set('tax_class', value)
+    }
+    setSavingTxn(txnId)
+    try {
+      const out = await api(`/review-txn?${qs.toString()}`, { method: 'POST' })
+      if (out?.status === 'error') throw new Error(out.error || 'review failed')
+      await loadStats()
+      await loadInto(setReview, '/review-queue?limit=50')
+    } catch (e) {
+      setError(`Could not categorize ${txnId}: ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setSavingTxn('')
+    }
+  }
+
+  /** Download the ledger workbook. The body is XLSX bytes, not JSON. */
+  const exportLedger = async () => {
+    setExporting(true)
+    try {
+      const res = await fetch(`${apiBase}/export-ledger-xlsx?tax_year=${taxYear}`, {
+        method: 'POST',
+        cache: 'no-store',
+      })
+      if (!res.ok) {
+        let msg = `HTTP ${res.status}`
+        try {
+          const body = await res.json()
+          const detail = body?.detail ?? body
+          msg = (typeof detail === 'object' && (detail?.message || detail?.error)) || msg
+        } catch {
+          /* keep the status line */
+        }
+        throw new Error(msg)
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `taxdesk_ledger_${taxYear}.xlsx`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      setError(`Export failed: ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setExporting(false)
+    }
+  }
 
   const ingestFiles = async (files: FileList | null) => {
     if (!files || !files.length) return
@@ -555,6 +633,9 @@ export default function TaxDeskPanel({ apiBase = '/api/taxdesk' }: TaxDeskPanelP
               >
                 Rebuild ledger
               </button>
+              <button style={btn} disabled={exporting} onClick={exportLedger}>
+                {exporting ? 'Exporting…' : `Export ${taxYear} XLSX`}
+              </button>
             </div>
             {asyncBody(ledger, 'No ledger yet — ingest documents, then rebuild.', data => {
               const months = data.monthly_totals || []
@@ -641,6 +722,7 @@ export default function TaxDeskPanel({ apiBase = '/api/taxdesk' }: TaxDeskPanelP
                         <th style={th}>Amount</th>
                         <th style={th}>Suggested</th>
                         <th style={th}>Confidence</th>
+                        <th style={th}>Category</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -656,6 +738,30 @@ export default function TaxDeskPanel({ apiBase = '/api/taxdesk' }: TaxDeskPanelP
                             {typeof t.suggested?.confidence === 'number'
                               ? `${Math.round(t.suggested.confidence * 100)}%`
                               : '—'}
+                          </td>
+                          <td style={td}>
+                            <select
+                              aria-label={`Category for ${t.merchant || t.txn_id}`}
+                              disabled={!categories || savingTxn === t.txn_id}
+                              defaultValue=""
+                              onChange={e => categorizeTxn(t.txn_id, e.target.value)}
+                            >
+                              <option value="" disabled>
+                                {savingTxn === t.txn_id ? 'Saving…' : 'Choose…'}
+                              </option>
+                              <optgroup label="Expense (Schedule C)">
+                                {(categories?.expense_categories || []).map(c => (
+                                  <option key={`e-${c}`} value={c}>{c.replace(/_/g, ' ')}</option>
+                                ))}
+                              </optgroup>
+                              <optgroup label="Other">
+                                {(categories?.tax_classes || [])
+                                  .filter(c => c !== 'expense')
+                                  .map(c => (
+                                    <option key={`t-${c}`} value={c}>{c.replace(/_/g, ' ')}</option>
+                                  ))}
+                              </optgroup>
+                            </select>
                           </td>
                         </tr>
                       ))}
