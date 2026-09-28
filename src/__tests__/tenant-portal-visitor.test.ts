@@ -1,4 +1,11 @@
 /**
+ * @jest-environment node
+ *
+ * Authored for vitest (node env). Under Veil's jsdom default, `window` is not
+ * reassignable, so withLocation() silently kept jsdom's http://localhost page and
+ * the https mixed-content case read as not-blocked. Node env is the authored env.
+ */
+/**
  * The three defects a customer hit on a live tenant portal, 2026-08-19.
  *
  * A tenant visitor opened the company portal, was never asked to sign in,
