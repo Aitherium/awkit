@@ -43,12 +43,12 @@ function getInitials(name: string): string {
 }
 
 const CERT_COLORS: Record<string, string> = {
-  PE: '#059669', SE: '#0891b2', PMP: '#7c3aed', 'LEED AP': '#65a30d',
+  PE: '#059669', SE: '#0891b2', PMP: '#5EC9CC', 'LEED AP': '#65a30d',
   AIA: '#2563eb', NCARB: '#d97706', 'OSHA-30': '#dc2626',
 }
 
 function getCertColor(cert: string): string {
-  return CERT_COLORS[cert] || '#6366f1'
+  return CERT_COLORS[cert] || '#5EC9CC'
 }
 
 export default function PeoplePanel({ apiBase = '/api/people' }: PeoplePanelProps) {

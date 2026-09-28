@@ -85,8 +85,8 @@ export default function ArchiveUploadZone({
       style={{
         padding: '2rem',
         borderRadius: 12,
-        border: `2px dashed ${dragging ? 'var(--accent, #7c3aed)' : 'var(--border, #333)'}`,
-        background: dragging ? 'rgba(124,58,237,0.05)' : 'var(--bg-elevated, #1a1a1a)',
+        border: `2px dashed ${dragging ? 'var(--accent, #5EC9CC)' : 'var(--border, #333)'}`,
+        background: dragging ? 'rgba(94,201,204,0.05)' : 'var(--bg-elevated, #1a1a1a)',
         textAlign: 'center',
         cursor: uploading ? 'default' : 'pointer',
         transition: 'border-color 0.15s, background 0.15s',
@@ -111,7 +111,7 @@ export default function ArchiveUploadZone({
           }}>
             <div style={{
               width: `${progress}%`, height: '100%', borderRadius: 3,
-              background: 'var(--accent, #7c3aed)', transition: 'width 0.3s',
+              background: 'var(--accent, #5EC9CC)', transition: 'width 0.3s',
             }} />
           </div>
         </div>

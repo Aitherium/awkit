@@ -121,10 +121,10 @@ export default function IrisPanel({ apiBase = '', className = '' }: IrisPanelPro
   const spin = <Loader2 className="inline w-4 h-4 mr-2 animate-spin" />
 
   return (
-    <div className={`bg-slate-900/60 backdrop-blur-xl border border-purple-500/20 rounded-lg flex flex-col ${className}`}>
+    <div className={`bg-slate-900/60 backdrop-blur-xl border border-[#5EC9CC]/20 rounded-lg flex flex-col ${className}`}>
       <div className="px-4 py-3 border-b border-slate-700">
         <div className="flex items-center gap-2">
-          <Sparkles className="w-5 h-5 text-purple-400" />
+          <Sparkles className="w-5 h-5 text-[#5EC9CC]" />
           <h3 className="text-lg font-medium text-slate-100">Iris</h3>
           <span className="text-xs text-slate-500 ml-auto">The Visual Artisan</span>
         </div>
@@ -139,7 +139,7 @@ export default function IrisPanel({ apiBase = '', className = '' }: IrisPanelPro
                 onClick={() => setActiveTab(tab)}
                 className={`px-3 py-2 text-sm font-medium rounded transition-colors ${
                   activeTab === tab
-                    ? 'text-purple-400 border-b-2 border-purple-400'
+                    ? 'text-[#5EC9CC] border-b-2 border-[#5EC9CC]'
                     : 'text-slate-400 hover:text-slate-300'
                 }`}
               >
@@ -164,7 +164,7 @@ export default function IrisPanel({ apiBase = '', className = '' }: IrisPanelPro
                 placeholder="E.g., 'Generate concept art for a cyberpunk cityscape with neon signs...'"
                 value={brief}
                 onChange={(e) => setBrief(e.target.value)}
-                className="w-full min-h-24 bg-slate-800/50 border border-slate-700 rounded px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-purple-500"
+                className="w-full min-h-24 bg-slate-800/50 border border-slate-700 rounded px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-[#5EC9CC]"
               />
               <div className="flex gap-2">
                 <button
@@ -178,7 +178,7 @@ export default function IrisPanel({ apiBase = '', className = '' }: IrisPanelPro
                 <button
                   onClick={onGeneratePipeline}
                   disabled={!brief.trim() || busy !== null}
-                  className="flex-1 px-3 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-slate-700 text-slate-100 text-sm font-medium rounded transition-colors"
+                  className="flex-1 px-3 py-2 bg-[#5EC9CC] hover:bg-[#7AD6D8] disabled:bg-slate-700 text-slate-100 text-sm font-medium rounded transition-colors"
                 >
                   {busy === 'preview' ? spin : <Sparkles className="inline w-4 h-4 mr-2" />}
                   Generate Pipeline
@@ -202,14 +202,14 @@ export default function IrisPanel({ apiBase = '', className = '' }: IrisPanelPro
                   <ul className="space-y-1">
                     {plan.assets.map((a, i) => (
                       <li key={i} className="text-xs text-slate-300 bg-slate-800/40 rounded px-2 py-1">
-                        <span className="text-purple-300">{a.type}</span> via {a.backend}: {a.prompt}
+                        <span className="text-[#5EC9CC]">{a.type}</span> via {a.backend}: {a.prompt}
                       </li>
                     ))}
                   </ul>
                   <button
                     onClick={onRunPipeline}
                     disabled={busy !== null}
-                    className="w-full px-3 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-slate-700 text-slate-100 text-sm font-medium rounded transition-colors"
+                    className="w-full px-3 py-2 bg-[#5EC9CC] hover:bg-[#7AD6D8] disabled:bg-slate-700 text-slate-100 text-sm font-medium rounded transition-colors"
                   >
                     {busy === 'run' ? spin : <Play className="inline w-4 h-4 mr-2" />}
                     Run pipeline
@@ -227,7 +227,7 @@ export default function IrisPanel({ apiBase = '', className = '' }: IrisPanelPro
                       {typeof r.image === 'string' && r.evaluation && (
                         <button
                           onClick={() => { setCritiqued(r.image as string); setEvaluation(r.evaluation ?? null); setCritiquePrompt(r.prompt ?? brief); setActiveTab('critique') }}
-                          className="ml-2 text-purple-300 hover:underline"
+                          className="ml-2 text-[#5EC9CC] hover:underline"
                         >
                           critique
                         </button>
@@ -257,7 +257,7 @@ export default function IrisPanel({ apiBase = '', className = '' }: IrisPanelPro
                   {suggestions.length > 0 && (
                     <button
                       onClick={onRefine}
-                      className="w-full px-3 py-2 bg-purple-600 hover:bg-purple-700 text-slate-100 text-sm font-medium rounded transition-colors"
+                      className="w-full px-3 py-2 bg-[#5EC9CC] hover:bg-[#7AD6D8] text-slate-100 text-sm font-medium rounded transition-colors"
                     >
                       Refine the brief with {suggestions.length} suggestion{suggestions.length === 1 ? '' : 's'}
                     </button>

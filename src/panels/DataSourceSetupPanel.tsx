@@ -383,7 +383,7 @@ export default function DataSourceSetupPanel({
 
           {/* Deploy Proton Bridge helper */}
           {emailProvider === 'protonmail' && !state.email_connected && (
-            <div style={{ ...cardStyle, borderColor: 'var(--accent-primary)', background: 'rgba(99,102,241,0.05)', marginBottom: 12 }}>
+            <div style={{ ...cardStyle, borderColor: 'var(--accent-primary)', background: 'rgba(94,201,204,0.05)', marginBottom: 12 }}>
               <div style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: 6 }}>Need Proton Mail Bridge?</div>
               <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: '0 0 8px' }}>
                 Proton Mail Bridge runs on your computer and exposes your Proton email via IMAP/SMTP.
@@ -458,7 +458,7 @@ export default function DataSourceSetupPanel({
 
           {/* Deploy helper for Proton Calendar */}
           {calProvider === 'proton' && !state.calendar_connected && (
-            <div style={{ ...cardStyle, borderColor: 'var(--accent-primary)', background: 'rgba(99,102,241,0.05)', marginBottom: 12 }}>
+            <div style={{ ...cardStyle, borderColor: 'var(--accent-primary)', background: 'rgba(94,201,204,0.05)', marginBottom: 12 }}>
               <div style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: 6 }}>Proton Calendar uses the same Bridge</div>
               <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: 0 }}>
                 If you already set up Proton Mail Bridge in the email step, your calendar is

@@ -40,7 +40,7 @@ const S = {
     cursor: 'pointer',
     fontSize: 13,
     fontWeight: active ? 600 : 400,
-    background: active ? 'var(--accent-primary, #7c3aed)' : 'var(--bg-surface, #1a1a2e)',
+    background: active ? 'var(--accent-primary, #5EC9CC)' : 'var(--bg-surface, #1a1a2e)',
     color: active ? '#fff' : 'var(--text-muted, #888)',
   }),
   grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 12 },
@@ -50,7 +50,7 @@ const S = {
     padding: 12,
     textAlign: 'center' as const,
   },
-  statNum: { fontSize: 24, fontWeight: 700, color: 'var(--accent-primary, #7c3aed)' },
+  statNum: { fontSize: 24, fontWeight: 700, color: 'var(--accent-primary, #5EC9CC)' },
   statLabel: { fontSize: 11, color: 'var(--text-muted, #888)', marginTop: 4 },
   table: { width: '100%', borderCollapse: 'collapse' as const, fontSize: 13 },
   th: {
@@ -78,7 +78,7 @@ const S = {
     cursor: 'pointer',
     fontSize: 12,
     fontWeight: 600,
-    background: 'var(--accent-primary, #7c3aed)',
+    background: 'var(--accent-primary, #5EC9CC)',
     color: '#fff',
   },
   btnSm: {

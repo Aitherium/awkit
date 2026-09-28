@@ -139,7 +139,7 @@ export default function KnowledgeView({ apiBase = '/api/data-plane' }: Knowledge
             onClick={() => setTab(t)}
             style={{
               padding: '5px 14px', borderRadius: 5, border: 'none', fontSize: '0.8rem',
-              background: tab === t ? 'var(--accent, #7c3aed)' : 'transparent',
+              background: tab === t ? 'var(--accent, #5EC9CC)' : 'transparent',
               color: tab === t ? '#fff' : 'var(--text-muted)',
               cursor: 'pointer', fontWeight: tab === t ? 600 : 400,
             }}
@@ -159,7 +159,7 @@ export default function KnowledgeView({ apiBase = '/api/data-plane' }: Knowledge
                 onClick={() => handleSelectCollection(c.collection)}
                 style={{
                   padding: '12px 14px', borderRadius: 8,
-                  background: selectedCollection === c.collection ? 'rgba(124,58,237,0.1)' : 'var(--bg-elevated)',
+                  background: selectedCollection === c.collection ? 'rgba(94,201,204,0.1)' : 'var(--bg-elevated)',
                   border: selectedCollection === c.collection ? '1px solid var(--accent)' : '1px solid var(--border)',
                   cursor: 'pointer',
                 }}
@@ -208,7 +208,7 @@ export default function KnowledgeView({ apiBase = '/api/data-plane' }: Knowledge
                 />
                 <button onClick={handleSearch} disabled={searching} style={{
                   padding: '6px 14px', borderRadius: 6, border: 'none',
-                  background: 'var(--accent, #7c3aed)', color: '#fff',
+                  background: 'var(--accent, #5EC9CC)', color: '#fff',
                   cursor: 'pointer', fontSize: '0.8rem',
                 }}>
                   {searching ? 'Searching...' : 'Search'}
@@ -272,7 +272,7 @@ export default function KnowledgeView({ apiBase = '/api/data-plane' }: Knowledge
               onClick={() => setShowWikiForm(!showWikiForm)}
               style={{
                 padding: '5px 12px', borderRadius: 6, border: 'none',
-                background: 'var(--accent, #7c3aed)', color: '#fff',
+                background: 'var(--accent, #5EC9CC)', color: '#fff',
                 cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600,
               }}
             >

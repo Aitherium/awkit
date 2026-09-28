@@ -138,7 +138,7 @@ export default function MeshNodesView({ apiBase = '/api/data-plane' }: MeshNodes
               {node.supported_tiers?.map(t => (
                 <span key={t} style={{
                   padding: '1px 5px', borderRadius: 3, fontSize: '0.6rem',
-                  background: 'rgba(124,58,237,0.1)', color: 'var(--accent, #7c3aed)',
+                  background: 'rgba(94,201,204,0.1)', color: 'var(--accent, #5EC9CC)',
                 }}>
                   {t}
                 </span>
@@ -161,7 +161,7 @@ export default function MeshNodesView({ apiBase = '/api/data-plane' }: MeshNodes
                   ? `${Math.round(((node.contributed_gb - node.free_gb) / node.contributed_gb) * 100)}%`
                   : '0%',
                 height: '100%', borderRadius: 2,
-                background: 'var(--accent, #7c3aed)',
+                background: 'var(--accent, #5EC9CC)',
               }} />
             </div>
             {node.last_heartbeat && (
@@ -186,7 +186,7 @@ export default function MeshNodesView({ apiBase = '/api/data-plane' }: MeshNodes
           </div>
           <div style={{
             padding: '10px 14px', borderRadius: 6, background: 'var(--bg-deep)',
-            fontFamily: 'monospace', fontSize: '0.75rem', color: 'var(--accent, #7c3aed)',
+            fontFamily: 'monospace', fontSize: '0.75rem', color: 'var(--accent, #5EC9CC)',
             textAlign: 'left', display: 'inline-block',
           }}>
             <div style={{ color: 'var(--text-muted)', marginBottom: 4 }}># Install ADK and register as mesh peer</div>

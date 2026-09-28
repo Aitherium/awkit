@@ -53,7 +53,7 @@ export interface ExecutiveBriefingPanelProps {
 }
 
 const PRIORITY_COLORS: Record<string, string> = {
-  vip: '#8B5CF6',
+  vip: '#5EC9CC',
   urgent: '#EF4444',
   high: '#F59E0B',
   approval: '#3B82F6',
@@ -176,10 +176,10 @@ export default function ExecutiveBriefingPanel({
       {/* Quick stats row */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10, marginBottom: 24 }}>
         <StatCard label="Unread" value={data.emails.total_unread} color={data.emails.urgent > 0 ? '#EF4444' : undefined} />
-        <StatCard label="VIP" value={data.emails.vip} color="#8B5CF6" />
+        <StatCard label="VIP" value={data.emails.vip} color="#5EC9CC" />
         <StatCard label="Approvals" value={data.emails.approval} color="#3B82F6" />
         <StatCard label="Tasks Due" value={data.tasks_due} color="#F59E0B" />
-        {(data.relay_messages ?? 0) > 0 && <StatCard label="Messages" value={data.relay_messages!} color="#8B5CF6" />}
+        {(data.relay_messages ?? 0) > 0 && <StatCard label="Messages" value={data.relay_messages!} color="#5EC9CC" />}
         <StatCard label="Meetings" value={data.events.length} />
       </div>
 

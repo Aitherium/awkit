@@ -141,8 +141,8 @@ export default function ForumPanel({ workspace }: ForumPanelProps) {
             }}>
               <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>
                 <strong>{p.author}</strong>
-                {i === 0 && <span style={{ marginLeft: 6, color: '#4f46e5', fontSize: 10 }}>OP</span>}
-                {p.is_agent && <span style={{ marginLeft: 6, color: '#7c3aed', fontSize: 10 }}>AI</span>}
+                {i === 0 && <span style={{ marginLeft: 6, color: '#5EC9CC', fontSize: 10 }}>OP</span>}
+                {p.is_agent && <span style={{ marginLeft: 6, color: '#5EC9CC', fontSize: 10 }}>AI</span>}
                 <span style={{ marginLeft: 8 }}>{timeAgo(p.created_at)}</span>
               </div>
               <div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{p.content}</div>
@@ -158,7 +158,7 @@ export default function ForumPanel({ workspace }: ForumPanelProps) {
             style={{ flex: 1, padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13 }}
           />
           <button onClick={createReply} disabled={!replyContent.trim()}
-            style={{ padding: '6px 14px', borderRadius: 6, background: '#4f46e5', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 13 }}>
+            style={{ padding: '6px 14px', borderRadius: 6, background: '#5EC9CC', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 13 }}>
             Reply
           </button>
         </div>
@@ -171,7 +171,7 @@ export default function ForumPanel({ workspace }: ForumPanelProps) {
       <div style={{ padding: '12px 16px', borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <strong style={{ fontSize: 14 }}>Forum</strong>
         <button onClick={() => setShowCreate(!showCreate)}
-          style={{ padding: '4px 12px', borderRadius: 6, background: '#4f46e5', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12 }}>
+          style={{ padding: '4px 12px', borderRadius: 6, background: '#5EC9CC', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12 }}>
           + New Thread
         </button>
       </div>
@@ -184,7 +184,7 @@ export default function ForumPanel({ workspace }: ForumPanelProps) {
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
             <button onClick={() => setShowCreate(false)} style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid #d1d5db', background: '#fff', cursor: 'pointer', fontSize: 12 }}>Cancel</button>
             <button onClick={createThread} disabled={!newTitle.trim() || !newContent.trim()}
-              style={{ padding: '4px 12px', borderRadius: 6, background: '#4f46e5', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12 }}>Post</button>
+              style={{ padding: '4px 12px', borderRadius: 6, background: '#5EC9CC', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12 }}>Post</button>
           </div>
         </div>
       )}

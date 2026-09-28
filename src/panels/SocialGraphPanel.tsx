@@ -71,7 +71,7 @@ const REL_TYPE_COLORS: Record<string, string> = {
   friend_of: '#3b82f6',
   colleague_of: '#10b981',
   reports_to: '#f59e0b',
-  member_of: '#8b5cf6',
+  member_of: '#5EC9CC',
   mentor: '#ec4899',
   client: '#06b6d4',
   vendor: '#f97316',

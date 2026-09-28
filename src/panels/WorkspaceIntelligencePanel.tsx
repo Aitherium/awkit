@@ -253,7 +253,7 @@ export default function WorkspaceIntelligencePanel({
                 <div style={{ ...card, padding: 16, marginBottom: 20 }}>
                   <div style={{ fontSize: '0.75rem', fontWeight: 600, marginBottom: 10 }}>By Category</div>
                   {Object.entries(emails.by_category).map(([cat, count]) => {
-                    const colors: Record<string, string> = { vip: '#8B5CF6', urgent: '#EF4444', approval: '#3B82F6', fyi: '#6B7280' }
+                    const colors: Record<string, string> = { vip: '#5EC9CC', urgent: '#EF4444', approval: '#3B82F6', fyi: '#6B7280' }
                     return (
                       <div key={cat} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '5px 0' }}>
                         <div style={{ width: 8, height: 8, borderRadius: '50%', background: colors[cat] || '#888' }} />

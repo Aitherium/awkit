@@ -38,7 +38,7 @@ function formatPrice(pack: PackCardPack): string {
 function typeColor(type: string): { bg: string; fg: string } {
   switch (type) {
     case 'agent': return { bg: '#1a2a3a', fg: '#60a5fa' }
-    case 'skill': return { bg: '#2a1a3a', fg: '#a78bfa' }
+    case 'skill': return { bg: '#2a1a3a', fg: '#5EC9CC' }
     case 'tool': return { bg: '#1a3a2a', fg: '#4ade80' }
     default: return { bg: '#2a2a2a', fg: '#888' }
   }
@@ -67,7 +67,7 @@ export default function PackCard({
       onClick={() => onSelect?.(pack)}
       style={{
         background: selected ? 'var(--bg-active, #1a2a4a)' : 'var(--bg-surface, #16162a)',
-        border: `1px solid ${selected ? 'var(--accent, #6366f1)' : 'var(--glass-border, #2a2a4a)'}`,
+        border: `1px solid ${selected ? 'var(--accent, #5EC9CC)' : 'var(--glass-border, #2a2a4a)'}`,
         borderRadius: 'var(--radius, 10px)',
         padding: compact ? 12 : 16,
         display: 'flex',
@@ -170,7 +170,7 @@ export default function PackCard({
         <div style={{
           position: 'absolute', top: 8, right: 8,
           width: 20, height: 20, borderRadius: '50%',
-          background: 'var(--accent, #6366f1)', color: '#fff',
+          background: 'var(--accent, #5EC9CC)', color: '#fff',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontSize: 12, fontWeight: 700,
         }}>

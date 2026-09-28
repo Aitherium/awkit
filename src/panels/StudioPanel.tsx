@@ -73,7 +73,7 @@ function ParamField({
   if (param.type === 'bool') {
     return (
       <label className="flex items-center gap-2 text-[11px] text-slate-400">
-        <input type="checkbox" checked={Boolean(value)} onChange={e => onChange(e.target.checked)} className="accent-purple-500" />
+        <input type="checkbox" checked={Boolean(value)} onChange={e => onChange(e.target.checked)} className="accent-[#5EC9CC]" />
         {param.name}
       </label>
     )
@@ -105,7 +105,7 @@ function ParamField({
           value={String(value)}
           onChange={e => onChange(e.target.value)}
           rows={3}
-          className="w-full bg-slate-800/60 border border-slate-700 rounded px-2 py-1 text-xs text-slate-100 focus:outline-none focus:border-purple-500"
+          className="w-full bg-slate-800/60 border border-slate-700 rounded px-2 py-1 text-xs text-slate-100 focus:outline-none focus:border-[#5EC9CC]"
         />
       ) : (
         <input
@@ -114,7 +114,7 @@ function ParamField({
           min={typeof param.min === 'number' ? param.min : undefined}
           max={typeof param.max === 'number' ? param.max : undefined}
           onChange={e => onChange(numeric ? e.target.value : e.target.value)}
-          className="w-full bg-slate-800/60 border border-slate-700 rounded px-2 py-1 text-xs text-slate-100 focus:outline-none focus:border-purple-500"
+          className="w-full bg-slate-800/60 border border-slate-700 rounded px-2 py-1 text-xs text-slate-100 focus:outline-none focus:border-[#5EC9CC]"
         />
       )}
     </label>
@@ -241,9 +241,9 @@ export default function StudioPanel({
   }
 
   return (
-    <div className={`bg-slate-900/60 backdrop-blur-xl border border-purple-500/20 rounded-lg flex flex-col min-h-0 ${className}`}>
+    <div className={`bg-slate-900/60 backdrop-blur-xl border border-[#5EC9CC]/20 rounded-lg flex flex-col min-h-0 ${className}`}>
       <div className="px-4 py-3 border-b border-slate-700 flex items-center gap-2">
-        <Wand2 className="w-5 h-5 text-purple-400" />
+        <Wand2 className="w-5 h-5 text-[#5EC9CC]" />
         <h3 className="text-lg font-medium text-slate-100">Studio</h3>
         <span className="ml-auto text-[11px] text-slate-500">
           {loading ? 'loading catalogue…' : catalogueError ? 'offline' : `${ops.length} live ops · ${backend}`}
@@ -293,7 +293,7 @@ export default function StudioPanel({
                       type="button"
                       onClick={() => openOp(op)}
                       className={`block w-full text-left px-2 py-1 rounded text-xs ${activeOp?.name === op.name
-                        ? 'bg-purple-600/30 text-purple-100'
+                        ? 'bg-[#5EC9CC]/30 text-[#BFEBEC]'
                         : 'text-slate-300 hover:bg-slate-800/60'}`}
                     >
                       {op.label || op.name}
@@ -309,7 +309,7 @@ export default function StudioPanel({
         {/* Form + results */}
         <div className="flex-1 overflow-auto p-4 space-y-4 min-w-0">
           {handoffNote && (
-            <div className="rounded border border-purple-500/40 bg-purple-500/10 px-3 py-2 text-xs text-purple-100">
+            <div className="rounded border border-[#5EC9CC]/40 bg-[#5EC9CC]/10 px-3 py-2 text-xs text-[#BFEBEC]">
               {handoffNote}
             </div>
           )}
@@ -356,7 +356,7 @@ export default function StudioPanel({
                 type="button"
                 onClick={() => void submit()}
                 disabled={running}
-                className="px-3 py-2 rounded bg-purple-600 hover:bg-purple-700 disabled:bg-slate-700 text-slate-100 text-sm inline-flex items-center gap-2"
+                className="px-3 py-2 rounded bg-[#5EC9CC] hover:bg-[#7AD6D8] disabled:bg-slate-700 text-slate-100 text-sm inline-flex items-center gap-2"
               >
                 {running ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
                 {running ? 'Running…' : `Run ${activeOp.name}`}
@@ -410,7 +410,7 @@ export default function StudioPanel({
                                   <button
                                     type="button"
                                     onClick={() => onCritique(mediaUrl(opts, src), r.prompt)}
-                                    className="ml-2 text-purple-300 hover:text-purple-200 underline"
+                                    className="ml-2 text-[#5EC9CC] hover:text-[#BFEBEC] underline"
                                   >
                                     critique this
                                   </button>

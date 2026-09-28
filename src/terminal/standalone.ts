@@ -57,12 +57,12 @@ const STYLES = `
 .at-status button:active{background:rgba(148,163,184,.26);}
 
 /* ── URL tray ─────────────────────────────────────────────────────────────── */
-.at-urls{flex:0 0 auto;background:rgba(9,14,26,.96);border-top:1px solid rgba(99,102,241,.28);
+.at-urls{flex:0 0 auto;background:rgba(9,14,26,.96);border-top:1px solid rgba(94,201,204,.28);
   max-height:38vh;overflow-y:auto;-webkit-overflow-scrolling:touch;}
 .at-urls[hidden]{display:none;}
 .at-urls-head{display:flex;align-items:center;gap:8px;padding:7px 10px;position:sticky;top:0;
-  background:rgba(9,14,26,.98);font:600 11px/1 ui-monospace,monospace;color:#a5b4fc;
-  border-bottom:1px solid rgba(99,102,241,.18);}
+  background:rgba(9,14,26,.98);font:600 11px/1 ui-monospace,monospace;color:#BFEBEC;
+  border-bottom:1px solid rgba(94,201,204,.18);}
 .at-urls-head .at-spacer{margin-left:auto;}
 .at-urls-head button{background:none;border:0;color:#64748b;font:inherit;cursor:pointer;
   padding:4px 8px;min-height:28px;}
@@ -72,7 +72,7 @@ const STYLES = `
 .at-url-text{flex:1 1 auto;min-width:0;font:400 11px/1.35 ui-monospace,monospace;color:#cbd5e1;
   word-break:break-all;overflow-wrap:anywhere;}
 .at-url-actions{display:flex;gap:6px;flex:0 0 auto;}
-.at-url-actions button{background:rgba(99,102,241,.18);border:0;border-radius:7px;color:#c7d2fe;
+.at-url-actions button{background:rgba(94,201,204,.18);border:0;border-radius:7px;color:#BFEBEC;
   font:600 11px/1 ui-monospace,monospace;padding:0 10px;min-height:34px;min-width:44px;cursor:pointer;}
 .at-url-actions button.at-copy{background:rgba(148,163,184,.14);color:#cbd5e1;}
 .at-url-actions button:active{filter:brightness(1.35);}
@@ -88,7 +88,7 @@ const STYLES = `
   /* 44px is the accessible touch target floor; the old bar used 24px buttons. */
   min-height:44px;min-width:44px;padding:0 12px;cursor:pointer;}
 .at-keys button:active{background:rgba(148,163,184,.3);}
-.at-keys button[aria-pressed="true"]{background:#6366f1;color:#fff;}
+.at-keys button[aria-pressed="true"]{background:#5EC9CC;color:#fff;}
 `;
 
 function ensureStyles(): void {

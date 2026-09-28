@@ -81,11 +81,11 @@ const FRESHNESS_GRADIENT = (score: number): { fill: string; glow: string } => {
 }
 
 const EDGE_COLORS: Record<string, string> = {
-  references: 'rgba(99, 102, 241, 0.5)',
+  references: 'rgba(94,201,204, 0.5)',
   cites: 'rgba(16, 185, 129, 0.5)',
   links_to: 'rgba(148, 163, 184, 0.4)',
   duplicates: 'rgba(239, 68, 68, 0.6)',
-  member_of: 'rgba(139, 92, 246, 0.4)',
+  member_of: 'rgba(94,201,204, 0.4)',
 }
 
 const ORPHAN_GLOW = '#ef4444'

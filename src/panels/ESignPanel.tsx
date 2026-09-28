@@ -391,7 +391,7 @@ export default function ESignPanel() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap',
                           marginTop: '0.25rem', fontSize: '0.62rem', color: 'var(--text-muted, #666)' }}>
                           <span style={{ padding: '0.05rem 0.4rem', borderRadius: 999, fontWeight: 600,
-                            background: 'rgba(139,92,246,0.15)', color: '#a78bfa' }}>
+                            background: 'rgba(94,201,204,0.15)', color: '#5EC9CC' }}>
                             Envelope - {signedCount} of {rows.length} signed
                           </span>
                           <span>created {fmtDate(first.created_at)}</span>

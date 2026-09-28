@@ -87,7 +87,7 @@ const STATUS_COLORS: Record<string, string> = {
   published: 'var(--accent-green, #2d8c4e)',
   draft: 'var(--bg-elevated)',
   superseded: '#b45309',
-  scheduled: '#6366F1',
+  scheduled: '#5EC9CC',
   pending_review: '#d97706',
 }
 
@@ -206,7 +206,7 @@ export default function AitherWriterPanel({ apiBase = '/api/blog' }: AitherWrite
           { label: 'Total', value: stats.total, color: undefined },
           { label: 'Published', value: stats.published, color: '#2d8c4e' },
           { label: 'Drafts', value: stats.drafts, color: undefined },
-          { label: 'Scheduled', value: stats.scheduled, color: '#6366F1' },
+          { label: 'Scheduled', value: stats.scheduled, color: '#5EC9CC' },
           { label: 'Review', value: stats.pendingReview, color: '#d97706' },
           { label: 'Superseded', value: stats.superseded, color: '#b45309' },
         ].map(s => (
@@ -321,7 +321,7 @@ function WriterPostRow({ post, allPosts, onEdit, onSupersede, onRefresh, apiBase
             {post.status}
           </span>
           {post.featured && <span style={S.badge('var(--accent-primary)')}>featured</span>}
-          {post.highlight && <span style={S.badge('#6366F1')}>highlight</span>}
+          {post.highlight && <span style={S.badge('#5EC9CC')}>highlight</span>}
         </div>
         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
           {post.author || 'Aitherium'} &middot; {post.date}
@@ -336,7 +336,7 @@ function WriterPostRow({ post, allPosts, onEdit, onSupersede, onRefresh, apiBase
         )}
         {/* Scheduling info */}
         {post.scheduled_for && (
-          <div style={{ fontSize: '0.7rem', color: '#6366F1', marginTop: 6 }}>
+          <div style={{ fontSize: '0.7rem', color: '#5EC9CC', marginTop: 6 }}>
             Scheduled: {new Date(post.scheduled_for).toLocaleString()}
             {post.scheduled_by && ` by ${post.scheduled_by}`}
           </div>
@@ -390,7 +390,7 @@ function WriterPostRow({ post, allPosts, onEdit, onSupersede, onRefresh, apiBase
             })
             onRefresh(); setActing(false)
           }} disabled={acting} style={{
-            ...S.btnSmall, background: 'var(--bg-elevated)', color: '#6366F1',
+            ...S.btnSmall, background: 'var(--bg-elevated)', color: '#5EC9CC',
           }}>Share</button>
         )}
         {post.status !== 'superseded' && post.status === 'published' && (
@@ -680,7 +680,7 @@ function SupersedeWizard({ apiBase, target, allPosts, onBack }: {
                   ...S.card,
                   cursor: 'pointer',
                   borderColor: selectedSlug === p.slug ? 'var(--accent-primary)' : 'var(--glass-border)',
-                  background: selectedSlug === p.slug ? 'var(--accent-primary-10, rgba(99,102,241,0.1))' : 'var(--bg-surface)',
+                  background: selectedSlug === p.slug ? 'var(--accent-primary-10, rgba(94,201,204,0.1))' : 'var(--bg-surface)',
                 }}
               >
                 <div style={{ fontSize: '0.9rem', fontWeight: 500, color: 'var(--text-primary)', marginBottom: 2 }}>
@@ -958,7 +958,7 @@ function ReviewQueue({ apiBase, writerApi, onBack }: {
                   <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
                     {post.author} &middot; {post.tags?.join(', ')}
                     {post.scheduled_for && (
-                      <span style={{ color: '#6366F1' }}>
+                      <span style={{ color: '#5EC9CC' }}>
                         {' '}&middot; Scheduled: {new Date(post.scheduled_for).toLocaleString()}
                       </span>
                     )}

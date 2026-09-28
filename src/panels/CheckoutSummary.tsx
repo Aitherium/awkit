@@ -186,7 +186,7 @@ export default function CheckoutSummary({
           disabled={processing}
           style={{
             padding: '9px 24px', borderRadius: 'var(--radius, 8px)', border: 'none',
-            background: 'var(--accent, #6366f1)', color: '#fff',
+            background: 'var(--accent, #5EC9CC)', color: '#fff',
             cursor: processing ? 'wait' : 'pointer', fontSize: 13, fontWeight: 600,
             opacity: processing ? 0.6 : 1,
           }}

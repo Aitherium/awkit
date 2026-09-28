@@ -150,7 +150,7 @@ function MechanicsRail({ mechanics }: { mechanics: MechanicDefinition[] }): Reac
               starts at <span className="font-mono">{String(m.default_value)}</span>
               {typeof m.min_value === 'number' && typeof m.max_value === 'number'
                 && <span className="text-slate-500"> · {m.min_value}–{m.max_value}</span>}
-              {m.affects_narrative && <span className="text-purple-300"> · drives the story</span>}
+              {m.affects_narrative && <span className="text-[#5EC9CC]"> · drives the story</span>}
             </p>
           )}
         </div>
@@ -332,9 +332,9 @@ export default function SagaPlayPanel({
   const worldName = state?.world?.name
 
   return (
-    <div className={`bg-slate-900/60 backdrop-blur-xl border border-purple-500/20 rounded-lg flex flex-col min-h-0 ${className}`}>
+    <div className={`bg-slate-900/60 backdrop-blur-xl border border-[#5EC9CC]/20 rounded-lg flex flex-col min-h-0 ${className}`}>
       <div className="px-4 py-3 border-b border-slate-700 flex flex-wrap items-center gap-2">
-        <Feather className="w-5 h-5 text-purple-400 flex-shrink-0" />
+        <Feather className="w-5 h-5 text-[#5EC9CC] flex-shrink-0" />
         <h3 className="text-lg font-medium text-slate-100">Play</h3>
         <select
           aria-label="World"
@@ -372,7 +372,7 @@ export default function SagaPlayPanel({
                 <p>{worldName ? `${worldName} is open.` : 'The world is open.'} Take a turn and it moves.</p>
                 <p className="text-xs text-slate-500">
                   Every turn is assembled from the story graph, written into it, and checked for
-                  continuity. Turn on <span className="text-purple-300">Explore branches</span> to see the
+                  continuity. Turn on <span className="text-[#5EC9CC]">Explore branches</span> to see the
                   alternatives the narrator considered and why it picked one.
                 </p>
               </div>
@@ -381,7 +381,7 @@ export default function SagaPlayPanel({
             {messages.map(m => (
               <div key={m.id} className={m.role === 'player' ? 'text-right' : ''}>
                 <div className={`inline-block max-w-full rounded px-3 py-2 text-sm whitespace-pre-wrap ${
-                  m.role === 'player' ? 'bg-purple-600/30 text-slate-100'
+                  m.role === 'player' ? 'bg-[#5EC9CC]/30 text-slate-100'
                     : m.role === 'dice' ? 'bg-slate-800/60 text-amber-200 font-mono text-xs'
                     : 'bg-slate-800/60 text-slate-200'}`}>
                   {m.text}
@@ -404,7 +404,7 @@ export default function SagaPlayPanel({
                         type="button"
                         disabled={busy}
                         onClick={() => void submit(c.text, 'action')}
-                        className="px-2 py-1 rounded border border-purple-500/40 text-xs text-purple-200 hover:bg-purple-500/20 disabled:opacity-50"
+                        className="px-2 py-1 rounded border border-[#5EC9CC]/40 text-xs text-[#BFEBEC] hover:bg-[#7AD6D8]/20 disabled:opacity-50"
                       >
                         {c.text}
                       </button>
@@ -417,7 +417,7 @@ export default function SagaPlayPanel({
                   <button
                     type="button"
                     onClick={() => illustrate(m)}
-                    className="mt-2 inline-flex items-center gap-1 px-2 py-1 rounded border border-slate-600 text-xs text-slate-300 hover:border-purple-400 hover:text-purple-200"
+                    className="mt-2 inline-flex items-center gap-1 px-2 py-1 rounded border border-slate-600 text-xs text-slate-300 hover:border-[#5EC9CC] hover:text-[#BFEBEC]"
                   >
                     <ImageIcon className="w-3 h-3" /> Illustrate this beat
                   </button>
@@ -448,7 +448,7 @@ export default function SagaPlayPanel({
                   title={m.hint}
                   onClick={() => setMode(m.id)}
                   className={`px-2 py-1 rounded text-xs border ${mode === m.id
-                    ? 'border-purple-400 text-purple-200 bg-purple-500/20'
+                    ? 'border-[#5EC9CC] text-[#BFEBEC] bg-[#5EC9CC]/20'
                     : 'border-slate-700 text-slate-400 hover:text-slate-200'}`}
                 >
                   {m.label}
@@ -459,7 +459,7 @@ export default function SagaPlayPanel({
                   type="checkbox"
                   checked={explore}
                   onChange={e => setExplore(e.target.checked)}
-                  className="accent-purple-500"
+                  className="accent-[#5EC9CC]"
                 />
                 <GitBranch className="w-3.5 h-3.5" /> Explore branches
               </label>
@@ -478,13 +478,13 @@ export default function SagaPlayPanel({
                 placeholder={MODES.find(m => m.id === mode)?.hint}
                 disabled={busy || !!stateError}
                 rows={2}
-                className="flex-1 bg-slate-800/50 border border-slate-700 rounded px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-purple-500 disabled:opacity-50"
+                className="flex-1 bg-slate-800/50 border border-slate-700 rounded px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-[#5EC9CC] disabled:opacity-50"
               />
               <button
                 type="button"
                 onClick={() => void submit(input, mode)}
                 disabled={busy || !input.trim() || !!stateError}
-                className="px-3 py-2 rounded bg-purple-600 hover:bg-purple-700 disabled:bg-slate-700 text-slate-100 text-sm"
+                className="px-3 py-2 rounded bg-[#5EC9CC] hover:bg-[#7AD6D8] disabled:bg-slate-700 text-slate-100 text-sm"
               >
                 <Send className="w-4 h-4" />
               </button>
@@ -542,7 +542,7 @@ export default function SagaPlayPanel({
             ) : (
               <p className="text-xs text-slate-500">
                 <Sparkles className="inline w-3 h-3 mr-1" />
-                Turn on <span className="text-purple-300">Explore branches</span> and the next turn shows every
+                Turn on <span className="text-[#5EC9CC]">Explore branches</span> and the next turn shows every
                 continuation the narrator scored, and which one it took.
               </p>
             )}

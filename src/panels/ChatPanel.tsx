@@ -315,7 +315,7 @@ function PipelineTraceBadge({ pipeline, usage }: { pipeline?: PipelineTrace; usa
     '3': '#3b82f6', '4': '#3b82f6',
     '5': '#22c55e', '6': '#22c55e',
     '7': '#f59e0b', '8': '#f59e0b',
-    '9': '#8b5cf6', '10': '#8b5cf6',
+    '9': '#5EC9CC', '10': '#5EC9CC',
   }
   const eColor = effortColors[String(pipeline.effort)] || '#64748b'
 

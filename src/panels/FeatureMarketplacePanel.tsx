@@ -327,7 +327,7 @@ export default function FeatureMarketplacePanel({
                     <div className="flex items-center gap-1.5">
                       <span className="text-xs font-medium text-zinc-200">{panel.name}</span>
                       {panel.planRequirement && panel.planRequirement !== 'free' && (
-                        <span className="px-1 py-0.5 rounded text-[9px] font-medium bg-purple-500/15 text-purple-300 uppercase">
+                        <span className="px-1 py-0.5 rounded text-[9px] font-medium bg-[#5EC9CC]/15 text-[#5EC9CC] uppercase">
                           {panel.planRequirement}
                         </span>
                       )}

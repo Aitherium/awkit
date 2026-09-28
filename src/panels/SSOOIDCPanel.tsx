@@ -73,7 +73,7 @@ function useApi(apiBase?: string) {
     }, [base])
 }
 
-const FIELD_STYLE = 'w-full px-3 py-2 rounded border border-zinc-700 bg-zinc-900 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500'
+const FIELD_STYLE = 'w-full px-3 py-2 rounded border border-zinc-700 bg-zinc-900 text-sm focus:outline-none focus:ring-1 focus:ring-[#5EC9CC]'
 const LABEL_STYLE = 'block text-xs font-medium text-zinc-400 mb-1'
 
 export default function SSOOIDCPanel({ apiBase }: SSOOIDCPanelProps) {
@@ -282,7 +282,7 @@ export default function SSOOIDCPanel({ apiBase }: SSOOIDCPanelProps) {
                         Enable this IdP immediately
                     </label>
                     <button onClick={() => void configure()} disabled={saving}
-                        className="px-4 py-2 rounded bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-sm font-medium">
+                        className="px-4 py-2 rounded bg-[#5EC9CC] text-[#050507] hover:bg-[#7AD6D8] disabled:opacity-50 text-sm font-medium">
                         {saving ? 'Saving…' : 'Save configuration'}
                     </button>
                 </div>

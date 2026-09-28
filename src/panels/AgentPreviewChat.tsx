@@ -115,7 +115,7 @@ export default function AgentPreviewChat({
             alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
             maxWidth: '80%', padding: '8px 12px', borderRadius: 10,
             background: msg.role === 'user'
-              ? 'var(--accent, #6366f1)'
+              ? 'var(--accent, #5EC9CC)'
               : 'var(--bg-surface, #16162a)',
             color: msg.role === 'user' ? '#fff' : 'var(--text-primary, #e0e0e0)',
             fontSize: 13, lineHeight: 1.5, whiteSpace: 'pre-wrap',
@@ -166,7 +166,7 @@ export default function AgentPreviewChat({
           disabled={loading || !input.trim() || !sessionId}
           style={{
             padding: '8px 16px', borderRadius: 'var(--radius, 8px)', border: 'none',
-            background: 'var(--accent, #6366f1)', color: '#fff',
+            background: 'var(--accent, #5EC9CC)', color: '#fff',
             cursor: loading ? 'wait' : 'pointer', fontSize: 13, fontWeight: 600,
             opacity: loading || !input.trim() ? 0.5 : 1,
           }}

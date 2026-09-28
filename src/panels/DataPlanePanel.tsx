@@ -92,7 +92,7 @@ export default function DataPlanePanel({ apiBase = '/api/data-plane' }: DataPlan
             onClick={() => setActiveTab(t.key)}
             style={{
               padding: '8px 16px', fontSize: '0.85rem', cursor: 'pointer',
-              border: 'none', borderBottom: activeTab === t.key ? '2px solid var(--accent, #7c3aed)' : '2px solid transparent',
+              border: 'none', borderBottom: activeTab === t.key ? '2px solid var(--accent, #5EC9CC)' : '2px solid transparent',
               background: 'transparent',
               color: activeTab === t.key ? 'var(--text, #fff)' : 'var(--text-muted, #888)',
               fontWeight: activeTab === t.key ? 600 : 400,

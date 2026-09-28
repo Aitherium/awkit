@@ -26,7 +26,7 @@ const PILLAR_NAMES: Record<Pillar, string> = {
 const PILLAR_COLORS: Record<Pillar, string> = {
   intent: '#f59e0b',
   context: '#3b82f6',
-  reasoning: '#8b5cf6',
+  reasoning: '#5EC9CC',
   orchestration: '#ec4899',
   learning: '#10b981',
   automation: '#f97316',
