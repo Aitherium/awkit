@@ -126,7 +126,7 @@ export class F32KvCache {
     // defect produces unbroken token salad ("xt\n\nxt\n\n...", verified on the real 1.7B
     // and 8B while llama.cpp answers "Paris." from the same file).
     //
-    // This is the measured non-causality of D-1332: prefill(N) and prefill(N-1) disagreed
+    // This is the measured non-causality of the prefill ordering bug: prefill(N) and prefill(N-1) disagreed
     // at a SHARED position because what landed in the cache depended on whatever was in
     // those scratch buffers at submit time, not on the tokens.
     const tgt = beginCopies(this.device);

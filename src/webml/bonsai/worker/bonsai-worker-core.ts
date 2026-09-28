@@ -391,7 +391,7 @@ export function runBonsaiWorker(scope: WorkerScope, deps: BonsaiWorkerDeps): voi
       // +1 for the `</think>` this loop may FEED itself when the reasoning budget runs out.
       // The ceiling still exists: attention reading past the filled region corrupts a
       // conversation with no error, so overrun stays a loud failure.
-      // D-1498: the full-attention kernels apply plain RoPE only (no YaRN ramp), so a model
+      // The full-attention kernels apply plain RoPE only (no YaRN ramp), so a model
       // that declares an unimplemented rope scaling is clamped to its original context
       // length HERE, by the code that knows why — not by this constant happening to match.
       const { ropeSafeCeiling } = await import("../model/rope-scaling-guard");

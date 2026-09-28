@@ -5,7 +5,7 @@
 /* SPDX-License-Identifier: LicenseRef-Aitherium-Proprietary
  * © 2026 Aitherium, LLC. Original work.
  *
- * THE CONTEXT CEILING IS OWNED BY THE CODE THAT KNOWS WHY IT EXISTS (D-1498).
+ * THE CONTEXT CEILING IS OWNED BY THE CODE THAT KNOWS WHY IT EXISTS.
  *
  * Every dense Bonsai declares `rope.scaling.type=yarn`, `factor=4`,
  * `original_context_length=8192`. metadata.ts resolves those keys, but the full-attention

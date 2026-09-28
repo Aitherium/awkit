@@ -44,7 +44,7 @@ export interface ForwardResult {
 // the console pinpoints exactly which layer first produces NaN/Inf or a collapsed (all-zero)
 // state. Enabled while the in-browser numerics are being verified.
 // Runtime-switchable so a harness can turn it on WITHOUT editing and rebuilding this file
-// (D-812/D-866): the whole point of the layer probe is to localize where activations first
+// (wrong-stride bugs): the whole point of the layer probe is to localize where activations first
 // go wrong on the REAL weights, and a compile-time constant meant nobody could enable it
 // on a deployed bundle or from a test page. Set `globalThis.__BONSAI_DEBUG = true` before
 // the first generation. Default stays OFF — the probe costs a full hidden-state readback
@@ -57,7 +57,7 @@ export function bonsaiDebugEnabled(): boolean {
  *  `import { BONSAI_DEBUG }` call sites keep compiling. */
 export const BONSAI_DEBUG = false;
 
-/** D-937 elementwise capture.
+/** Elementwise capture.
  *
  *  The per-block `meanabs` probe below localises divergence only as far as a SUMMARY can:
  *  two different vectors can share a mean absolute value, so a meanabs comparison shows
@@ -87,7 +87,7 @@ function captureActive(): boolean {
   return typeof (globalThis as CaptureGlobals).__BONSAI_CAPTURE_TAG === "string";
 }
 
-/** D-937 INJECTION test — separates "this block is broken" from "this block amplifies a
+/** INJECTION test — separates "this block is broken" from "this block amplifies a
  *  broken input".
  *
  *  Measured elementwise, prefill(N) vs prefill(N-1)+decode(1) at the same position:
@@ -175,7 +175,7 @@ export async function prefill(
     // the link through every block's compute and idled the GPU through every block's
     // download, and on a high-RTT link it also serialised one round trip per layer with
     // nothing else in flight. This is the "warming layer 7/36" the visitor watches on their
-    // first message (D-1689). Issued BEFORE the await so the very first iteration overlaps.
+    // first message. Issued BEFORE the await so the very first iteration overlaps.
     for (let ahead = 1; ahead <= READ_AHEAD_LAYERS; ahead++) {
       if (l + ahead < ctx.config.blockCount) ctx.weights.prefetchLayer(l + ahead);
     }
@@ -224,7 +224,7 @@ export async function decodeStep(
 ): Promise<ForwardResult> {
   // Run all blocks
   const io: BlockIO = { hidden, nTokens: 1, posBase };
-  // D-937: the matching per-block probe for the decode path, so prefill and decode can be
+  // The matching per-block probe for the decode path, so prefill and decode can be
   // compared at the SAME position — block by block, and elementwise when a capture tag is
   // set. Decode carries exactly one token, so its row IS row 0.
   const probeDecode = async (l: number) => {

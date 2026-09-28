@@ -19,7 +19,7 @@
  *
  *   1. `forward.ts` submits ONE command buffer PER TRANSFORMER LAYER (`beginBatch` /
  *      `flushBatch`). On a discrete card that is microseconds of wall time and the whole
- *      point of D-1517's batching. On an Iris Xe running a 4B naive Q1_0 matmul it is
+ *      point of the per-layer batching. On an Iris Xe running a 4B naive Q1_0 matmul it is
  *      seconds — i.e. over the TDR deadline, by construction.
  *   2. The driver resets. Every in-flight GPU op dies, and the RENDERER's pending work dies
  *      with it — which is where a perfectly healthy layer range GET turns into a bare
@@ -103,12 +103,12 @@ export function classifyAdapter(hint?: AdapterHint): GpuClass {
 
 /**
  * How many compute dispatches may accumulate into ONE `queue.submit()` for this class.
- * `0` means "no cap" — keep the one-submit-per-layer batching D-1517 measured as the fix
+ * `0` means "no cap" — keep the one-submit-per-layer batching measured as the fix
  * for the 3–4 ms/layer submit-overhead floor.
  *
  * The number for `integrated`/`software` is chosen to be small enough that a packet is
  * many times under the 2 s TDR deadline even when each dispatch is slow, while still
- * cutting submit count by ~an order of magnitude versus the pre-D-1517 per-op submits.
+ * cutting submit count by ~an order of magnitude versus the old per-op submits.
  * There is no way to derive it exactly: the per-dispatch cost depends on the adapter, the
  * kernel and the prompt length, none of which are known here. It is a safety margin, and
  * it is applied ONLY where a discrete card is not in play, so the fast path is untouched.
@@ -181,7 +181,7 @@ export function maxDispatchesPerSubmit(
       // the queue-to-completion time Windows' 2 s TDR deadline measures, not our packet's
       // own cost. So on Windows even the discrete path carries a cap — loose enough that
       // an uncontended card never notices (a 5090 layer is microseconds; 64 dispatches is
-      // still ~an order of magnitude fewer submits than pre-D-1517), tight enough that a
+      // still ~an order of magnitude fewer submits than per-op submission), tight enough that a
       // contended one yields the queue often. macOS/Linux browsers have no 2 s hard reset,
       // so the uncapped fast path stays theirs.
       return opts?.windowsTdr ? 64 : 0;

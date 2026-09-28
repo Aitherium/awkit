@@ -138,7 +138,7 @@ export class KvCache {
    * RECORDED INTO THE OPEN LAYER BATCH — dispatch1D is batch-aware and records onto the
    * batch encoder that beginBatch() opened, so the quantize runs AFTER the block's K/V
    * projections that fill the source buffers. A private encoder + immediate submit here
-   * would rerun the D-1332 ordering bug (cache seeded from buffers not yet computed).
+   * would rerun the prefill ordering bug (cache seeded from buffers not yet computed).
    */
   append(
     layer: number,

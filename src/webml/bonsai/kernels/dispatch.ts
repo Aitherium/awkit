@@ -127,7 +127,7 @@ export function finishCopies(device: GpuDeviceLike, t: CopyTarget): void {
 // leaks all scratch buffers every token and OOMs a multi-turn conversation.
 const deferredDestroy = new WeakMap<GpuDeviceLike, GpuBufferLike[]>();
 
-// --- Scratch buffer POOL (D-850) -------------------------------------------
+// --- Scratch buffer POOL -------------------------------------------------
 // Decode re-created every scratch buffer, every uniform and every bind group on EVERY
 // dispatch: ~17-25 scratch buffers per layer x 64 layers is roughly 1300 createBuffer +
 // 1300 createBindGroup + 1300 destroy per generated token. That is pure CPU-side driver
@@ -191,7 +191,7 @@ function acquire(
   const key = keyOf(usage, size);
   const free = pool.get(key);
   const st = statsFor(device);
-  // Escape hatch for D-937. Recycled buffers are handed back with their PREVIOUS contents
+  // Escape hatch for stale-contents bugs. Recycled buffers are handed back with their PREVIOUS contents
   // intact — which is correct only if every kernel fully writes the range it later reads.
   // The pool is keyed by SIZE, so prefill(N) and prefill(N-1) draw from different buckets
   // holding different stale bytes; any kernel that reads an uninitialised region would make
@@ -221,15 +221,15 @@ function acquire(
     // presented as a causality violation. It hid because the model was already incoherent for
     // an unrelated reason (the genuine block-2 defect, which pooling does NOT explain).
     //
-    // clearBuffer is a GPU-side fill, so this keeps the allocation win (the point of D-850)
+    // clearBuffer is a GPU-side fill, so this keeps the allocation win (the point of the pool)
     // without keeping the stale data.
     //
-    // RECORD INTO THE OPEN BATCH, NEVER A PRIVATE ENCODER + IMMEDIATE SUBMIT (D-1517).
+    // RECORD INTO THE OPEN BATCH, NEVER A PRIVATE ENCODER + IMMEDIATE SUBMIT.
     // This was `createCommandEncoder()` + `queue.submit()` PER ACQUISITION — ~25 scratch
-    // buffers and ~25 uniforms per layer, so the D-850 zeroing fix quietly reintroduced
+    // buffers and ~25 uniforms per layer, so the pool zeroing fix quietly reintroduced
     // per-op submits through the back door and nullified the one-submit-per-layer batching:
     // ~700+ tiny submits per decoded token on the 1.7B. That is the measured 3–4 ms/layer
-    // floor that made tok/s independent of model size (D-1517's table), because submit
+    // floor that made tok/s independent of model size (the batching measurements), because submit
     // overhead is per-submit, not per-byte.
     //
     // Ordering is EQUIVALENT, not merely similar: a pooled buffer's stale bytes come from

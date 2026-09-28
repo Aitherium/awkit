@@ -121,7 +121,7 @@ export async function embedTokens(
   // valid bytes from each block start (the 2 pad bytes are ignored).
   // QUANT TYPE COMES FROM THE FILE, NOT FROM A DEFAULT. Reading a 34-byte Q2_0 block at the
   // 20-byte Q1_0 stride does not crash — it yields fluent garbage, the hardest failure here
-  // to notice, and exactly the class D-812 cost days to. GPU strides come from the repack in
+  // to notice, and exactly the class that once cost days. GPU strides come from the repack in
   // tensors/upload.ts: Q1_0 20 bytes (18 used + 2 pad), Q2_0 36 (34 + 2).
   const embedType = weights.typeOf(embeddingName);
   const { gpuBytesPerBlock: GPU_BYTES_PER_BLOCK, dequant } = embedDecoder(embedType, embeddingName);

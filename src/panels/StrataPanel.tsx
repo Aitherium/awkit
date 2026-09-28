@@ -86,7 +86,7 @@ export default function StrataPanel({ apiBase = '/api/strata', workspace = '' }:
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <h3 style={{ margin: 0 }}>Strata Storage</h3>
+        <h3 style={{ margin: 0 }}>Your files</h3>
         <span style={{ opacity: 0.7, fontSize: 13 }}>
           {fmtBytes(stats?.total_bytes)} · {stats?.total_files ?? 0} files
         </span>

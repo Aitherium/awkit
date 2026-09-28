@@ -145,7 +145,7 @@ export async function parseGguf(r: RangeReader): Promise<ParsedGguf> {
  * Their own README states it plainly: "same type id, different block size". `nBytes` here is
  * COMPUTED from TYPE_TRAITS, never read from the file, so nothing downstream can tell them
  * apart — a g64 file loads clean, reads at the wrong stride, and produces fluent garbage
- * rather than an error (the D-812 class). And the README says the g64 files are to be
+ * rather than an error (the wrong-stride class). And the README says the g64 files are to be
  * RENAMED to plain `Q2_0`, so the name this runtime expects will eventually carry the layout
  * it cannot read.
  *

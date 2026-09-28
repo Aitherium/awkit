@@ -288,7 +288,7 @@ export class GgufMetadata {
       })(),
       ropeScalingFactor: this.numOpt(this.a("rope.scaling.factor")),
       // Read so the runtime can refuse positions past it while the YaRN ramp is unimplemented
-      // (model/rope-scaling-guard.ts, D-1498). Resolving the type and dropping this is how the
+      // (model/rope-scaling-guard.ts). Resolving the type and dropping this is how the
       // ceiling came to be enforced by an unrelated constant.
       ropeScalingOriginalContext: this.numOpt(this.a("rope.scaling.original_context_length")),
       // SSM / DeltaNet dims (present on the linear-attention layers).

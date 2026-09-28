@@ -137,7 +137,7 @@ export async function runDeltaNetBlock(ctx: LayerContext, layer: number, io: Blo
 
   // Zero conv bias (this model exports ssm_conv1d weight only, no bias tensor).
   // queueInit: fully overwritten by the writeBuffer below — an in-batch clear would
-  // execute AFTER that queue write and zero it (see acquire() in dispatch.ts, D-1517).
+  // execute AFTER that queue write and zero it (see acquire() in dispatch.ts).
   const convBias = ops.scratchBuffer(ctx, convDim, `dn.${layer}.convBias`, { queueInit: true });
   device.queue.writeBuffer(convBias, 0, new Float32Array(convDim));
 

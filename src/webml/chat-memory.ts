@@ -2,7 +2,7 @@
  * Chat memory — the kit's default conversation memory for every on-device chat surface.
  *
  * Measured 2026-09-06 across 14 in-browser Bonsai surfaces: ten go through
- * `useWebGPUChat` (OnDevicePanel, CompanyRoom, the GobboNet room, gargbot, jgames,
+ * `useWebGPUChat` (OnDevicePanel, CompanyRoom, the GobboNet room, tenant chat surfaces,
  * awkit-spaces, …) and every one of them kept the conversation in React state only —
  * reload, and the visitor's agent had never met them. This module gives the hook a
  * memory BY DEFAULT so that stops being a per-surface wiring job:

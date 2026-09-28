@@ -56,7 +56,7 @@ export interface OpCtx {
    * Lives on the context rather than being threaded through ~20 projection call sites,
    * because editing all of them means re-typing three same-typed `number` arguments at each
    * one — and a single transposition there silently corrupts a matmul into fluent-looking
-   * garbage. That is precisely the D-812 class this codebase already paid for once.
+   * garbage. That is precisely the wrong-stride class this codebase already paid for once.
    *
    * Absent = Q1_0, which is what every existing caller meant before Q2_0 existed.
    */
@@ -109,7 +109,7 @@ function uniform(device: GpuDeviceLike, fields: Array<{ u32?: number; f32?: numb
   const bytes = packUniform(fields);
   const buf = createUniform(device, bytes.byteLength);
   device.queue.writeBuffer(buf, 0, bytes);
-  // D-850: this buffer was previously never released — the P0 leak fix (b7a52c233c)
+  // This buffer was previously never released — the P0 leak fix (b7a52c233c)
   // covered per-layer scratch STORAGE buffers and left uniforms out, so every op leaked
   // its uniform for the lifetime of the page (~1300 per generated token). Deferring it
   // puts it on the same release path as scratch: recycled after the batch is submitted,
@@ -166,7 +166,7 @@ export function q1q8Matmul(
   // three same-typed `number` params in two different orders, one transposition
   // away from silently corrupting every matmul, with nothing in the type system
   // able to catch it. Given Bonsai's symptom is fluent-but-wrong output (exactly
-  // what a transposed matmul produces), that ambiguity had to go. (D-812 sweep)
+  // what a transposed matmul produces), that ambiguity had to go. (wrong-stride sweep)
   nRows: number,
   K: number,
   nCols: number,
@@ -441,7 +441,7 @@ export function projectQ1(
  * embed_lmhead.ts named the Q1_0 path directly, so a Q2_0 model would have had its 34-byte
  * blocks read as 18-byte Q1_0 blocks. That does not crash — it produces fluent-looking
  * garbage, which is the single hardest failure to notice in this runtime and exactly what
- * D-812 cost.
+ * the wrong-stride bugs cost.
  *
  * `quantType` is the GGUF dtype from the tensor registry, never a guess.
  */

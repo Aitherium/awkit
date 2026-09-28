@@ -2,7 +2,7 @@
  * Sleep-time memory — the kit's ONE copy of the deferred-consolidation rules.
  *
  * Every surface that runs Bonsai in a browser (the Living OS at aitherium.com, a tenant
- * portal on its own domain, gargbot, the adk web UI, the extension) keeps memory rows
+ * portal on its own domain, the adk web UI, the extension) keeps memory rows
  * that are never reconciled: a contradicted fact stays recalled forever. LightMem's
  * (ICLR 2026) one real contribution fixes that cheaply, and this module IS that idea:
  *

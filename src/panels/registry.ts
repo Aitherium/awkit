@@ -873,6 +873,19 @@ export const PANEL_REGISTRY: PanelMeta[] = [
     domain: 'infrastructure',
   },
   {
+    id: 'strata',
+    name: 'AitherStrata',
+    description: 'Tiered storage: HOT/WARM/COLD usage and your file listing (read-only)',
+    category: 'infrastructure',
+    icon: 'layers',
+    // Veil proxies /api/strata/stats and /api/strata/files authenticate the
+    // caller and forward to the Strata service; the panel only reads.
+    apiPrefix: '/api/strata',
+    requiresBackend: ['AitherStrata.py'],
+    defaultEnabled: false,
+    domain: 'storage',
+  },
+  {
     id: 'planb-ledger',
     name: 'Plan B Ledger',
     description: 'Offline-first continuity ledger — digital + printable paper faces, checkbook discipline',
