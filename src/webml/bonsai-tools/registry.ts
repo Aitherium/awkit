@@ -328,7 +328,7 @@ async function executeWebSearch(args: Record<string, any>): Promise<string> {
 
   if (!query) return "Error: what should I search for? Pass query=<text>.";
   if (query.length > 512) {
-    // Mirrors the server cap (D-706, prompt injection) so the model gets a real reason
+    // Mirrors the server cap (a prompt-injection bound) so the model gets a real reason
     // instead of a 400 it cannot interpret.
     return "Error: that search is too long (max 512 characters).";
   }
@@ -671,7 +671,7 @@ async function executeSearchAitherium(args: Record<string, any>): Promise<string
 
   // The instruction rides WITH the result rather than living in the system
   // prompt. Bonsai's coherence degrades with prompt length at low bit-widths
-  // (D-1380), so a standing paragraph about citations would cost answer quality
+  // so a standing paragraph about citations would cost answer quality
   // on every turn including the ones that never search. Here it costs nothing
   // until it is relevant, and it is adjacent to the passages it governs.
   return [
@@ -813,7 +813,7 @@ async function executeDeepResearch(args: Record<string, any>): Promise<string> {
 
   if (!query) return 'Error: what should I research? Pass query=<text>.';
   if (query.length > 512) {
-    // Mirrors the server cap (D-706, prompt injection) so the model gets a real
+    // Mirrors the server cap (a prompt-injection bound) so the model gets a real
     // reason instead of a 400 it cannot interpret.
     return 'Error: that research question is too long (max 512 characters).';
   }
@@ -1040,7 +1040,7 @@ async function executeRecall(args: Record<string, any>): Promise<string> {
  *
  * WHY IT IS STATIC RATHER THAN A LIVE API CALL. `lib/faculties/WikipediaGraph.py`
  * already knows how to talk to Wikipedia — 1,578 lines of it — and was reachable
- * only from the training harvester (D-1734), so no agent could look anything up.
+ * only from the training harvester, so no agent could look anything up.
  * A live call from here would also need network, an origin with /api, and would
  * fail on a plane. The 273 configured topics are fetched at build time instead
  * and ship with the page, so this works offline like everything else here.
@@ -1444,7 +1444,7 @@ export function getToolDefinitions(audience: ToolAudience = {}): ToolFunction[] 
    time is it?" reported `prefill 2787 tokens`. Those two numbers are the same
    number: the prompt WAS the tool list. The system prompt is ~200 tokens and is
    guarded at 700 characters precisely because length costs answer quality at
-   1-2 bits (D-1380) — and then 2,769 tokens of JSON rode in beside it, governed
+   1-2 bits — and then 2,769 tokens of JSON rode in beside it, governed
    by nothing.
 
    It is not only a latency bug, though it is badly one. The attention kernel's

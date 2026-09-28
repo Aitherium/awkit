@@ -125,6 +125,12 @@ export class PipelineCache {
         this.get(n, "conv2d_main"); this.get(n, "groupnorm_main"); this.get(n, "upsample_nearest_main");
         continue;
       }
+      // image_ops has no `main` either -- nine named passes for the Flux2 image model.
+      // Warming it under the default entry point raised an uncaptured GPU validation
+      // error ("Entry point \"main\" doesn't exist ... image_ops") on EVERY text boot
+      // (measured live on aitherium.com, 2026-09-23). A text model never dispatches
+      // these, so they compile on first use via get(n, "<pass>_main").
+      if (n === "image_ops") continue;
       this.get(n);
     }
   }

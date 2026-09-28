@@ -527,7 +527,7 @@ export default function ChatPanel({ conversationId, onNewConversation, externalI
         // session-gated on tenant apps (401 without a tenant session), and
         // it was probed even in 'native' mode -- so a native chat that worked
         // still showed 'AI backend unavailable' and paused sending (measured
-        // on garg.aitherium.com 2026-09-04). Native uses the app's own health.
+        // on a tenant app 2026-09-04). Native uses the app's own health.
         const probePath = engine === 'aitherchat' ? '/api/chat/aither/llm-health' : '/api/health'
         const r = await fetch(probePath, { signal: ctrl.signal, cache: 'no-store' })
         clearTimeout(t)

@@ -7,6 +7,8 @@ export interface ProductCardProduct {
   description?: string
   images: string[]
   price: number
+  /** Display text that overrides the formatted price (e.g. "From $12", "$9/mo"). */
+  priceLabel?: string
   currency?: string
   category?: string
   variant?: string
@@ -67,7 +69,8 @@ export default function ProductCard({ product, index = 0, renderLink }: ProductC
             </p>
           )}
           <p className="text-base text-[var(--sf-text-secondary)]">
-            {product.price > 0 ? formatPrice(product.price, product.currency) : 'Price on request'}
+            {product.priceLabel
+              || (product.price > 0 ? formatPrice(product.price, product.currency) : 'Price on request')}
           </p>
           {!inStock && (
             <p className="mt-1 text-xs italic text-[var(--sf-secondary)]">

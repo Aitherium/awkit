@@ -5,14 +5,13 @@ import { useState } from 'react'
 /**
  * Aither Durability panel — per-user encrypted GitHub backup + DR restore.
  * Thin UI over the SecurityCore /recover/user-backup/* and /recover/user-restore/*
- * routes. Backend lives in services/security/AitherRecover.py; this is the
- * discoverable product surface (10-layer layer 5).
- *
- * NOTE: This is a DEMO shell. There is NO Veil proxy to SecurityCore /recover
- * yet, so the default apiBase points nowhere usable. The registry marks this
- * panel state:'demo' until a /api/v1/durability proxy route is wired.
+ * routes, reached through the Veil proxy at /api/v1/durability/* (which forwards
+ * the signed-in user's credential). Backend lives in
+ * services/security/AitherRecover.py; this is the discoverable product surface
+ * (10-layer layer 5). Backup is platform-operator only; a user may restore
+ * themselves. The backend answers 401/403 otherwise and the panel shows it.
  */
-export default function AitherDurabilityPanel({ apiBase = '/recover' }: { apiBase?: string }) {
+export default function AitherDurabilityPanel({ apiBase = '/api/v1/durability' }: { apiBase?: string }) {
   const [userId, setUserId] = useState('me')
   const [status, setStatus] = useState<string>('')
   const [busy, setBusy] = useState(false)

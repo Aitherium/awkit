@@ -64,6 +64,10 @@ import ActivityFeedPanel from './ActivityFeedPanel'
 import ReliabilityDashboard from './ReliabilityDashboard'
 import BlogPanel from './BlogPanel'
 import ContentStudioPanel from './ContentStudioPanel'
+import SagaPlayPanel from './SagaPlayPanel'
+import StudioPanel from './StudioPanel'
+import IrisPanel from './IrisPanel'
+import ProvisionPanel from './ProvisionPanel'
 import GeneratePanel from './GeneratePanel'
 import SocialPanel from './SocialPanel'
 import IntegrationsPanel from './IntegrationsPanel'
@@ -107,10 +111,13 @@ import SSOSettingsPanel from './SSOSettingsPanel'
 import SSOOIDCPanel from './SSOOIDCPanel'
 import DataPlanePanel from './DataPlanePanel'
 import StripeCommercePanel from './StripeCommercePanel'
+import ClientsPanel from './ClientsPanel'
 import AgentBuilderWizard from './AgentBuilderWizard'
 import PackCatalog from './PackCatalog'
 import MyPacksPanel from './MyPacksPanel'
 import FleetDashboard from './FleetDashboard'
+import GridPanel from './GridPanel'
+import ErasePanel from './ErasePanel'
 import ModelBrowser from './ModelBrowser'
 import FeatureMarketplacePanel from './FeatureMarketplacePanel'
 import BrandDesignerPanel from './BrandDesignerPanel'
@@ -136,6 +143,7 @@ import ProfilePanel from './ProfilePanel'
 import SupportPanel from './SupportPanel'
 import CapturePanel from './CapturePanel'
 import AitherDurabilityPanel from './Aither-DurabilityPanel'
+import TunnelPanel from './TunnelPanel'
 import ElysiumCreditsPanel from './ElysiumCreditsPanel'
 import SproutStudioPanel from './SproutStudioPanel'
 import AiSearchPanel from './AiSearchPanel'
@@ -151,8 +159,17 @@ import GymPanel from './GymPanel'
 // registry.ts has advertised this since 2026-09-10 and the component existed;
 // it was never imported here, so the panel rendered "no panel wired up" (RB010).
 import VolunteerComputePanel from './VolunteerComputePanel'
+import AcademyAnalyticsPanel from './AcademyAnalyticsPanel'
+import AcademyLessonStudioPanel from './AcademyLessonStudioPanel'
+import AcademyStudentProfilesPanel from './AcademyStudentProfilesPanel'
+import AcademyLessonsPanel from './AcademyLessonsPanel'
+import ClassroomPublisherPanel from './ClassroomPublisherPanel'
+import ClassroomSiteViewerPanel from './ClassroomSiteViewerPanel'
+import ConnectivityWizardPanel from './ConnectivityWizardPanel'
 import DiscordPanel from './DiscordPanel'
 import TaxDeskPanel from './TaxDeskPanel'
+import ThemisLegalPanel from './ThemisLegalPanel'
+import SecretguardPanel from './SecretguardPanel'
 
 import PortalShell from './PortalShell'
 import type { NavItem } from './PortalShell'
@@ -187,11 +204,16 @@ export const PANEL_COMPONENTS: Record<string, PanelEntry> = {
   'calendar':            { component: CalendarPanel },
   'task-board':          { component: TaskBoardPanel },
   'contacts':            { component: ContactsPanel },
-  'clients':             { component: StripeCommercePanel },
+  // ClientsPanel, not StripeCommercePanel: `clients` is billing/CRM on /api/billing
+  // (the host override a tenant passes); the storefront panel's paths are not there.
+  'clients':             { component: ClientsPanel },
   'invoicing':           { component: InvoicingPanel },
   'stripe-commerce':     { component: StripeCommercePanel },
   'taxdesk':             { component: TaxDeskPanel },
+  'themis-legal':        { component: ThemisLegalPanel },
+  'secretguard':         { component: SecretguardPanel },
   'durability':          { component: AitherDurabilityPanel },
+  'tunnel':              { component: TunnelPanel },
   'booking':             { component: BookingPanel },
   'planb-ledger':        { component: PlanBLedgerPanel },
   'forms':               { component: FormsPanel },
@@ -212,6 +234,12 @@ export const PANEL_COMPONENTS: Record<string, PanelEntry> = {
   'reliability-dashboard': { component: ReliabilityDashboard },
   'blog':                { component: BlogPanel },
   'content-studio':      { component: ContentStudioPanel },
+  // Creator Stack: the three were built but never keyed here, so no pack's
+  // enabled_panels could mount them (test_awkit_creator_panels_wired).
+  'saga-play':           { component: SagaPlayPanel },
+  'studio':              { component: StudioPanel },
+  'iris':                { component: IrisPanel },
+  'provision':           { component: ProvisionPanel },
   'generate':            { component: GeneratePanel },
   'sound-library':       { component: SoundLibraryPanel },
   'social':              { component: SocialPanel },
@@ -273,6 +301,8 @@ export const PANEL_COMPONENTS: Record<string, PanelEntry> = {
   'pack-catalog':        { component: PackCatalog },
   'my-packs':            { component: MyPacksPanel },
   'fleet-dashboard':     { component: FleetDashboard },
+  'grid':                { component: GridPanel },
+  'erase':               { component: ErasePanel },
   'model-browser':       { component: ModelBrowser },
   'personal-automation': { component: PersonalAutomationPanel },
   'skill-library':       { component: SkillLibraryPanel },
@@ -309,6 +339,14 @@ export const PANEL_COMPONENTS: Record<string, PanelEntry> = {
   'beadspace':           { component: BeadSpacePanel },
   'workspace-members':   { component: WorkspaceMembersPanel },
   'deployed-apps':       { component: DeployedAppsPanel },
+  // Aither Academy (.PRODUCTS/.ACADEMY)
+  'academy-analytics': { component: AcademyAnalyticsPanel },
+  'academy-lesson-studio': { component: AcademyLessonStudioPanel },
+  'academy-student-profiles': { component: AcademyStudentProfilesPanel },
+  'academy-lessons': { component: AcademyLessonsPanel },
+  'classroom-publisher': { component: ClassroomPublisherPanel },
+  'classroom-site-viewer': { component: ClassroomSiteViewerPanel },
+  'connectivity-wizard': { component: ConnectivityWizardPanel },
 }
 
 // ── Admin-category panels go to the bottom section ───────────────────
@@ -385,6 +423,8 @@ function ChatWithHistory() {
 
 // ── Resolve active panels from config + registry ─────────────────────
 
+const warnedDroppedPanelIds = new Set<string>()
+
 function resolveActivePanels(
   configPanels: string[] | undefined,
   configDisabled: string[] | undefined,
@@ -429,6 +469,21 @@ function resolveActivePanels(
 
   // Resolve to PanelMeta
   const metaMap = new Map(PANEL_REGISTRY.map((p) => [p.id, p]))
+  // An id with no registry entry or no component used to vanish in
+  // silence — a pack typo or a not-yet-built panel looked like a panel nobody
+  // wanted. Name every dropped id. PRP002 (check_panel_registry_parity.py) is
+  // the build-time half of this.
+  // Warned once per id: this runs on every render.
+  const droppedPanelIds = ids.filter(
+    (id) => (!metaMap.has(id) || !(id in PANEL_COMPONENTS)) && !warnedDroppedPanelIds.has(id),
+  )
+  if (droppedPanelIds.length > 0) {
+    droppedPanelIds.forEach((id) => warnedDroppedPanelIds.add(id))
+    console.warn(
+      `[DynamicPanelRenderer] dropped ${droppedPanelIds.length} unknown panel id(s) ` +
+        `(no registry entry or no component): ${droppedPanelIds.join(', ')}`,
+    )
+  }
   return ids
     .map((id) => metaMap.get(id))
     .filter((p): p is PanelMeta => !!p && p.id in PANEL_COMPONENTS)
