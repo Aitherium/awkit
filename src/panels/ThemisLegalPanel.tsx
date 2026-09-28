@@ -100,7 +100,7 @@ export class NotSignedInError extends Error {
   }
 }
 
-const ACCENT = '#6366f1'
+const ACCENT = '#5EC9CC'
 const SEVERITY_COLOR: Record<string, string> = {
   CRITICAL: '#dc2626',
   HIGH: '#ea580c',

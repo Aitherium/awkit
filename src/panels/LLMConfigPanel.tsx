@@ -41,7 +41,7 @@ const TYPE_LABELS: Record<string, string> = {
 const TYPE_COLORS: Record<string, string> = {
   local: '#4ade80',
   cloud: '#60a5fa',
-  custom: '#c084fc',
+  custom: '#5EC9CC',
 }
 
 export default function LLMConfigPanel() {
@@ -518,7 +518,7 @@ export default function LLMConfigPanel() {
       {/* Custom */}
       {customProviders.length > 0 && (
         <div style={{ marginBottom: '1.25rem' }}>
-          <h3 style={{ margin: '0 0 8px', fontSize: '0.8rem', color: '#c084fc', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+          <h3 style={{ margin: '0 0 8px', fontSize: '0.8rem', color: '#5EC9CC', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
             Custom Endpoints
           </h3>
           {customProviders.map(renderProvider)}

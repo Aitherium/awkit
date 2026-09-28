@@ -138,8 +138,8 @@ export default function ClientsPanel({
         <h2 style={{ margin: 0, fontSize: '1.25rem' }}>Clients</h2>
         <span style={{
           padding: '2px 8px', borderRadius: 4, fontSize: '0.7rem',
-          background: mode === 'billing' ? 'rgba(0,200,83,0.15)' : 'rgba(124,58,237,0.15)',
-          color: mode === 'billing' ? '#00c853' : '#7c3aed',
+          background: mode === 'billing' ? 'rgba(0,200,83,0.15)' : 'rgba(94,201,204,0.15)',
+          color: mode === 'billing' ? '#00c853' : '#5EC9CC',
         }}>
           {mode === 'billing' ? `${integrationName}: connected` : 'local invoices'}
         </span>

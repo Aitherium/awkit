@@ -129,7 +129,7 @@ export default function DatastoreView({ apiBase = '/api/data-plane' }: Datastore
         />
         <button onClick={handleSearch} disabled={searching || !selectedCol || !query} style={{
           padding: '6px 14px', borderRadius: 6, border: 'none',
-          background: 'var(--accent, #7c3aed)', color: '#fff',
+          background: 'var(--accent, #5EC9CC)', color: '#fff',
           cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600,
           opacity: !selectedCol || !query ? 0.5 : 1,
         }}>

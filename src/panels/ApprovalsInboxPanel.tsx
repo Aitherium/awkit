@@ -29,7 +29,7 @@ const SOURCE_ICONS: Record<string, string> = {
 }
 
 const SOURCE_COLORS: Record<string, { bg: string; fg: string }> = {
-  expedition_gate: { bg: 'rgba(139,92,246,0.15)', fg: '#a78bfa' },
+  expedition_gate: { bg: 'rgba(94,201,204,0.15)', fg: '#5EC9CC' },
   business_pilot: { bg: 'rgba(59,130,246,0.15)', fg: '#60a5fa' },
   access_request: { bg: 'rgba(34,197,94,0.15)', fg: '#22c55e' },
 }

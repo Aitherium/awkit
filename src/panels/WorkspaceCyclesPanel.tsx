@@ -181,7 +181,7 @@ export default function WorkspaceCyclesPanel({ workspaceId, apiBase = '' }: Work
                 </div>
                 <div className="text-xs text-gray-500 mt-1">{c.goals.join(' | ')}</div>
                 {c.fleet_endpoint_id && (
-                  <span className="text-[10px] text-purple-400 mt-0.5 inline-block">Fleet: {c.fleet_endpoint_id}</span>
+                  <span className="text-[10px] text-[#5EC9CC] mt-0.5 inline-block">Fleet: {c.fleet_endpoint_id}</span>
                 )}
               </div>
               <div className="flex items-center gap-1">
@@ -217,7 +217,7 @@ export default function WorkspaceCyclesPanel({ workspaceId, apiBase = '' }: Work
                 <span className="text-gray-300">{exec.status}</span>
                 <span className="text-gray-500">{exec.tokens_used} tokens</span>
                 {exec.endpoint_used && (
-                  <span className={`px-1.5 py-0.5 rounded ${exec.endpoint_used.startsWith('fleet:') ? 'bg-purple-500/20 text-purple-300' : 'bg-blue-500/20 text-blue-300'}`}>
+                  <span className={`px-1.5 py-0.5 rounded ${exec.endpoint_used.startsWith('fleet:') ? 'bg-[#5EC9CC]/20 text-[#5EC9CC]' : 'bg-blue-500/20 text-blue-300'}`}>
                     {exec.endpoint_used.startsWith('fleet:') ? 'Fleet' : 'Genesis'}
                   </span>
                 )}

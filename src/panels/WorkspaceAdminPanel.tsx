@@ -60,7 +60,7 @@ export default function WorkspaceAdminPanel({ apiBase = '/api/platform' }: Props
   const [oidcRegStatus, setOidcRegStatus] = useState('')
   // Branding
   const [brandName, setBrandName] = useState('')
-  const [brandColor, setBrandColor] = useState('#6366f1')
+  const [brandColor, setBrandColor] = useState('#5EC9CC')
   const [brandSaving, setBrandSaving] = useState(false)
   const [brandStatus, setBrandStatus] = useState('')
 
@@ -227,7 +227,7 @@ export default function WorkspaceAdminPanel({ apiBase = '/api/platform' }: Props
         {sections.map(s => (
           <button key={s.id} onClick={() => setSection(s.id)} style={{
             padding: '0.45rem 0.85rem', borderRadius: 'var(--radius, 6px)', fontSize: '0.8rem', fontWeight: 500,
-            background: section === s.id ? 'var(--accent-primary, #6366f1)' : 'var(--bg-surface, #1a1a1a)',
+            background: section === s.id ? 'var(--accent-primary, #5EC9CC)' : 'var(--bg-surface, #1a1a1a)',
             color: section === s.id ? 'var(--bg-deep, #000)' : 'var(--text-secondary, #aaa)',
             border: section === s.id ? 'none' : '1px solid var(--glass-border, #333)',
           }}>{s.label}</button>
@@ -242,7 +242,7 @@ export default function WorkspaceAdminPanel({ apiBase = '/api/platform' }: Props
           ) : (
             <>
               <UsageMeter label="Tokens (today)" used={usage.tokens.used} limit={usage.tokens.limit} pct={usage.tokens.pct} color="#06b6d4" />
-              <UsageMeter label="Agent Dispatches (this hour)" used={usage.dispatches.used} limit={usage.dispatches.limit} pct={usage.dispatches.pct} color="#8b5cf6" />
+              <UsageMeter label="Agent Dispatches (this hour)" used={usage.dispatches.used} limit={usage.dispatches.limit} pct={usage.dispatches.pct} color="#5EC9CC" />
             </>
           )}
         </div>
@@ -265,7 +265,7 @@ export default function WorkspaceAdminPanel({ apiBase = '/api/platform' }: Props
                 <option value="viewer">Viewer</option>
               </select>
               <button onClick={invite} disabled={!inviteEmail} style={{
-                padding: '0.5rem 1rem', background: 'var(--accent-primary, #6366f1)', color: 'var(--bg-deep, #000)',
+                padding: '0.5rem 1rem', background: 'var(--accent-primary, #5EC9CC)', color: 'var(--bg-deep, #000)',
                 borderRadius: 'var(--radius, 6px)', fontSize: '0.8rem', fontWeight: 600, opacity: inviteEmail ? 1 : 0.4,
               }}>Invite</button>
             </div>
@@ -351,7 +351,7 @@ export default function WorkspaceAdminPanel({ apiBase = '/api/platform' }: Props
                 </div>
                 {m365Status?.configured && !m365Status?.connected ? (
                   <button onClick={() => window.location.href = '/api/auth/m365/login'} style={{
-                    padding: '0.35rem 0.7rem', background: 'var(--accent-primary, #6366f1)', color: 'var(--bg-deep, #000)',
+                    padding: '0.35rem 0.7rem', background: 'var(--accent-primary, #5EC9CC)', color: 'var(--bg-deep, #000)',
                     borderRadius: 4, fontSize: '0.7rem', fontWeight: 600,
                   }}>Connect</button>
                 ) : (
@@ -385,7 +385,7 @@ export default function WorkspaceAdminPanel({ apiBase = '/api/platform' }: Props
               <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
                 <a href={idpMetadataUrl || '/identity/idp/saml/metadata'} target="_blank" rel="noreferrer" style={{
                   padding: '0.4rem 0.75rem', background: 'var(--bg-elevated, #222)', border: '1px solid var(--glass-border, #333)',
-                  borderRadius: 4, fontSize: '0.72rem', color: 'var(--accent-primary, #6366f1)', textDecoration: 'none',
+                  borderRadius: 4, fontSize: '0.72rem', color: 'var(--accent-primary, #5EC9CC)', textDecoration: 'none',
                 }}>Download SAML IdP Metadata XML</a>
                 <button onClick={async () => {
                   try {
@@ -404,7 +404,7 @@ export default function WorkspaceAdminPanel({ apiBase = '/api/platform' }: Props
                   setSpRegStatus('Signing keypair generated')
                 } catch { setSpRegStatus('Failed to generate keypair') }
                 setTimeout(() => setSpRegStatus(''), 3000)
-              }} style={{ padding: '0.5rem 1rem', background: 'var(--accent-primary, #6366f1)', color: 'var(--bg-deep, #000)', borderRadius: 'var(--radius, 6px)', fontSize: '0.8rem', fontWeight: 600, marginBottom: '1rem' }}>Generate Signing Keypair</button>
+              }} style={{ padding: '0.5rem 1rem', background: 'var(--accent-primary, #5EC9CC)', color: 'var(--bg-deep, #000)', borderRadius: 'var(--radius, 6px)', fontSize: '0.8rem', fontWeight: 600, marginBottom: '1rem' }}>Generate Signing Keypair</button>
             )}
 
             {/* SAML / OIDC tabs */}
@@ -412,7 +412,7 @@ export default function WorkspaceAdminPanel({ apiBase = '/api/platform' }: Props
               {(['saml', 'oidc'] as const).map(t => (
                 <button key={t} onClick={() => setIdpTab(t)} style={{
                   padding: '0.35rem 0.7rem', borderRadius: 4, fontSize: '0.75rem', fontWeight: 500,
-                  background: idpTab === t ? 'var(--accent-primary, #6366f1)' : 'var(--bg-elevated, #222)',
+                  background: idpTab === t ? 'var(--accent-primary, #5EC9CC)' : 'var(--bg-elevated, #222)',
                   color: idpTab === t ? 'var(--bg-deep, #000)' : 'var(--text-secondary, #aaa)',
                   border: idpTab === t ? 'none' : '1px solid var(--glass-border, #333)',
                 }}>{t === 'saml' ? 'SAML Service Providers' : 'OIDC Clients'}</button>
@@ -467,7 +467,7 @@ export default function WorkspaceAdminPanel({ apiBase = '/api/platform' }: Props
                         } catch { setSpRegStatus('Registration failed') }
                         setTimeout(() => setSpRegStatus(''), 5000)
                       }} disabled={!newSpEntityId || !newSpAcsUrl} style={{
-                        padding: '0.45rem 0.85rem', background: 'var(--accent-primary, #6366f1)', color: 'var(--bg-deep, #000)',
+                        padding: '0.45rem 0.85rem', background: 'var(--accent-primary, #5EC9CC)', color: 'var(--bg-deep, #000)',
                         borderRadius: 4, fontSize: '0.75rem', fontWeight: 600, opacity: newSpEntityId && newSpAcsUrl ? 1 : 0.4,
                       }}>Register SP</button>
                       <button onClick={async () => {
@@ -537,7 +537,7 @@ export default function WorkspaceAdminPanel({ apiBase = '/api/platform' }: Props
                         } else { const d = await r.json(); setOidcRegStatus(d.detail || 'Registration failed') }
                       } catch { setOidcRegStatus('Registration failed') }
                     }} disabled={!newOidcName || !newOidcRedirect} style={{
-                      padding: '0.45rem 0.85rem', background: 'var(--accent-primary, #6366f1)', color: 'var(--bg-deep, #000)',
+                      padding: '0.45rem 0.85rem', background: 'var(--accent-primary, #5EC9CC)', color: 'var(--bg-deep, #000)',
                       borderRadius: 4, fontSize: '0.75rem', fontWeight: 600, justifySelf: 'start', opacity: newOidcName && newOidcRedirect ? 1 : 0.4,
                     }}>Register Client</button>
                   </div>
@@ -566,7 +566,7 @@ export default function WorkspaceAdminPanel({ apiBase = '/api/platform' }: Props
               {(['csv', 'google', 'microsoft'] as const).map(s => (
                 <button key={s} onClick={() => setImportSource(s)} style={{
                   padding: '0.35rem 0.7rem', borderRadius: 4, fontSize: '0.75rem', fontWeight: 500,
-                  background: importSource === s ? 'var(--accent-primary, #6366f1)' : 'var(--bg-elevated, #222)',
+                  background: importSource === s ? 'var(--accent-primary, #5EC9CC)' : 'var(--bg-elevated, #222)',
                   color: importSource === s ? 'var(--bg-deep, #000)' : 'var(--text-secondary, #aaa)',
                   border: importSource === s ? 'none' : '1px solid var(--glass-border, #333)',
                 }}>{s === 'csv' ? 'CSV Upload' : s === 'google' ? 'Google Workspace' : 'Microsoft Graph'}</button>
@@ -592,7 +592,7 @@ export default function WorkspaceAdminPanel({ apiBase = '/api/platform' }: Props
                   } catch { setImportStatus('Import failed') }
                   setTimeout(() => setImportStatus(''), 5000)
                 }} disabled={!csvText.trim()} style={{
-                  marginTop: '0.5rem', padding: '0.5rem 1rem', background: 'var(--accent-primary, #6366f1)', color: 'var(--bg-deep, #000)',
+                  marginTop: '0.5rem', padding: '0.5rem 1rem', background: 'var(--accent-primary, #5EC9CC)', color: 'var(--bg-deep, #000)',
                   borderRadius: 'var(--radius, 6px)', fontSize: '0.8rem', fontWeight: 600, opacity: csvText.trim() ? 1 : 0.4,
                 }}>Import CSV</button>
               </div>
@@ -622,7 +622,7 @@ export default function WorkspaceAdminPanel({ apiBase = '/api/platform' }: Props
                   } catch { setImportStatus('Import failed') }
                   setTimeout(() => setImportStatus(''), 5000)
                 }} disabled={!idpCredentials.trim()} style={{
-                  marginTop: '0.5rem', padding: '0.5rem 1rem', background: 'var(--accent-primary, #6366f1)', color: 'var(--bg-deep, #000)',
+                  marginTop: '0.5rem', padding: '0.5rem 1rem', background: 'var(--accent-primary, #5EC9CC)', color: 'var(--bg-deep, #000)',
                   borderRadius: 'var(--radius, 6px)', fontSize: '0.8rem', fontWeight: 600, opacity: idpCredentials.trim() ? 1 : 0.4,
                 }}>Import from {importSource === 'google' ? 'Google Workspace' : 'Microsoft Graph'}</button>
               </div>
@@ -688,7 +688,7 @@ export default function WorkspaceAdminPanel({ apiBase = '/api/platform' }: Props
               <input value={newKeyName} onChange={e => setNewKeyName(e.target.value)} placeholder="Key name (e.g. 'CI Pipeline')"
                 onKeyDown={e => e.key === 'Enter' && generateKey()} style={{ ...inputStyle, flex: 1 }} />
               <button onClick={generateKey} disabled={!newKeyName} style={{
-                padding: '0.5rem 1rem', background: 'var(--accent-primary, #6366f1)', color: 'var(--bg-deep, #000)',
+                padding: '0.5rem 1rem', background: 'var(--accent-primary, #5EC9CC)', color: 'var(--bg-deep, #000)',
                 borderRadius: 'var(--radius, 6px)', fontSize: '0.8rem', fontWeight: 600, opacity: newKeyName ? 1 : 0.4,
               }}>Generate</button>
             </div>
@@ -772,7 +772,7 @@ export default function WorkspaceAdminPanel({ apiBase = '/api/platform' }: Props
               </div>
             </div>
             <button onClick={saveBranding} disabled={brandSaving} style={{
-              padding: '0.6rem 1.25rem', background: 'var(--accent-primary, #6366f1)', color: 'var(--bg-deep, #000)',
+              padding: '0.6rem 1.25rem', background: 'var(--accent-primary, #5EC9CC)', color: 'var(--bg-deep, #000)',
               borderRadius: 'var(--radius, 6px)', fontSize: '0.85rem', fontWeight: 600, justifySelf: 'start',
             }}>{brandSaving ? 'Saving...' : 'Save Branding'}</button>
             {brandStatus && <p style={{ fontSize: '0.75rem', color: brandStatus === 'Saved' ? 'var(--accent-green, #4ade80)' : 'var(--accent-coral, #f87171)' }}>{brandStatus}</p>}

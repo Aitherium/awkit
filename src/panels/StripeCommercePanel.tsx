@@ -270,7 +270,7 @@ export default function StripeCommercePanel({ apiBase = '/api/v1/commerce' }: Pr
   }
   const btn: React.CSSProperties = {
     padding: '8px 20px', borderRadius: 8, border: 'none',
-    background: '#6366f1', color: '#fff', fontWeight: 600,
+    background: '#5EC9CC', color: '#fff', fontWeight: 600,
     cursor: 'pointer', fontSize: 14,
   }
   const btnSecondary: React.CSSProperties = {
@@ -698,11 +698,11 @@ export default function StripeCommercePanel({ apiBase = '/api/v1/commerce' }: Pr
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <div style={{
                   width: 20, height: 20, borderRadius: 4,
-                  background: storefront.accent_color || '#6366f1',
+                  background: storefront.accent_color || '#5EC9CC',
                   border: '1px solid #45475a',
                 }} />
                 <span style={{ color: '#cdd6f4', fontFamily: 'monospace' }}>
-                  {storefront.accent_color || '#6366f1'}
+                  {storefront.accent_color || '#5EC9CC'}
                 </span>
               </div>
             </div>

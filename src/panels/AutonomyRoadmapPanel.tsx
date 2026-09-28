@@ -92,7 +92,7 @@ function SeverityBadge({ severity }: { severity: string }) {
 
 function OwnerBadge({ owner }: { owner: string }) {
   const badgeClass = owner === 'agent'
-    ? 'bg-purple-500/[0.14] text-purple-300'
+    ? 'bg-[#5EC9CC]/[0.14] text-[#5EC9CC]'
     : 'bg-blue-500/[0.14] text-blue-300'
   return (
     <span className={`inline-flex items-center rounded-full border border-transparent px-1.5 py-0.5 text-xs font-medium ${badgeClass}`}>
@@ -192,10 +192,10 @@ export default function AutonomyRoadmapPanel({ apiBase = '/api/business' }: Auto
   }, {} as Record<string, string>)
 
   return (
-    <section className="rounded-2xl border border-purple-400/15 bg-gradient-to-br from-purple-500/[0.06] to-zinc-900/40 p-6">
+    <section className="rounded-2xl border border-[#5EC9CC]/15 bg-gradient-to-br from-[#5EC9CC]/[0.06] to-zinc-900/40 p-6">
       <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="rounded-xl bg-purple-500/[0.14] p-3 text-purple-300">
+          <div className="rounded-xl bg-[#5EC9CC]/[0.14] p-3 text-[#5EC9CC]">
             <Zap className="h-5 w-5" />
           </div>
           <div>
@@ -366,7 +366,7 @@ export default function AutonomyRoadmapPanel({ apiBase = '/api/business' }: Auto
           type="button"
           onClick={() => executeAction('sync')}
           disabled={actionLoading}
-          className="inline-flex items-center gap-2 rounded-lg border border-purple-400/30 bg-purple-500/[0.08] px-4 py-2 text-sm font-medium text-purple-300 transition-colors hover:border-purple-400/50 hover:bg-purple-500/[0.12] disabled:opacity-50"
+          className="inline-flex items-center gap-2 rounded-lg border border-[#5EC9CC]/30 bg-[#5EC9CC]/[0.08] px-4 py-2 text-sm font-medium text-[#5EC9CC] transition-colors hover:border-[#5EC9CC]/50 hover:bg-[#7AD6D8]/[0.12] disabled:opacity-50"
         >
           {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : '→'}
           Sync to board

@@ -170,7 +170,7 @@ function SlashMenu({
           onClick={() => onSelect(item)}
           style={{
             padding: '6px 10px', borderRadius: 6, cursor: 'pointer',
-            background: i === selected ? 'var(--accent-primary-muted, rgba(99,102,241,0.15))' : 'transparent',
+            background: i === selected ? 'var(--accent-primary-muted, rgba(94,201,204,0.15))' : 'transparent',
           }}
         >
           <div style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-primary)' }}>{item.label}</div>
@@ -456,7 +456,7 @@ export default function PagesPanel({ apiBase = '/api/docs' }: PagesPanelProps) {
                   padding: '8px 10px', borderRadius: 6, cursor: 'pointer',
                   marginBottom: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                   background: activePage?.id === page.id
-                    ? 'var(--accent-primary-muted, rgba(99,102,241,0.15))'
+                    ? 'var(--accent-primary-muted, rgba(94,201,204,0.15))'
                     : 'transparent',
                 }}
               >
@@ -530,7 +530,7 @@ export default function PagesPanel({ apiBase = '/api/docs' }: PagesPanelProps) {
                 onClick={() => setShowMeta((v) => !v)}
                 style={{
                   marginLeft: 8, padding: '4px 8px', fontSize: '0.7rem',
-                  background: showMeta ? 'var(--accent-primary-muted, rgba(99,102,241,0.15))' : 'none',
+                  background: showMeta ? 'var(--accent-primary-muted, rgba(94,201,204,0.15))' : 'none',
                   border: '1px solid var(--glass-border, rgba(255,255,255,0.08))',
                   borderRadius: 4, color: 'var(--text-secondary)', cursor: 'pointer',
                 }}

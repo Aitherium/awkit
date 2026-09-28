@@ -216,7 +216,7 @@ export default function AgentBuilderWizard({
             style={{
               ...sectionCard,
               cursor: 'pointer',
-              borderColor: template === t.id ? 'var(--accent, #6366f1)' : 'var(--glass-border, #2a2a4a)',
+              borderColor: template === t.id ? 'var(--accent, #5EC9CC)' : 'var(--glass-border, #2a2a4a)',
               background: template === t.id ? 'var(--bg-active, #1a2a4a)' : 'var(--bg-surface, #16162a)',
             }}
           >
@@ -292,7 +292,7 @@ export default function AgentBuilderWizard({
             onClick={() => setMcpMode(mode)}
             style={{
               padding: '6px 14px', borderRadius: 'var(--radius, 8px)',
-              border: `1px solid ${mcpMode === mode ? 'var(--accent, #6366f1)' : 'var(--glass-border, #2a2a4a)'}`,
+              border: `1px solid ${mcpMode === mode ? 'var(--accent, #5EC9CC)' : 'var(--glass-border, #2a2a4a)'}`,
               background: mcpMode === mode ? 'var(--bg-active, #1a2a4a)' : 'transparent',
               color: 'var(--text-primary, #e0e0e0)', cursor: 'pointer', fontSize: 12,
             }}
@@ -353,7 +353,7 @@ export default function AgentBuilderWizard({
                 onClick={() => setHwProfile(hp.id)}
                 style={{
                   padding: '6px 12px', borderRadius: 'var(--radius, 8px)', fontSize: 12,
-                  border: `1px solid ${hwProfile === hp.id ? 'var(--accent, #6366f1)' : 'var(--glass-border, #2a2a4a)'}`,
+                  border: `1px solid ${hwProfile === hp.id ? 'var(--accent, #5EC9CC)' : 'var(--glass-border, #2a2a4a)'}`,
                   background: hwProfile === hp.id ? 'var(--bg-active, #1a2a4a)' : 'transparent',
                   color: 'var(--text-primary, #e0e0e0)', cursor: 'pointer',
                 }}
@@ -454,7 +454,7 @@ export default function AgentBuilderWizard({
                   href={buildResult.download_url}
                   style={{
                     padding: '8px 16px', borderRadius: 'var(--radius, 8px)', border: 'none',
-                    background: 'var(--accent, #6366f1)', color: '#fff', textDecoration: 'none',
+                    background: 'var(--accent, #5EC9CC)', color: '#fff', textDecoration: 'none',
                     fontSize: 13, fontWeight: 600,
                   }}
                 >
@@ -523,7 +523,7 @@ export default function AgentBuilderWizard({
               flex: 1, padding: '8px 0', textAlign: 'center',
               fontSize: 11, fontWeight: step === i ? 700 : 400,
               color: i <= step ? 'var(--text-primary, #e0e0e0)' : 'var(--text-muted, #555)',
-              borderBottom: `2px solid ${i === step ? 'var(--accent, #6366f1)' : i < step ? '#4ade80' : 'var(--glass-border, #2a2a4a)'}`,
+              borderBottom: `2px solid ${i === step ? 'var(--accent, #5EC9CC)' : i < step ? '#4ade80' : 'var(--glass-border, #2a2a4a)'}`,
               cursor: i < step ? 'pointer' : 'default',
               transition: 'all 0.2s',
             }}
@@ -567,7 +567,7 @@ export default function AgentBuilderWizard({
             onClick={goNext}
             style={{
               padding: '9px 24px', borderRadius: 'var(--radius, 8px)', border: 'none',
-              background: 'var(--accent, #6366f1)', color: '#fff',
+              background: 'var(--accent, #5EC9CC)', color: '#fff',
               cursor: 'pointer', fontSize: 13, fontWeight: 600,
             }}
           >

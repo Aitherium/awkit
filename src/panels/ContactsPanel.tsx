@@ -35,8 +35,8 @@ export interface ContactsPanelProps {
 }
 
 const TAG_COLORS = [
-  '#7c3aed', '#2563eb', '#059669', '#d97706', '#dc2626',
-  '#8b5cf6', '#0891b2', '#65a30d', '#ea580c', '#e11d48',
+  '#5EC9CC', '#2563eb', '#059669', '#d97706', '#dc2626',
+  '#5EC9CC', '#0891b2', '#65a30d', '#ea580c', '#e11d48',
 ]
 
 function getTagColor(tag: string): string {

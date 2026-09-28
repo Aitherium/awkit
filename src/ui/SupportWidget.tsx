@@ -278,7 +278,7 @@ export default function SupportWidget({
           // popover the user has deliberately opened.
           position: 'fixed', ...posStyle, zIndex: 210,
           width: 56, height: 56, borderRadius: '50%',
-          background: 'var(--accent-primary, #6366f1)', color: '#fff',
+          background: 'var(--accent-primary, #5EC9CC)', color: '#fff',
           border: 'none', cursor: 'pointer', fontSize: '1.5rem',
           boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -319,7 +319,7 @@ export default function SupportWidget({
   const btnStyle = (primary = true): React.CSSProperties => ({
     padding: '0.5rem 1rem', borderRadius: 6, fontWeight: 600, fontSize: '0.85rem',
     cursor: 'pointer', border: primary ? 'none' : '1px solid var(--glass-border, #333)',
-    background: primary ? 'var(--accent-primary, #6366f1)' : 'transparent',
+    background: primary ? 'var(--accent-primary, #5EC9CC)' : 'transparent',
     color: primary ? '#fff' : 'var(--text-primary, #e0e0e0)', width: '100%',
   })
 
@@ -390,7 +390,7 @@ export default function SupportWidget({
                 <div key={m.id} style={{
                   alignSelf: m.isAgent ? 'flex-start' : 'flex-end', maxWidth: '85%',
                   padding: '0.4rem 0.6rem', borderRadius: 8, fontSize: '0.8rem',
-                  background: m.isAgent ? 'var(--bg-elevated, #2a2a3e)' : 'var(--accent-primary, #6366f1)',
+                  background: m.isAgent ? 'var(--bg-elevated, #2a2a3e)' : 'var(--accent-primary, #5EC9CC)',
                   color: m.isAgent ? 'var(--text-primary)' : '#fff',
                 }}>
                   <div style={{ fontSize: '0.65rem', fontWeight: 600, opacity: 0.6 }}>{m.author}</div>
@@ -440,7 +440,7 @@ export default function SupportWidget({
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', alignItems: 'baseline' }}>
                         <span style={{ fontSize: '0.8rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.subject}</span>
                         <span style={{ fontSize: '0.68rem', fontWeight: 600, textTransform: 'uppercase', flexShrink: 0,
-                          color: t.status === 'resolved' || t.status === 'closed' ? 'var(--accent-green, #4ade80)' : 'var(--accent-primary, #6366f1)' }}>
+                          color: t.status === 'resolved' || t.status === 'closed' ? 'var(--accent-green, #4ade80)' : 'var(--accent-primary, #5EC9CC)' }}>
                           {t.status}
                         </span>
                       </div>

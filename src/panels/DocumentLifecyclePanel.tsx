@@ -98,7 +98,7 @@ const LINK_COLORS: Record<string, string> = {
   person: 'text-blue-400',
   task: 'text-amber-400',
   conversation: 'text-green-400',
-  email: 'text-purple-400',
+  email: 'text-[#5EC9CC]',
   document: 'text-cyan-400',
   decision: 'text-red-400',
   agent: 'text-pink-400',

@@ -48,7 +48,7 @@ interface ProjectRequest {
 const STATUS_CONFIG: Record<RequestStatus, { label: string; color: string; icon: React.ElementType }> = {
   new: { label: 'New', color: 'text-cyan-300 bg-cyan-400/10 border-cyan-400/30', icon: Clock },
   reviewing: { label: 'Reviewing', color: 'text-amber-300 bg-amber-400/10 border-amber-400/30', icon: Clock },
-  quoted: { label: 'Quoted', color: 'text-purple-300 bg-purple-400/10 border-purple-400/30', icon: DollarSign },
+  quoted: { label: 'Quoted', color: 'text-[#5EC9CC] bg-[#5EC9CC]/10 border-[#5EC9CC]/30', icon: DollarSign },
   accepted: { label: 'Accepted', color: 'text-emerald-300 bg-emerald-400/10 border-emerald-400/30', icon: CheckCircle },
   declined: { label: 'Declined', color: 'text-rose-300 bg-rose-400/10 border-rose-400/30', icon: XCircle },
 }

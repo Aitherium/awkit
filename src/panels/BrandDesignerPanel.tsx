@@ -117,12 +117,12 @@ export default function BrandDesignerPanel({ apiBase = '' }: BrandDesignerPanelP
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Palette className="h-5 w-5 text-purple-400" />
+          <Palette className="h-5 w-5 text-[#5EC9CC]" />
           <h2 className="text-lg font-semibold text-zinc-200">Brand Designer</h2>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={handleGenerate} disabled={generating}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-purple-300 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 transition-colors disabled:opacity-50">
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-[#5EC9CC] bg-[#5EC9CC]/10 hover:bg-[#7AD6D8]/20 border border-[#5EC9CC]/20 transition-colors disabled:opacity-50">
             {generating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
             Generate with Iris
           </button>
@@ -140,7 +140,7 @@ export default function BrandDesignerPanel({ apiBase = '' }: BrandDesignerPanelP
       <div>
         <div className="text-xs text-zinc-500 mb-2 font-medium uppercase tracking-wider">Theme Mode</div>
         <button onClick={toggleMode} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/[0.04] border border-white/[0.06] hover:bg-white/[0.06] transition-colors">
-          {theme.mode === 'dark' ? <Moon className="h-4 w-4 text-indigo-400" /> : <Sun className="h-4 w-4 text-amber-400" />}
+          {theme.mode === 'dark' ? <Moon className="h-4 w-4 text-[#5EC9CC]" /> : <Sun className="h-4 w-4 text-amber-400" />}
           <span className="text-sm text-zinc-300 capitalize">{theme.mode}</span>
         </button>
       </div>
@@ -153,7 +153,7 @@ export default function BrandDesignerPanel({ apiBase = '' }: BrandDesignerPanelP
             <div key={field.key} className="flex items-center gap-3">
               <label className="text-xs text-zinc-400 w-32 shrink-0">{field.label}</label>
               <div className="flex items-center gap-2 flex-1">
-                <input type="color" value={theme.palette[field.key] || '#6366f1'} onChange={e => updatePalette(field.key, e.target.value)}
+                <input type="color" value={theme.palette[field.key] || '#5EC9CC'} onChange={e => updatePalette(field.key, e.target.value)}
                   className="h-8 w-8 rounded border border-white/10 cursor-pointer bg-transparent" />
                 <input type="text" value={theme.palette[field.key] || ''} onChange={e => updatePalette(field.key, e.target.value)} placeholder="#hex"
                   className="flex-1 px-2 py-1.5 rounded-lg bg-zinc-900 border border-zinc-700 text-xs text-zinc-200 font-mono focus:outline-none focus:ring-1 focus:ring-cyan-500/50" />
@@ -189,14 +189,14 @@ export default function BrandDesignerPanel({ apiBase = '' }: BrandDesignerPanelP
           <div className="p-4 space-y-3">
             <div className="flex items-center gap-2">
               <div className="h-8 w-8 rounded-lg flex items-center justify-center text-white text-xs font-bold"
-                style={{ background: theme.palette.accent_primary || '#6366f1' }}>W</div>
+                style={{ background: theme.palette.accent_primary || '#5EC9CC' }}>W</div>
               <div>
                 <div className="text-sm font-medium" style={{ color: theme.palette.text_primary }}>Workspace Name</div>
                 <div className="text-xs" style={{ color: theme.palette.text_muted || '#666680' }}>Your AI assistant</div>
               </div>
             </div>
             <button className="px-3 py-1.5 rounded-lg text-xs font-medium text-white"
-              style={{ background: theme.palette.accent_primary || '#6366f1' }}>Primary Action</button>
+              style={{ background: theme.palette.accent_primary || '#5EC9CC' }}>Primary Action</button>
           </div>
         </div>
       </div>

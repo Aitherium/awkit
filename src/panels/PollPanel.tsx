@@ -303,7 +303,7 @@ export default function PollPanel({ apiBase = '/api/polls', embedBase = '' }: Po
 // ── tiny style helpers (match FormsPanel's CSS-var theme) ───────────────────
 function btn(kind: 'accent' | 'ghost'): CSSProperties {
   return kind === 'accent'
-    ? { padding: '6px 14px', borderRadius: 6, border: 'none', background: 'var(--accent, #7c3aed)', color: '#fff', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600 }
+    ? { padding: '6px 14px', borderRadius: 6, border: 'none', background: 'var(--accent, #5EC9CC)', color: '#fff', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600 }
     : { padding: '6px 12px', borderRadius: 6, border: '1px solid var(--border, #313244)', background: 'transparent', color: 'var(--text-muted, #a6adc8)', cursor: 'pointer', fontSize: '0.75rem' }
 }
 function card(): CSSProperties {

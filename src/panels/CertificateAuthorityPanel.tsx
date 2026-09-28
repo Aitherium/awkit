@@ -300,7 +300,7 @@ export default function CertificateAuthorityPanel({
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 6 }}>
-                    {ca.has_intermediate && <span style={sBadge('#6366f1')}>Intermediate</span>}
+                    {ca.has_intermediate && <span style={sBadge('#5EC9CC')}>Intermediate</span>}
                     <button style={sBtn()} onClick={e => { e.stopPropagation(); handleDownloadChain(ca.ca_id) }}>Chain</button>
                   </div>
                 </div>

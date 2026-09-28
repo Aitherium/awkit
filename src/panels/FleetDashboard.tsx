@@ -163,7 +163,7 @@ export default function FleetDashboard({ apiBase = '' }: FleetDashboardProps) {
           onClick={() => setShowRegister(!showRegister)}
           style={{
             padding: '8px 16px', borderRadius: 'var(--radius, 8px)', border: 'none',
-            background: 'var(--accent, #6366f1)', color: '#fff',
+            background: 'var(--accent, #5EC9CC)', color: '#fff',
             cursor: 'pointer', fontSize: 13, fontWeight: 600,
           }}
         >
@@ -234,7 +234,7 @@ export default function FleetDashboard({ apiBase = '' }: FleetDashboardProps) {
           <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
             <button onClick={handleRegister} disabled={registering || !form.name || !form.url} style={{
               padding: '8px 16px', borderRadius: 8, border: 'none',
-              background: 'var(--accent, #6366f1)', color: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600,
+              background: 'var(--accent, #5EC9CC)', color: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600,
               opacity: registering ? 0.6 : 1,
             }}>
               {registering ? 'Registering...' : 'Register ($5/mo)'}
@@ -264,7 +264,7 @@ export default function FleetDashboard({ apiBase = '' }: FleetDashboardProps) {
               <div key={ep.id} style={{
                 padding: 14, borderRadius: 10,
                 background: selectedEndpoint === ep.id ? 'var(--bg-active, #1a2a4a)' : 'var(--bg-surface, #16162a)',
-                border: `1px solid ${selectedEndpoint === ep.id ? 'var(--accent, #6366f1)' : 'var(--glass-border, #2a2a4a)'}`,
+                border: `1px solid ${selectedEndpoint === ep.id ? 'var(--accent, #5EC9CC)' : 'var(--glass-border, #2a2a4a)'}`,
                 cursor: 'pointer',
               }} onClick={() => setSelectedEndpoint(ep.id === selectedEndpoint ? null : ep.id)}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
@@ -323,7 +323,7 @@ export default function FleetDashboard({ apiBase = '' }: FleetDashboardProps) {
             />
             <button onClick={handleDispatch} disabled={dispatching} style={{
               padding: '8px 16px', borderRadius: 8, border: 'none',
-              background: 'var(--accent, #6366f1)', color: '#fff',
+              background: 'var(--accent, #5EC9CC)', color: '#fff',
               cursor: 'pointer', fontSize: 13, fontWeight: 600,
             }}>
               {dispatching ? '...' : 'Dispatch'}

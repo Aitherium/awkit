@@ -152,7 +152,7 @@ export default function BookingPanel({ apiBase = '/api/booking' }: BookingPanelP
       case 'confirmed': return { bg: 'rgba(0,200,83,0.15)', color: '#00c853' }
       case 'pending': return { bg: 'rgba(255,183,77,0.15)', color: '#ffb74d' }
       case 'cancelled': return { bg: 'rgba(244,67,54,0.15)', color: '#f44336' }
-      case 'rescheduled': return { bg: 'rgba(124,58,237,0.15)', color: '#7c3aed' }
+      case 'rescheduled': return { bg: 'rgba(94,201,204,0.15)', color: '#5EC9CC' }
       default: return { bg: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)' }
     }
   }

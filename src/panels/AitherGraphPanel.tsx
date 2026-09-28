@@ -489,7 +489,7 @@ export default function AitherGraphPanel({ apiBase = '/api/graph' }: AitherGraph
           }}
         />
         <button onClick={handleResearch} style={{
-          padding: '8px 16px', background: '#8b5cf6', border: 'none',
+          padding: '8px 16px', background: '#5EC9CC', border: 'none',
           borderRadius: 6, color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4,
         }}>
           <Lightbulb size={16} /> Research
@@ -548,9 +548,9 @@ export default function AitherGraphPanel({ apiBase = '/api/graph' }: AitherGraph
           {deployment && (
             <span style={{
               fontSize: 11, padding: '2px 8px', borderRadius: 4,
-              background: deployment.mode === 'selfhosted' ? '#8b5cf620' : '#3b82f620',
-              color: deployment.mode === 'selfhosted' ? '#8b5cf6' : '#3b82f6',
-              border: `1px solid ${deployment.mode === 'selfhosted' ? '#8b5cf640' : '#3b82f640'}`,
+              background: deployment.mode === 'selfhosted' ? '#5EC9CC20' : '#3b82f620',
+              color: deployment.mode === 'selfhosted' ? '#5EC9CC' : '#3b82f6',
+              border: `1px solid ${deployment.mode === 'selfhosted' ? '#5EC9CC40' : '#3b82f640'}`,
             }}>
               {deployment.mode === 'selfhosted' ? 'Self-Hosted' : 'Platform'} | {deployment.license_tier}
               {deployment.federation_active && ' | Federated'}

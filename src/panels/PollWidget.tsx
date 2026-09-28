@@ -148,8 +148,8 @@ export default function PollWidget({
             <label key={i} style={{
               display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px',
               borderRadius: 8, cursor: 'pointer',
-              border: `1px solid ${selected.includes(i) ? 'var(--accent, #7c3aed)' : 'var(--border, #313244)'}`,
-              background: selected.includes(i) ? 'rgba(124,58,237,0.12)' : 'transparent',
+              border: `1px solid ${selected.includes(i) ? 'var(--accent, #5EC9CC)' : 'var(--border, #313244)'}`,
+              background: selected.includes(i) ? 'rgba(94,201,204,0.12)' : 'transparent',
             }}>
               <input
                 type={poll.poll_type === 'single' ? 'radio' : 'checkbox'}
@@ -164,7 +164,7 @@ export default function PollWidget({
             style={{
               marginTop: 6, padding: '10px 18px', borderRadius: 8, border: 'none',
               fontWeight: 600, cursor: busy || !selected.length ? 'default' : 'pointer',
-              background: !selected.length ? 'rgba(124,58,237,0.4)' : 'var(--accent, #7c3aed)',
+              background: !selected.length ? 'rgba(94,201,204,0.4)' : 'var(--accent, #5EC9CC)',
               color: '#fff',
             }}
           >
@@ -205,7 +205,7 @@ function ResultsBars({ results }: { results: PollResults | null }) {
             <div style={{ height: 10, borderRadius: 5, background: 'var(--bg-deep, #11111b)', overflow: 'hidden' }}>
               <div style={{
                 height: '100%', width: `${(count / max) * 100}%`,
-                background: 'var(--accent, #7c3aed)', borderRadius: 5, transition: 'width .3s',
+                background: 'var(--accent, #5EC9CC)', borderRadius: 5, transition: 'width .3s',
               }} />
             </div>
           </div>

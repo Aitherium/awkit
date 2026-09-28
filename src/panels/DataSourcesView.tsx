@@ -220,7 +220,7 @@ export default function DataSourcesView({ apiBase = '/api/data-plane' }: DataSou
           onClick={() => setShowAdd(!showAdd)}
           style={{
             padding: '6px 14px', borderRadius: 6, border: 'none',
-            background: 'var(--accent, #7c3aed)', color: '#fff',
+            background: 'var(--accent, #5EC9CC)', color: '#fff',
             cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600,
           }}
         >
@@ -282,7 +282,7 @@ export default function DataSourcesView({ apiBase = '/api/data-plane' }: DataSou
           )}
           <button onClick={handleCreate} disabled={!newName || !newType} style={{
             padding: '6px 16px', borderRadius: 6, border: 'none',
-            background: newName && newType ? 'var(--accent, #7c3aed)' : 'var(--bg-deep)',
+            background: newName && newType ? 'var(--accent, #5EC9CC)' : 'var(--bg-deep)',
             color: '#fff', cursor: newName && newType ? 'pointer' : 'default',
             fontSize: '0.8rem', fontWeight: 600,
           }}>
@@ -370,7 +370,7 @@ export default function DataSourcesView({ apiBase = '/api/data-plane' }: DataSou
       {nodeConfigOpen && (
         <div style={{
           padding: '1rem', borderRadius: 8, background: 'var(--bg-elevated)',
-          border: '1px solid var(--accent, #7c3aed)', marginTop: 8, marginBottom: 8,
+          border: '1px solid var(--accent, #5EC9CC)', marginTop: 8, marginBottom: 8,
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
             <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>Node Config: {nodeConfigOpen}</span>
@@ -396,7 +396,7 @@ export default function DataSourcesView({ apiBase = '/api/data-plane' }: DataSou
                 onClick={() => saveNodeConfig(nodeConfigOpen)}
                 style={{
                   padding: '5px 14px', borderRadius: 6, border: 'none',
-                  background: 'var(--accent, #7c3aed)', color: '#fff',
+                  background: 'var(--accent, #5EC9CC)', color: '#fff',
                   cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600,
                 }}
               >

@@ -258,7 +258,7 @@ export default function SkillLibraryPanel({
     fontWeight: 600,
     background: active ? 'var(--bg-elevated, #1a1a2e)' : 'transparent',
     color: active ? 'var(--fg, #e0e0e0)' : 'var(--fg-muted, #888)',
-    borderBottom: active ? '2px solid var(--accent, #7c3aed)' : '2px solid transparent',
+    borderBottom: active ? '2px solid var(--accent, #5EC9CC)' : '2px solid transparent',
   })
 
   const inputStyle: React.CSSProperties = {
@@ -353,7 +353,7 @@ export default function SkillLibraryPanel({
         )}
 
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
-          {selectedSkill.category && <span style={badgeStyle('#7c3aed')}>{selectedSkill.category}</span>}
+          {selectedSkill.category && <span style={badgeStyle('#5EC9CC')}>{selectedSkill.category}</span>}
           {selectedSkill.version && <span style={badgeStyle('#90caf9')}>v{selectedSkill.version}</span>}
           <span style={badgeStyle(sourceColor(src))}>{sourceLabel(src)}</span>
         </div>
@@ -505,9 +505,9 @@ export default function SkillLibraryPanel({
                   fontSize: '11px',
                   fontWeight: 500,
                   cursor: 'pointer',
-                  border: active ? '1px solid var(--accent, #7c3aed)' : '1px solid var(--border, #444)',
-                  background: active ? 'var(--accent, #7c3aed)20' : 'transparent',
-                  color: active ? 'var(--accent, #7c3aed)' : 'var(--fg-muted, #888)',
+                  border: active ? '1px solid var(--accent, #5EC9CC)' : '1px solid var(--border, #444)',
+                  background: active ? 'var(--accent, #5EC9CC)20' : 'transparent',
+                  color: active ? 'var(--accent, #5EC9CC)' : 'var(--fg-muted, #888)',
                 }}
               >
                 {tag}
@@ -524,7 +524,7 @@ export default function SkillLibraryPanel({
             key={skill.id}
             style={cardStyle}
             onClick={() => openSkillDetail(skill.id)}
-            onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--accent, #7c3aed)')}
+            onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--accent, #5EC9CC)')}
             onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border, #333)')}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
@@ -534,7 +534,7 @@ export default function SkillLibraryPanel({
               <span style={badgeStyle(sourceColor(skill.source))}>{sourceLabel(skill.source)}</span>
             </div>
             <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }}>
-              {skill.category && <span style={badgeStyle('#7c3aed')}>{skill.category}</span>}
+              {skill.category && <span style={badgeStyle('#5EC9CC')}>{skill.category}</span>}
               <span style={badgeStyle('#90caf9')}>{skill.endpoints} endpoints</span>
             </div>
             {skill.tags && skill.tags.length > 0 && (
@@ -736,7 +736,7 @@ export default function SkillLibraryPanel({
                     {item.icon ? `${item.icon} ` : ''}{item.name}
                   </div>
                   <span style={badgeStyle(
-                    item.type === 'agent' ? '#7c3aed' : item.type === 'bundle' ? '#f06292' : '#4fc3f7'
+                    item.type === 'agent' ? '#5EC9CC' : item.type === 'bundle' ? '#f06292' : '#4fc3f7'
                   )}>
                     {item.type === 'tool_pack' ? 'tool pack' : item.type}
                   </span>
@@ -766,7 +766,7 @@ export default function SkillLibraryPanel({
                   <button
                     onClick={() => handleInstall(item.id, item.type)}
                     disabled={installingId === item.id}
-                    style={btnStyle('#7c3aed', installingId === item.id)}
+                    style={btnStyle('#5EC9CC', installingId === item.id)}
                   >
                     {installingId === item.id ? 'Installing...' : item.price === 'free' ? 'Activate' : 'Install'}
                   </button>

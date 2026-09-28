@@ -160,7 +160,7 @@ export default function ModelBrowser({
               style={{
                 padding: 12, borderRadius: 'var(--radius, 8px)',
                 background: isSelected ? 'var(--bg-active, #1a2a4a)' : 'var(--bg-surface, #16162a)',
-                border: `1px solid ${isSelected ? 'var(--accent, #6366f1)' : 'var(--glass-border, #2a2a4a)'}`,
+                border: `1px solid ${isSelected ? 'var(--accent, #5EC9CC)' : 'var(--glass-border, #2a2a4a)'}`,
                 cursor: 'pointer', opacity: fits ? 1 : 0.5,
               }}
             >

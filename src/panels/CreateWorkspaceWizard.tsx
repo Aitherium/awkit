@@ -130,7 +130,7 @@ export default function CreateWorkspaceWizard() {
   const [agentPacks, setAgentPacks] = useState<{ id: string; name: string; description: string; pricing_onetime: number }[]>([])
 
   // Branding
-  const [primaryColor, setPrimaryColor] = useState('#6366f1')
+  const [primaryColor, setPrimaryColor] = useState('#5EC9CC')
   const [logoPrompt, setLogoPrompt] = useState('')
   const [tone, setTone] = useState<string>('Professional')
 
@@ -451,7 +451,7 @@ export default function CreateWorkspaceWizard() {
             ] as const).map(opt => (
               <div key={opt.mode} onClick={() => setAgentMode(opt.mode)} style={{
                 padding: '1rem', borderRadius: 'var(--radius)', textAlign: 'center', cursor: 'pointer',
-                border: `1px solid ${agentMode === opt.mode ? 'var(--accent, #6366f1)' : 'var(--glass-border)'}`,
+                border: `1px solid ${agentMode === opt.mode ? 'var(--accent, #5EC9CC)' : 'var(--glass-border)'}`,
                 background: agentMode === opt.mode ? 'var(--bg-active, #1a2a4a)' : 'var(--bg-surface)',
               }}>
                 <div style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>{opt.icon}</div>

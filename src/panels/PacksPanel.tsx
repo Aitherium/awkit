@@ -44,7 +44,7 @@ function packTier(pack: PackEntry): string {
 const TIER_COLORS: Record<string, { bg: string; color: string }> = {
   free: { bg: '#1a2a3a', color: '#60a5fa' },
   starter: { bg: '#1a2a3a', color: '#60a5fa' },
-  pro: { bg: '#2a1a3a', color: '#a78bfa' },
+  pro: { bg: '#2a1a3a', color: '#5EC9CC' },
   enterprise: { bg: '#3a2a1a', color: '#fbbf24' },
 }
 
@@ -190,7 +190,7 @@ export default function PacksPanel({ apiBase = '' }: PacksPanelProps) {
           { label: 'Total', value: stats.total, color: '#e0e0e0' },
           { label: 'Installed', value: stats.installed, color: '#4ade80' },
           { label: 'Licensed', value: stats.licensed, color: '#60a5fa' },
-          { label: 'Free', value: stats.free, color: '#a78bfa' },
+          { label: 'Free', value: stats.free, color: '#5EC9CC' },
         ].map(s => (
           <div key={s.label} style={{
             padding: '8px 16px', background: '#16162a', border: '1px solid #2a2a4a',

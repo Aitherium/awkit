@@ -89,7 +89,7 @@ const sPackDescription: React.CSSProperties = {
 const sBadge = (type: string): React.CSSProperties => {
   const colors: Record<string, { bg: string; fg: string }> = {
     agent_pack: { bg: '#1a2a3a', fg: '#60a5fa' },
-    skill_pack: { bg: '#2a1a3a', fg: '#a78bfa' },
+    skill_pack: { bg: '#2a1a3a', fg: '#5EC9CC' },
     tool_pack: { bg: '#1a3a2a', fg: '#4ade80' },
     service_pack: { bg: '#3a2a1a', fg: '#fbbf24' },
   }

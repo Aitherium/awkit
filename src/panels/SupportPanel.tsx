@@ -130,7 +130,7 @@ const S = {
   tabs: { display: 'flex', gap: '0.25rem', borderBottom: '1px solid var(--glass-border)', marginBottom: '1.5rem' } as const,
   tab: (active: boolean) => ({
     padding: '0.5rem 1rem', cursor: 'pointer', fontWeight: active ? 600 : 400,
-    borderBottom: active ? '2px solid var(--accent-primary, #6366f1)' : '2px solid transparent',
+    borderBottom: active ? '2px solid var(--accent-primary, #5EC9CC)' : '2px solid transparent',
     color: active ? 'var(--text-primary)' : 'var(--text-muted)',
     background: 'transparent', fontSize: '0.85rem',
   } as const),
@@ -141,7 +141,7 @@ const S = {
   select: { padding: '0.5rem', background: 'var(--bg-elevated)', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius, 6px)', color: 'var(--text-primary)', fontSize: '0.85rem' } as const,
   btn: (variant: 'primary' | 'outline' = 'primary') => ({
     padding: '0.5rem 1rem', borderRadius: 'var(--radius, 6px)', fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer',
-    background: variant === 'primary' ? 'var(--accent-primary, #6366f1)' : 'transparent',
+    background: variant === 'primary' ? 'var(--accent-primary, #5EC9CC)' : 'transparent',
     color: variant === 'primary' ? '#fff' : 'var(--text-primary)',
     border: variant === 'primary' ? 'none' : '1px solid var(--glass-border)',
   } as const),
@@ -526,7 +526,7 @@ export default function SupportPanel({ apiBase = '', showChat = true, appName, r
                 maxWidth: '80%',
                 padding: '0.5rem 0.75rem',
                 borderRadius: 8,
-                background: m.isAgent ? 'var(--bg-elevated)' : 'var(--accent-primary, #6366f1)',
+                background: m.isAgent ? 'var(--bg-elevated)' : 'var(--accent-primary, #5EC9CC)',
                 color: m.isAgent ? 'var(--text-primary)' : '#fff',
                 fontSize: '0.85rem',
               }}>

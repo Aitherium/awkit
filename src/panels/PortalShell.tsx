@@ -321,8 +321,8 @@ export default function PortalShell({
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
         {isDemo && (
           <div style={{
-            background: 'linear-gradient(90deg, rgba(168, 85, 247, 0.12), rgba(236, 72, 153, 0.08))',
-            borderBottom: '1px solid rgba(168, 85, 247, 0.2)',
+            background: 'linear-gradient(90deg, rgba(94,201,204, 0.12), rgba(236, 72, 153, 0.08))',
+            borderBottom: '1px solid rgba(94,201,204, 0.2)',
             padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 8,
             fontSize: '0.75rem', color: 'var(--text-secondary)',
           }}>

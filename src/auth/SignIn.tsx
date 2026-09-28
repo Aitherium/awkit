@@ -84,7 +84,7 @@ function SSOButtons({
                     <a
                         key={btn.href}
                         href={btn.href}
-                        className="flex items-center justify-center gap-3 w-full py-3 px-4 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 font-medium rounded border border-indigo-500/40 transition-all duration-200"
+                        className="flex items-center justify-center gap-3 w-full py-3 px-4 bg-[#5EC9CC]/20 hover:bg-[#7AD6D8]/30 text-[#5EC9CC] font-medium rounded border border-[#5EC9CC]/40 transition-all duration-200"
                     >
                         <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
@@ -136,7 +136,7 @@ function SSOButtons({
                     <a
                         key={tenant.tenant_id}
                         href={transport.samlUrl(tenant.tenant_id, returnUrl)}
-                        className="flex items-center justify-center gap-3 w-full py-3 px-4 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 font-medium rounded border border-indigo-500/40 transition-all duration-200"
+                        className="flex items-center justify-center gap-3 w-full py-3 px-4 bg-[#5EC9CC]/20 hover:bg-[#7AD6D8]/30 text-[#5EC9CC] font-medium rounded border border-[#5EC9CC]/40 transition-all duration-200"
                     >
                         <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />

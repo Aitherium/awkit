@@ -193,7 +193,7 @@ export default function ChannelManagementPanel({
             onClick={() => setIsCreating(true)}
             style={{
               padding: '0.5rem 1rem',
-              background: 'var(--accent-primary, #6366f1)',
+              background: 'var(--accent-primary, #5EC9CC)',
               color: 'var(--bg-deep, #000)',
               borderRadius: 'var(--radius, 6px)',
               fontSize: '0.8rem',
@@ -240,7 +240,7 @@ export default function ChannelManagementPanel({
                 disabled={!formName.trim()}
                 style={{
                   padding: '0.5rem 1rem',
-                  background: 'var(--accent-primary, #6366f1)',
+                  background: 'var(--accent-primary, #5EC9CC)',
                   color: 'var(--bg-deep, #000)',
                   borderRadius: 'var(--radius, 6px)',
                   fontSize: '0.8rem',
@@ -380,7 +380,7 @@ export default function ChannelManagementPanel({
                         onClick={() => updateChannel(ch)}
                         style={{
                           padding: '0.35rem 0.7rem',
-                          background: 'var(--accent-primary, #6366f1)',
+                          background: 'var(--accent-primary, #5EC9CC)',
                           color: 'var(--bg-deep, #000)',
                           borderRadius: 4,
                           fontSize: '0.7rem',
