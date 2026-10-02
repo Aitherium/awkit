@@ -4,12 +4,15 @@
  * AcademyLessonsPanel — the lesson library of a class and each lesson's artifacts
  * (`/api/v1/academy/classes/{id}/lessons*`, `/api/v1/academy/artifacts/*`).
  *
- * Lesson Studio drafts, approves and publishes; this panel is where a teacher
+ * Aither Classroom's lesson studio drafts, tiers and publishes; this panel is where a teacher
  * FINDS a lesson again (search by topic, filter by status and grade) and hands its
  * artifacts out: download, issue an expiring share link, list and revoke the live
  * ones. A share-link token is a bearer credential the router shows exactly once,
  * so the panel shows it once too and never stores it. The router's PII gate
  * refuses a link for an artifact naming an enrolled student; that refusal is shown.
+ *
+ * Deleting a lesson is here too (asked twice, never one click): it was only in the
+ * retired Academy lesson studio, and Aither Classroom has no lesson delete.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -17,6 +20,7 @@ import {
   ACADEMY_API, type AcademyArtifact, type AcademyClass, type AcademyLesson,
   academyFetch, listClasses, seg,
 } from './academyApi'
+import AcademyClassroomBridge from './AcademyClassroomBridge'
 
 interface ShareLink {
   link_id: string
@@ -26,10 +30,13 @@ interface ShareLink {
 
 export interface AcademyLessonsPanelProps {
   apiBase?: string
+  /** Where Aither Classroom is on this host (default: academyApi `classroomHref()`). */
+  classroomUrl?: string
 }
 
-export default function AcademyLessonsPanel({ apiBase = ACADEMY_API }: AcademyLessonsPanelProps) {
+export default function AcademyLessonsPanel({ apiBase = ACADEMY_API, classroomUrl }: AcademyLessonsPanelProps) {
   const [classes, setClasses] = useState<AcademyClass[]>([])
+  const [classesLoaded, setClassesLoaded] = useState(false)
   const [selected, setSelected] = useState('')
   const [lessons, setLessons] = useState<AcademyLesson[]>([])
   const [open, setOpen] = useState<AcademyLesson | null>(null)
@@ -41,6 +48,8 @@ export default function AcademyLessonsPanel({ apiBase = ACADEMY_API }: AcademyLe
   const [grade, setGrade] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  /** Lesson id whose Delete was pressed once: the row then asks before deleting. */
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
 
   const act = async (fn: () => Promise<void>) => {
     setBusy(true)
@@ -54,13 +63,16 @@ export default function AcademyLessonsPanel({ apiBase = ACADEMY_API }: AcademyLe
     }
   }
 
-  useEffect(() => {
-    void act(async () => {
+  const loadClasses = useCallback(async () => {
+    await act(async () => {
       const cs = await listClasses(apiBase)
       setClasses(cs)
+      setClassesLoaded(true)
       setSelected((cur) => cur || cs[0]?.id || '')
     })
   }, [apiBase])
+
+  useEffect(() => { void loadClasses() }, [loadClasses])
 
   const loadLessons = useCallback(async () => {
     if (!selected) return
@@ -83,6 +95,12 @@ export default function AcademyLessonsPanel({ apiBase = ACADEMY_API }: AcademyLe
     setArtifacts(d?.artifacts ?? [])
     setLinks({})
     setIssued(null)
+  })
+
+  const removeLesson = (l: AcademyLesson) => act(async () => {
+    await academyFetch(apiBase, `/classes/${seg(selected)}/lessons/${seg(l.id)}`, { method: 'DELETE' })
+    setConfirmDelete(null)
+    await loadLessons()
   })
 
   const fetchLinks = async (a: AcademyArtifact) => {
@@ -113,11 +131,13 @@ export default function AcademyLessonsPanel({ apiBase = ACADEMY_API }: AcademyLe
     (!grade || l.grade_level === grade) &&
     (!query || l.topic.toLowerCase().includes(query.toLowerCase()))), [lessons, status, grade, query])
 
+  const current = classes.find((c) => c.id === selected)
+
   return (
     <div className="p-4 space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold">Lessons</h2>
+          <h2 className="text-lg font-semibold">Lesson Library</h2>
           <p className="text-sm text-gray-500">Find a lesson, download its materials, share them by expiring link.</p>
         </div>
         <select value={selected} onChange={(e) => setSelected(e.target.value)}
@@ -127,6 +147,10 @@ export default function AcademyLessonsPanel({ apiBase = ACADEMY_API }: AcademyLe
       </header>
 
       {error && <div className="rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800">{error}</div>}
+
+      {/* Where this class lives, and the way to Aither Classroom (a link, never bare words). */}
+      <AcademyClassroomBridge apiBase={apiBase} cls={current} noClasses={classesLoaded && !error && classes.length === 0}
+        onMoved={loadClasses} href={classroomUrl} />
 
       <div className="flex flex-wrap gap-2 text-sm">
         <input placeholder="Search topic" value={query} onChange={(e) => setQuery(e.target.value)}
@@ -156,8 +180,22 @@ export default function AcademyLessonsPanel({ apiBase = ACADEMY_API }: AcademyLe
                 {l.created_at ? ` · ${new Date(l.created_at).toLocaleDateString()}` : ''}
               </div>
             </div>
-            <button type="button" disabled={busy} onClick={() => void openLesson(l)}
-              className="rounded border px-2 py-0.5 text-xs">Artifacts</button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button type="button" disabled={busy} onClick={() => void openLesson(l)}
+                className="rounded border px-2 py-0.5 text-xs">Artifacts</button>
+              {confirmDelete === l.id ? (
+                <span className="flex flex-wrap items-center gap-2 text-xs" data-testid="confirm-delete-lesson">
+                  {'Delete this lesson and its materials?'}
+                  <button type="button" disabled={busy} onClick={() => void removeLesson(l)}
+                    className="rounded border px-2 py-0.5 text-red-700">Yes, delete</button>
+                  <button type="button" onClick={() => setConfirmDelete(null)}
+                    className="rounded border px-2 py-0.5">Keep</button>
+                </span>
+              ) : (
+                <button type="button" disabled={busy} onClick={() => setConfirmDelete(l.id)}
+                  className="rounded border px-2 py-0.5 text-xs text-red-700">Delete</button>
+              )}
+            </div>
           </li>
         ))}
         {selected && !shown.length && !busy && (

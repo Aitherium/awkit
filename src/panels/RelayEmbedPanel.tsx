@@ -17,7 +17,9 @@
  *   5. https://relay.aitherium.com (public relay, fallback only)
  *
  * The signed-in user's display name is passed as `nick` so the embed connects
- * immediately (no nick picker), and the workspace slug scopes channels/DMs.
+ * immediately (no nick picker), and the workspace slug scopes channels/DMs: the
+ * embed lists `scope=workspace:<slug>` (membership checked server-side against the
+ * authenticated caller) and lands on `#<slug>-general`, never a platform room.
  */
 
 import { useMemo } from 'react'
@@ -65,10 +67,21 @@ function isValidRelayBase(url: string | undefined): boolean {
   return false
 }
 
+/**
+ * The channel a tenant Comms embed opens on. Workspace channels are provisioned as
+ * `#<slug>-general`, `#<slug>-random`…; anything else (`#general`, `#playground`) is a
+ * platform room and is replaced by the workspace default. Exported for tests.
+ */
+export function relayEmbedChannel(workspace: string | undefined, requested?: string): string | undefined {
+  if (!workspace) return requested
+  if (requested && requested.toLowerCase().startsWith(`#${workspace}-`.toLowerCase())) return requested
+  return `#${workspace}-general`
+}
+
 export default function RelayEmbedPanel({
   relayBaseUrl,
   workspace,
-  defaultChannel = '#general',
+  defaultChannel,
 }: RelayEmbedPanelProps = {}) {
   const { user } = useAuth()
   const config = useConfig()
@@ -118,7 +131,12 @@ export default function RelayEmbedPanel({
     const qs = new URLSearchParams()
     if (ws) qs.set('workspace', String(ws))
     if (nick) qs.set('nick', String(nick))
-    if (defaultChannel) qs.set('channel', defaultChannel)
+    // Land on the WORKSPACE's own room. The old default was the platform's global
+    // `#general`, so a tenant's staff posted company chat into Aitherium's public
+    // community (T1). With no workspace there is nothing to scope to: no channel is
+    // requested and the relay picks.
+    const channel = relayEmbedChannel(ws ? String(ws) : undefined, defaultChannel)
+    if (channel) qs.set('channel', channel)
     const query = qs.toString()
     const trimmed = String(resolvedBase).replace(/\/$/, '')
     // Base already points at an embed surface (e.g. https://relay.aitherium.com/embed)

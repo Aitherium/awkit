@@ -58,7 +58,7 @@ export default function ElysiumCreditsPanel({
         ledger: propLedger ?? led?.ledger ?? [],
       })
     } catch {
-      setError('Could not load Elysium credits.')
+      setError('Could not load hosting credits.')
     } finally {
       setLoading(false)
     }
@@ -73,7 +73,7 @@ export default function ElysiumCreditsPanel({
     <div style={{ padding: 24, color: '#e5e7eb', fontFamily: 'Inter, system-ui, sans-serif' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
         <Coins size={22} color={ACCENT} />
-        <h2 style={{ margin: 0, fontSize: 20 }}>Elysium Credits</h2>
+        <h2 style={{ margin: 0, fontSize: 20 }}>Hosting credits</h2>
       </div>
       <p style={{ marginTop: 0, color: '#9ca3af', fontSize: 13 }}>
         Sovereign replica hosting earnings — accrued to the append-only ledger.

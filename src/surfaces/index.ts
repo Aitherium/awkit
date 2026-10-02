@@ -41,3 +41,14 @@ export type {
 
 export { default as NotesSurface } from './Notes/NotesSurface'
 export type { NotesSurfaceProps, RoomNote } from './Notes/NotesSurface'
+
+// The awnix admin guide (guide.json from awman.py): appliance console #/guide, Veil /docs/awnix.
+export { default as AdminGuideSurface } from './AdminGuide/AdminGuideSurface'
+export type { AdminGuideSurfaceProps } from './AdminGuide/AdminGuideSurface'
+export {
+  useAdminGuide, validateGuide, sanitizeGuideHtml, filterHtmlForVariant, viewForVariant,
+  searchGuide, manDocId, GUIDE_SCHEMA_VERSION,
+} from './AdminGuide/useAdminGuide'
+export type {
+  GuideJson, GuideChapter, GuideManPage, GuideHeading, GuideState, GuideHit, GuideView,
+} from './AdminGuide/useAdminGuide'

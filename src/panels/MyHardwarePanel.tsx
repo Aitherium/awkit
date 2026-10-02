@@ -24,6 +24,8 @@ export interface MyHardwarePanelProps {
   apiBase?: string
   /** Called when the user clicks "view in Universe" — the host summons `/space`. */
   onShowUniverse?: () => void
+  /** The host product's name in the copy ("comes up with <name> running"). */
+  productName?: string
 }
 
 interface DeviceInfo {
@@ -156,6 +158,7 @@ const cmdCopy: CSSProperties = { ...ghost, flexShrink: 0 }
 export default function MyHardwarePanel({
   apiBase = '/api',
   onShowUniverse,
+  productName = 'your assistant',
 }: MyHardwarePanelProps) {
   const [downloads, setDownloads] = useState<Downloads | null>(null)
   const [appliance, setAppliance] = useState<ApplianceInfo | null>(null)
@@ -349,7 +352,7 @@ export default function MyHardwarePanel({
           </div>
           <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.3rem 0 0.5rem' }}>
             The whole product as an immutable OS — install it on a machine and it comes
-            up with GargBot running, no network needed.{' '}
+            up with {productName} running, no network needed.{' '}
             {appliance.tenant.size_bytes > 0 && (
               <span style={{ color: 'var(--text-muted)' }}>
                 {fmtGB(appliance.tenant.size_bytes)} · {appliance.tenant.slices} slices.
@@ -429,7 +432,7 @@ export default function MyHardwarePanel({
             <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{enrolled.device.node_id}</span>
           </div>
           <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0 0 0.5rem' }}>
-            Run these on the machine you want to enroll. The last line tells GargBot you're live.
+            Run these on the machine you want to enroll. The last line tells {productName} you're live.
           </p>
           <div style={{ position: 'relative' }}>
             <pre style={{

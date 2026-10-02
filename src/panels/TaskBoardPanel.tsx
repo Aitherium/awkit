@@ -143,6 +143,11 @@ export interface TaskBoardPanelProps {
   apiBase?: string
 }
 
+/** Every task call carries the session. Same-origin it is the default anyway; when a
+ *  host hands in a cross-origin `apiBase` (the static aitherium.com apex points it at
+ *  api.aitherium.com) the domain-wide auth cookie only rides with `include`. */
+const sessionFetch = (url: string, init?: RequestInit) => fetch(url, { credentials: 'include', ...init })
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -230,10 +235,10 @@ export default function TaskBoardPanel({ apiBase = '/api/tasks' }: TaskBoardPane
       const qs = params.toString()
 
       const [boardRes, tasksRes, projectsRes, statsRes] = await Promise.all([
-        fetch(`${apiBase}/board${qs ? `?${qs}` : ''}`).then(r => r.ok ? r.json() : null).catch(() => null),
-        fetch(`${apiBase}${qs ? `?${qs}` : ''}`).then(r => r.ok ? r.json() : null).catch(() => null),
-        fetch(`${apiBase}/projects`).then(r => r.ok ? r.json() : null).catch(() => null),
-        fetch(`${apiBase}/stats`).then(r => r.ok ? r.json() : null).catch(() => null),
+        sessionFetch(`${apiBase}/board${qs ? `?${qs}` : ''}`).then(r => r.ok ? r.json() : null).catch(() => null),
+        sessionFetch(`${apiBase}${qs ? `?${qs}` : ''}`).then(r => r.ok ? r.json() : null).catch(() => null),
+        sessionFetch(`${apiBase}/projects`).then(r => r.ok ? r.json() : null).catch(() => null),
+        sessionFetch(`${apiBase}/stats`).then(r => r.ok ? r.json() : null).catch(() => null),
       ])
 
       if (boardRes?.data) {
@@ -273,7 +278,7 @@ export default function TaskBoardPanel({ apiBase = '/api/tasks' }: TaskBoardPane
   const handleCreate = async () => {
     if (!newTitle) return
     try {
-      const resp = await fetch(`${apiBase}`, {
+      const resp = await sessionFetch(`${apiBase}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -307,7 +312,7 @@ export default function TaskBoardPanel({ apiBase = '/api/tasks' }: TaskBoardPane
   const handleQuickAdd = async (status: string) => {
     if (!quickAddValue.trim()) return
     try {
-      const resp = await fetch(`${apiBase}`, {
+      const resp = await sessionFetch(`${apiBase}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -328,7 +333,7 @@ export default function TaskBoardPanel({ apiBase = '/api/tasks' }: TaskBoardPane
 
   const handleStatusChange = async (taskId: string, status: string) => {
     try {
-      await fetch(`${apiBase}/${taskId}/status`, {
+      await sessionFetch(`${apiBase}/${taskId}/status`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status }),
@@ -344,7 +349,7 @@ export default function TaskBoardPanel({ apiBase = '/api/tasks' }: TaskBoardPane
 
   const handleUpdateTask = async (taskId: string, updates: Partial<Task>) => {
     try {
-      const resp = await fetch(`${apiBase}/${taskId}`, {
+      const resp = await sessionFetch(`${apiBase}/${taskId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
@@ -362,7 +367,7 @@ export default function TaskBoardPanel({ apiBase = '/api/tasks' }: TaskBoardPane
 
   const handleDelete = async (taskId: string) => {
     try {
-      await fetch(`${apiBase}/${taskId}`, { method: 'DELETE' })
+      await sessionFetch(`${apiBase}/${taskId}`, { method: 'DELETE' })
       if (selectedTask?.task_id === taskId) setSelectedTask(null)
       fetchData()
     } catch (e) {
@@ -373,14 +378,14 @@ export default function TaskBoardPanel({ apiBase = '/api/tasks' }: TaskBoardPane
   const handleAddComment = async () => {
     if (!selectedTask || !newComment) return
     try {
-      const resp = await fetch(`${apiBase}/${selectedTask.task_id}/comment`, {
+      const resp = await sessionFetch(`${apiBase}/${selectedTask.task_id}/comment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ comment: newComment }),
       })
       if (resp.ok) {
         setNewComment('')
-        const detail = await fetch(`${apiBase}/${selectedTask.task_id}`).then(r => r.ok ? r.json() : null).catch(() => null)
+        const detail = await sessionFetch(`${apiBase}/${selectedTask.task_id}`).then(r => r.ok ? r.json() : null).catch(() => null)
         if (detail?.data) setSelectedTask(detail.data)
       }
     } catch (e) {
@@ -391,14 +396,14 @@ export default function TaskBoardPanel({ apiBase = '/api/tasks' }: TaskBoardPane
   const handleAddSubtask = async () => {
     if (!selectedTask || !newSubtaskTitle.trim()) return
     try {
-      const resp = await fetch(`${apiBase}/${selectedTask.task_id}/subtasks`, {
+      const resp = await sessionFetch(`${apiBase}/${selectedTask.task_id}/subtasks`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: newSubtaskTitle.trim() }),
       })
       if (resp.ok) {
         setNewSubtaskTitle('')
-        const detail = await fetch(`${apiBase}/${selectedTask.task_id}`).then(r => r.ok ? r.json() : null).catch(() => null)
+        const detail = await sessionFetch(`${apiBase}/${selectedTask.task_id}`).then(r => r.ok ? r.json() : null).catch(() => null)
         if (detail?.data) setSelectedTask(detail.data)
       }
     } catch (e) {
@@ -409,7 +414,7 @@ export default function TaskBoardPanel({ apiBase = '/api/tasks' }: TaskBoardPane
   const handleToggleSubtask = async (subtaskId: string, completed: boolean) => {
     if (!selectedTask) return
     try {
-      await fetch(`${apiBase}/${selectedTask.task_id}/subtasks/${subtaskId}`, {
+      await sessionFetch(`${apiBase}/${selectedTask.task_id}/subtasks/${subtaskId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ completed }),
@@ -426,7 +431,7 @@ export default function TaskBoardPanel({ apiBase = '/api/tasks' }: TaskBoardPane
   const handleLinkItem = async (item: { id: string; title: string }) => {
     if (!selectedTask) return
     try {
-      const resp = await fetch(`${apiBase}/${selectedTask.task_id}/links`, {
+      const resp = await sessionFetch(`${apiBase}/${selectedTask.task_id}/links`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type: linkType, id: item.id, title: item.title }),
@@ -449,7 +454,7 @@ export default function TaskBoardPanel({ apiBase = '/api/tasks' }: TaskBoardPane
   const handleUnlinkItem = async (linkId: string) => {
     if (!selectedTask) return
     try {
-      await fetch(`${apiBase}/${selectedTask.task_id}/links/${linkId}`, { method: 'DELETE' })
+      await sessionFetch(`${apiBase}/${selectedTask.task_id}/links/${linkId}`, { method: 'DELETE' })
       setSelectedTask({
         ...selectedTask,
         linked_items: (selectedTask.linked_items || []).filter(li => li.id !== linkId),
@@ -486,7 +491,7 @@ export default function TaskBoardPanel({ apiBase = '/api/tasks' }: TaskBoardPane
 
   const openTaskDetail = async (taskId: string) => {
     try {
-      const detail = await fetch(`${apiBase}/${taskId}`).then(r => r.ok ? r.json() : null).catch(() => null)
+      const detail = await sessionFetch(`${apiBase}/${taskId}`).then(r => r.ok ? r.json() : null).catch(() => null)
       if (detail?.data) {
         setSelectedTask(detail.data)
         setEditingTitle(false)

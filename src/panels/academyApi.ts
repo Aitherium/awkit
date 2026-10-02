@@ -16,6 +16,59 @@ export interface AcademyClass {
   status?: string
   lessons_published?: number
   student_count?: number
+  /**
+   * True when the class is of record in Aither Classroom: its roster, join sheet,
+   * parent codes and lesson studio are there. False for a class made on the Academy
+   * API and never moved. Absent from a router older than this field: a panel then
+   * claims nothing about where the roster lives.
+   */
+  classroom?: boolean
+}
+
+// -- Aither Classroom, the teacher's product --------------------------------------
+// The record panels (Lesson Library, Learning Profiles, Mastery Analytics) point a
+// teacher at Classroom for what they do not do. A pointer nobody can follow is not
+// one, so it is always a LINK, and the link is resolved here, in one place.
+
+/** The public door of Aither Classroom. A Veil host serves the same page at /classroom. */
+export const CLASSROOM_PUBLIC_DOOR = 'https://academy.aitherium.com'
+
+/**
+ * Where "Open Aither Classroom" goes on THIS host: an explicit prop, then the
+ * host's static config (`window.__AITHER_APP_CONFIG__.classroom_url`, for a host
+ * that serves Classroom itself, e.g. '/classroom'), then the public door. Only an
+ * http(s) URL or a rooted path is accepted, so a config value cannot become a
+ * `javascript:` link.
+ */
+export function classroomHref(explicit?: string | null): string {
+  const safe = (v: unknown): string | null =>
+    typeof v === 'string' && /^(https?:\/\/|\/(?!\/))/.test(v.trim()) ? v.trim() : null
+  const fromProp = safe(explicit)
+  if (fromProp) return fromProp
+  if (typeof window !== 'undefined') {
+    const cfg = (window as unknown as Record<string, unknown>)['__AITHER_APP_CONFIG__']
+    const fromHost = cfg && typeof cfg === 'object' ? safe((cfg as Record<string, unknown>).classroom_url) : null
+    if (fromHost) return fromHost
+  }
+  return CLASSROOM_PUBLIC_DOOR
+}
+
+/** A class of Aither Learn's family console (`cls_home_*`): never moved to Classroom. */
+export const isHomeClass = (id: string): boolean => id.startsWith('cls_home_')
+
+export interface MoveToClassroomResult {
+  class_id: string
+  classroom: boolean
+  adopted: boolean
+  /** Students that are profile records only: no login until added on the Classroom roster. */
+  record_only_students: number
+}
+
+/** Make a class created on the Academy API an Aither Classroom class (creator only). */
+export function moveToClassroom(apiBase: string, classId: string): Promise<MoveToClassroomResult> {
+  return academyFetch<MoveToClassroomResult>(apiBase, `/classes/${encodeURIComponent(classId)}/move-to-classroom`, {
+    method: 'POST',
+  })
 }
 
 /** A non-2xx router answer. `status` lets a panel tell 404 (not set up yet) from a failure. */

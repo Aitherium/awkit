@@ -37,14 +37,14 @@ export interface BonsaiModelInfo {
   /**
    * `false` when the in-browser WebGPU runtime cannot run this file YET, whatever
    * `arch` says. Bonsai 2 27B is genuinely `qwen35` (same arch string and KV keys
-   * as Bonsai 1) but ships Walsh-Hadamard-rotated PTQ1_0 weights our kernels do
-   * not decode, so it needs its own gate rather than a fake arch. Omitted = runnable.
+   * as Bonsai 1) but ships Walsh-Hadamard-rotated PTQ1_0 weights, and sat behind
+   * this gate until the kernels matched the PrismML fork (2026-10-01). Omitted = runnable.
    */
   browser?: boolean;
   /**
    * Which runtime can SERVE this file on a real GPU. `browser` above
-   * answers a different question: Bonsai 2 is `browser: false` and
-   * perfectly servable -- just not by stock llama.cpp, which loads it
+   * answers a different question: Bonsai 2 is perfectly servable --
+   * just not by stock llama.cpp, which loads it
    * and emits gibberish with a healthy /health. Omitted = stock.
    */
   serverRuntime?: "llama.cpp" | "llama.cpp-prism";
@@ -126,29 +126,29 @@ export const BONSAI_MODELS_INFO: BonsaiModelInfo[] = [
   {
     // Bonsai 2 27B (PrismML, 2026-09-17). PTQ1_0 = 5,946,648,928 B from the real GGUF
     // header (1.75 bpw, ggml type 143): the smallest build and the one the mirror
-    // serves (aitherkvcache `bonsai2-v1`, .part0-.part3). NOT browser-runnable yet:
-    // the weights carry prism.hadamard.* (block-1024 Walsh-Hadamard rotation) and
-    // only the PrismML llama.cpp fork (branch prism, prism-b10687-5d80cff+) serves
-    // them; stock llama.cpp and our WebGPU kernels emit gibberish. Present so every
-    // surface agrees on id/size/filename before the kernels land.
+    // serves (aitherkvcache `bonsai2-v1`, .part0-.part3). Browser-runnable since
+    // 2026-10-01: the weights carry prism.hadamard.* (block-1024 Walsh-Hadamard
+    // rotation) that stock llama.cpp ignores (gibberish); the WebGPU runtime applies
+    // it and matches the PrismML fork (136/136 teacher-forced tokens, Veil
+    // bonsai-webgpu/selftest/e2e/bonsai2-browser-gate.mjs). Needs ~8 GB GPU memory.
     id: "bonsai2-27b",
     label: "Bonsai 2 27B",
     params: "27B",
     sizeMb: 5671,
     url: `${HF_PRISM}/Ternary-Bonsai-2-27B-gguf/resolve/main/Ternary-Bonsai-2-27B-PTQ1_0.gguf`,
     contextWindow: 262144,
-    blurb: "The new generation. 5.7 GB, 1.75 bpw -- not in-browser yet; self-host with the PrismML fork.",
+    blurb: "The new generation. 5.7 GB, 1.75 bpw -- in-browser on a desktop GPU with 8 GB+, or self-host with the PrismML fork.",
     arch: "qwen35",
-    browser: false,
+    browser: true,
     serverRuntime: "llama.cpp-prism",
   },
 ];
 
 /**
- * Models runnable in the browser (all four Bonsai 1 sizes, as of 2026-07-28).
- * Filter by architecture so a future addition stays out by default, AND by the
- * explicit `browser: false` opt-out for a row whose arch is supported but whose
- * weights are not (Bonsai 2 27B, Hadamard-rotated PTQ1_0).
+ * Models runnable in the browser (the four Bonsai 1 sizes; Bonsai 2 27B since
+ * 2026-10-01). Filter by architecture so a future addition stays out by default,
+ * AND by the explicit `browser: false` opt-out for a row whose arch is supported
+ * but whose weights are not.
  */
 export function browserRunnableBonsaiModels(): BonsaiModelInfo[] {
   return BONSAI_MODELS_INFO.filter(

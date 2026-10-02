@@ -18,13 +18,18 @@ interface PlatformStatus {
   relay?: ServiceStatus
   deployment_mode: string
   portal: string
+  app_id?: string
 }
 
 interface PlatformPanelProps {
   apiBase?: string
+  /** Agent the reindex task is dispatched to; omitted, the host backend picks its own. */
+  agent?: string
+  /** Shown as App ID; defaults to the status payload's app_id. */
+  appId?: string
 }
 
-export default function PlatformPanel({ apiBase = '/api/platform' }: PlatformPanelProps = {}) {
+export default function PlatformPanel({ apiBase = '/api/platform', agent, appId }: PlatformPanelProps = {}) {
   const [status, setStatus] = useState<PlatformStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
@@ -66,7 +71,7 @@ export default function PlatformPanel({ apiBase = '/api/platform' }: PlatformPan
       const r = await fetch(`${apiBase}/agent/dispatch`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agent: 'gargbot', task: 'reindex_knowledge' }),
+        body: JSON.stringify({ ...(agent ? { agent } : {}), task: 'reindex_knowledge' }),
       })
       const d = await r.json()
       setSyncResult(d.error ? `Reindex failed: ${d.error}` : 'Knowledge reindex triggered')
@@ -160,11 +165,11 @@ export default function PlatformPanel({ apiBase = '/api/platform' }: PlatformPan
           <span style={{ color: 'var(--text-muted)' }}>Mode:</span>
           <span style={{ fontWeight: 500 }}>{status?.deployment_mode || 'standalone'}</span>
           <span style={{ color: 'var(--text-muted)' }}>App URL:</span>
-          <span>garg.aitherium.com</span>
+          <span>{typeof window !== 'undefined' ? window.location.host : ''}</span>
           <span style={{ color: 'var(--text-muted)' }}>Portal:</span>
           <a href={status?.portal} target="_blank" rel="noopener">{status?.portal}</a>
           <span style={{ color: 'var(--text-muted)' }}>App ID:</span>
-          <span style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>gargbot</span>
+          <span style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{appId ?? status?.app_id ?? '-'}</span>
         </div>
       </div>
     </div>

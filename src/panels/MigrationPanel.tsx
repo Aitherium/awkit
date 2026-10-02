@@ -6,6 +6,8 @@ interface Counts { [k: string]: number }
 
 export interface MigrationPanelProps {
   apiBase?: string
+  /** The host product's name in the copy. */
+  productName?: string
 }
 
 const ENTITY_LABELS: Record<string, string> = {
@@ -14,7 +16,7 @@ const ENTITY_LABELS: Record<string, string> = {
   comm: 'Messages', document: 'Captured pages',
 }
 
-export default function MigrationPanel({ apiBase = '/api/untether' }: MigrationPanelProps) {
+export default function MigrationPanel({ apiBase = '/api/untether', productName = 'your workspace' }: MigrationPanelProps) {
   const [counts, setCounts] = useState<Counts>({})
   const [clients, setClients] = useState<any[]>([])
   const [sessions, setSessions] = useState<any[]>([])
@@ -47,7 +49,7 @@ export default function MigrationPanel({ apiBase = '/api/untether' }: MigrationP
     <div style={{ padding: 24, height: '100%', overflow: 'auto', color: 'var(--text-primary)' }}>
       <h2 style={{ margin: '0 0 4px', fontSize: 20 }}>Migration &amp; CRM mirror</h2>
       <p style={{ margin: '0 0 18px', color: 'var(--text-secondary)', fontSize: 13 }}>
-        Your Sprout Studio data, mirrored into Chelle — captured as you work, plus
+        Your Sprout Studio data, mirrored into {productName} — captured as you work, plus
         sanctioned CSV / Zapier sync. {total > 0 ? `${total} records so far.` : ''}
       </p>
 
@@ -65,7 +67,7 @@ export default function MigrationPanel({ apiBase = '/api/untether' }: MigrationP
       <div style={{ ...card('var(--card-hover, rgba(236,72,153,0.06))'), marginBottom: 22 }}>
         <strong style={{ fontSize: 13.5 }}>Connect your data</strong>
         <ol style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 12.5, color: 'var(--text-secondary)', lineHeight: 1.7 }}>
-          <li><b>Install the Chelle Companion</b> browser extension, then browse Sprout Studio — your clients, sessions and invoices mirror automatically. Click “Import everything” to backfill.</li>
+          <li><b>Install the {productName} Companion</b> browser extension, then browse Sprout Studio — your clients, sessions and invoices mirror automatically. Click “Import everything” to backfill.</li>
           <li><b>Zapier</b>: point Sprout’s New Lead / Booking / Payment zaps at <code>{apiBase}/zapier/&lt;event&gt;</code> for real-time sync.</li>
           <li><b>CSV</b>: export Reports → Contact Analytics and upload it (POST <code>{apiBase}/sources/import/csv</code>).</li>
           <li><b>Calendar</b>: authorize your gallery360 Google Calendar in Sprout (two-way sync) so personal time shows busy — no manual switching.</li>

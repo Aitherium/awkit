@@ -81,7 +81,7 @@ export const PRODUCT_TEMPLATES: Record<string, ProductTemplate> = {
     theme: 'aitherium',
     agentConfig: {
       persona: 'Aither',
-  // gargbot / chelle / wildroot templates REMOVED 2026-09-05 -- customer
+  // customer-named templates REMOVED 2026-09-05 -- customer
   // names in a package strangers install. A tenant's template comes from
   // its pack, not from a preset baked in here.
       workTypes: ['orchestration', 'content_generation', 'social_media', 'executive_briefing', 'commerce'],

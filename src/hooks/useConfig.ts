@@ -46,6 +46,13 @@ export interface AppConfig {
   /** Tenant id (used as a workspace fallback for the embedded relay). */
   tenant_id?: string
   /**
+   * Where THIS host serves Aither Classroom (an http(s) URL or a rooted path such
+   * as '/classroom'). Unset on a host that does not: the Academy record panels and
+   * a retired-panel notice then link to the public door (academyApi `classroomHref`,
+   * registry `retiredPanelHref`).
+   */
+  classroom_url?: string
+  /**
    * How to run this app on your OWN machine when the hosted platform is down.
    *
    * Declared in the published `config.js` alongside `__AITHER_API_BASE__`,

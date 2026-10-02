@@ -1,0 +1,542 @@
+{
+  "_generated_by": "awnix-console.py --dump-fixtures",
+  "_version": "1.0.0",
+  "action_invalid": {
+    "body": {
+      "detail": "'channel' must be one of stable, beta",
+      "exit": null,
+      "result": null,
+      "state": "error",
+      "stdout_tail": "",
+      "verb": "update-channel"
+    },
+    "status": 422
+  },
+  "action_not_entitled": {
+    "body": {
+      "exit": 3,
+      "result": {
+        "ok": false,
+        "op": "install",
+        "results": [
+          {
+            "id": "awdesk",
+            "kind": "container",
+            "log_tail": "",
+            "pin": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "previous_pin": null,
+            "reason": "requires an activated license",
+            "state": "needs-license",
+            "version": "1.0.0"
+          }
+        ]
+      },
+      "state": "not-entitled",
+      "stdout_tail": "{\"ok\": false, \"op\": \"install\", \"results\": [{\"id\": \"awdesk\", \"kind\": \"container\", \"state\": \"needs-license\", \"version\": \"1.0.0\", \"pin\": \"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\", \"previous_pin\": null, \"reason\": \"requires an activated license\", \"log_tail\": \"\"}]}\n",
+      "verb": "component-install"
+    },
+    "status": 402
+  },
+  "action_offline": {
+    "body": {
+      "exit": 2,
+      "result": {
+        "state": "offline"
+      },
+      "state": "unavailable",
+      "stdout_tail": "{\"state\": \"offline\"}\n",
+      "verb": "update-check"
+    },
+    "status": 503
+  },
+  "action_ok": {
+    "body": {
+      "exit": 0,
+      "result": {
+        "argv": [
+          "awnix-update",
+          "check"
+        ],
+        "ok": true,
+        "stdin_len": 0
+      },
+      "state": "ok",
+      "stdout_tail": "{\"ok\": true, \"argv\": [\"awnix-update\", \"check\"], \"stdin_len\": 0}\n",
+      "verb": "update-check"
+    },
+    "status": 200
+  },
+  "action_refused": {
+    "body": {
+      "exit": 1,
+      "result": {
+        "state": "unsigned-refused"
+      },
+      "state": "refused",
+      "stdout_tail": "{\"state\": \"unsigned-refused\"}\n",
+      "verb": "update-check"
+    },
+    "status": 409
+  },
+  "action_unavailable": {
+    "body": {
+      "available": false,
+      "detail": "awnix-endpoints is not installed",
+      "exit": null,
+      "result": null,
+      "state": "unavailable",
+      "stdout_tail": "",
+      "verb": "endpoints-probe"
+    },
+    "status": 501
+  },
+  "action_unknown": {
+    "body": {
+      "detail": "unknown action",
+      "exit": null,
+      "result": null,
+      "state": "error",
+      "stdout_tail": "",
+      "verb": "nope"
+    },
+    "status": 404
+  },
+  "components": {
+    "body": {
+      "exit": 0,
+      "result": {
+        "ok": true,
+        "op": "list",
+        "results": [
+          {
+            "id": "awdk",
+            "kind": "pypi",
+            "log_tail": "",
+            "pin": "3.8.26",
+            "previous_pin": null,
+            "reason": "",
+            "state": "installed",
+            "version": "3.8.26"
+          },
+          {
+            "id": "awdesk",
+            "kind": "container",
+            "log_tail": "",
+            "pin": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "previous_pin": null,
+            "reason": "requires an activated license",
+            "state": "needs-license",
+            "version": "1.0.0"
+          }
+        ]
+      },
+      "state": "ok",
+      "stdout_tail": "{\"ok\": true, \"op\": \"list\", \"results\": [{\"id\": \"awdk\", \"kind\": \"pypi\", \"state\": \"installed\", \"version\": \"3.8.26\", \"pin\": \"3.8.26\", \"previous_pin\": null, \"reason\": \"\", \"log_tail\": \"\"}, {\"id\": \"awdesk\", \"kind\": \"container\", \"state\": \"needs-license\", \"version\": \"1.0.0\", \"pin\": \"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\", \"previous_pin\": null, \"reason\": \"requires an activated license\", \"log_tail\": \"\"}]}\n",
+      "verb": "components-status"
+    },
+    "status": 200
+  },
+  "endpoints_unavailable": {
+    "body": {
+      "available": false,
+      "detail": "awnix-endpoints is not installed",
+      "exit": null,
+      "result": null,
+      "state": "unavailable",
+      "stdout_tail": "",
+      "verb": "endpoints-status"
+    },
+    "status": 501
+  },
+  "license_expired": {
+    "body": {
+      "exit": 1,
+      "result": {
+        "checked_at": "2026-09-27T12:00:00Z",
+        "detail": "fixture: expired",
+        "entitlements": {
+          "appliance_tier": null,
+          "images": [],
+          "packs": []
+        },
+        "exp": 1700000000,
+        "lic_id": "lic_TEST0001",
+        "registry": {
+          "expires_at": null,
+          "images": 0,
+          "state": "unconfigured"
+        },
+        "schema": 1,
+        "sku": "acme-appliance-pro",
+        "state": "expired",
+        "tier": "pro"
+      },
+      "state": "refused",
+      "stdout_tail": "{\"schema\": 1, \"state\": \"expired\", \"lic_id\": \"lic_TEST0001\", \"sku\": \"acme-appliance-pro\", \"tier\": \"pro\", \"exp\": 1700000000, \"checked_at\": \"2026-09-27T12:00:00Z\", \"detail\": \"fixture: expired\", \"entitlements\": {\"appliance_tier\": null, \"images\": [], \"packs\": []}, \"registry\": {\"state\": \"unconfigured\", \"expires_at\": null, \"images\": 0}}\n",
+      "verb": "license-status"
+    },
+    "status": 409
+  },
+  "license_invalid": {
+    "body": {
+      "exit": 1,
+      "result": {
+        "checked_at": "2026-09-27T12:00:00Z",
+        "detail": "fixture: invalid",
+        "entitlements": {
+          "appliance_tier": null,
+          "images": [],
+          "packs": []
+        },
+        "exp": 0,
+        "lic_id": "lic_TEST0001",
+        "registry": {
+          "expires_at": null,
+          "images": 0,
+          "state": "refused"
+        },
+        "schema": 1,
+        "sku": "acme-appliance-pro",
+        "state": "invalid",
+        "tier": "pro"
+      },
+      "state": "refused",
+      "stdout_tail": "{\"schema\": 1, \"state\": \"invalid\", \"lic_id\": \"lic_TEST0001\", \"sku\": \"acme-appliance-pro\", \"tier\": \"pro\", \"exp\": 0, \"checked_at\": \"2026-09-27T12:00:00Z\", \"detail\": \"fixture: invalid\", \"entitlements\": {\"appliance_tier\": null, \"images\": [], \"packs\": []}, \"registry\": {\"state\": \"refused\", \"expires_at\": null, \"images\": 0}}\n",
+      "verb": "license-status"
+    },
+    "status": 409
+  },
+  "license_offline": {
+    "body": {
+      "exit": 2,
+      "result": {
+        "checked_at": "2026-09-27T12:00:00Z",
+        "detail": "fixture: offline",
+        "entitlements": {
+          "appliance_tier": null,
+          "images": [],
+          "packs": []
+        },
+        "exp": 0,
+        "lic_id": "lic_TEST0001",
+        "registry": {
+          "expires_at": null,
+          "images": 0,
+          "state": "offline"
+        },
+        "schema": 1,
+        "sku": "acme-appliance-pro",
+        "state": "offline",
+        "tier": "pro"
+      },
+      "state": "unavailable",
+      "stdout_tail": "{\"schema\": 1, \"state\": \"offline\", \"lic_id\": \"lic_TEST0001\", \"sku\": \"acme-appliance-pro\", \"tier\": \"pro\", \"exp\": 0, \"checked_at\": \"2026-09-27T12:00:00Z\", \"detail\": \"fixture: offline\", \"entitlements\": {\"appliance_tier\": null, \"images\": [], \"packs\": []}, \"registry\": {\"state\": \"offline\", \"expires_at\": null, \"images\": 0}}\n",
+      "verb": "license-status"
+    },
+    "status": 503
+  },
+  "license_refused": {
+    "body": {
+      "exit": 1,
+      "result": {
+        "checked_at": "2026-09-27T12:00:00Z",
+        "detail": "fixture: refused",
+        "entitlements": {
+          "appliance_tier": null,
+          "images": [],
+          "packs": []
+        },
+        "exp": 0,
+        "lic_id": "lic_TEST0001",
+        "registry": {
+          "expires_at": null,
+          "images": 0,
+          "state": "refused"
+        },
+        "schema": 1,
+        "sku": "acme-appliance-pro",
+        "state": "refused",
+        "tier": "pro"
+      },
+      "state": "refused",
+      "stdout_tail": "{\"schema\": 1, \"state\": \"refused\", \"lic_id\": \"lic_TEST0001\", \"sku\": \"acme-appliance-pro\", \"tier\": \"pro\", \"exp\": 0, \"checked_at\": \"2026-09-27T12:00:00Z\", \"detail\": \"fixture: refused\", \"entitlements\": {\"appliance_tier\": null, \"images\": [], \"packs\": []}, \"registry\": {\"state\": \"refused\", \"expires_at\": null, \"images\": 0}}\n",
+      "verb": "license-status"
+    },
+    "status": 409
+  },
+  "license_revoked": {
+    "body": {
+      "exit": 1,
+      "result": {
+        "checked_at": "2026-09-27T12:00:00Z",
+        "detail": "fixture: revoked",
+        "entitlements": {
+          "appliance_tier": null,
+          "images": [],
+          "packs": []
+        },
+        "exp": 0,
+        "lic_id": "lic_TEST0001",
+        "registry": {
+          "expires_at": null,
+          "images": 0,
+          "state": "refused"
+        },
+        "schema": 1,
+        "sku": "acme-appliance-pro",
+        "state": "revoked",
+        "tier": "pro"
+      },
+      "state": "refused",
+      "stdout_tail": "{\"schema\": 1, \"state\": \"revoked\", \"lic_id\": \"lic_TEST0001\", \"sku\": \"acme-appliance-pro\", \"tier\": \"pro\", \"exp\": 0, \"checked_at\": \"2026-09-27T12:00:00Z\", \"detail\": \"fixture: revoked\", \"entitlements\": {\"appliance_tier\": null, \"images\": [], \"packs\": []}, \"registry\": {\"state\": \"refused\", \"expires_at\": null, \"images\": 0}}\n",
+      "verb": "license-status"
+    },
+    "status": 409
+  },
+  "license_unlicensed": {
+    "body": {
+      "exit": 1,
+      "result": {
+        "checked_at": "2026-09-27T12:00:00Z",
+        "detail": "fixture: unlicensed",
+        "entitlements": {
+          "appliance_tier": null,
+          "images": [],
+          "packs": []
+        },
+        "exp": 0,
+        "lic_id": null,
+        "registry": {
+          "expires_at": null,
+          "images": 0,
+          "state": "unconfigured"
+        },
+        "schema": 1,
+        "sku": null,
+        "state": "unlicensed",
+        "tier": null
+      },
+      "state": "refused",
+      "stdout_tail": "{\"schema\": 1, \"state\": \"unlicensed\", \"lic_id\": null, \"sku\": null, \"tier\": null, \"exp\": 0, \"checked_at\": \"2026-09-27T12:00:00Z\", \"detail\": \"fixture: unlicensed\", \"entitlements\": {\"appliance_tier\": null, \"images\": [], \"packs\": []}, \"registry\": {\"state\": \"unconfigured\", \"expires_at\": null, \"images\": 0}}\n",
+      "verb": "license-status"
+    },
+    "status": 409
+  },
+  "license_valid": {
+    "body": {
+      "exit": 0,
+      "result": {
+        "checked_at": "2026-09-27T12:00:00Z",
+        "detail": "fixture: valid",
+        "entitlements": {
+          "appliance_tier": "pro",
+          "images": [
+            "acme-appliance"
+          ],
+          "packs": [
+            "acme"
+          ]
+        },
+        "exp": 0,
+        "lic_id": "lic_TEST0001",
+        "registry": {
+          "expires_at": "2026-09-27T12:45:00Z",
+          "images": 1,
+          "state": "armed"
+        },
+        "schema": 1,
+        "sku": "acme-appliance-pro",
+        "state": "valid",
+        "tier": "pro"
+      },
+      "state": "ok",
+      "stdout_tail": "{\"schema\": 1, \"state\": \"valid\", \"lic_id\": \"lic_TEST0001\", \"sku\": \"acme-appliance-pro\", \"tier\": \"pro\", \"exp\": 0, \"checked_at\": \"2026-09-27T12:00:00Z\", \"detail\": \"fixture: valid\", \"entitlements\": {\"appliance_tier\": \"pro\", \"images\": [\"acme-appliance\"], \"packs\": [\"acme\"]}, \"registry\": {\"state\": \"armed\", \"expires_at\": \"2026-09-27T12:45:00Z\", \"images\": 1}}\n",
+      "verb": "license-status"
+    },
+    "status": 200
+  },
+  "login_bad": {
+    "body": {
+      "detail": "wrong code",
+      "state": "refused"
+    },
+    "status": 401
+  },
+  "login_locked": {
+    "body": {
+      "detail": "too many wrong codes; login is locked",
+      "retry_after": 60,
+      "state": "locked"
+    },
+    "status": 423
+  },
+  "login_ok": {
+    "body": {
+      "authenticated": true,
+      "mode": "console"
+    },
+    "status": 200
+  },
+  "session_anonymous": {
+    "body": {
+      "authenticated": false,
+      "brand": "AcmeBot",
+      "mode": "console",
+      "profile": "acme",
+      "variant": "acme-appliance",
+      "version": "1.0.0"
+    },
+    "status": 200
+  },
+  "session_console": {
+    "body": {
+      "authenticated": true,
+      "brand": "AcmeBot",
+      "mode": "console",
+      "profile": "acme",
+      "variant": "acme-appliance",
+      "version": "1.0.0"
+    },
+    "status": 200
+  },
+  "session_setup": {
+    "body": {
+      "authenticated": false,
+      "brand": "AcmeBot",
+      "mode": "setup",
+      "profile": "acme",
+      "variant": "acme-appliance",
+      "version": "1.0.0"
+    },
+    "status": 200
+  },
+  "setup_status": {
+    "body": {
+      "exit": 0,
+      "result": {
+        "admin_user": "admin",
+        "completed_at": "2026-09-27T11:05:00Z",
+        "core": [],
+        "hostname": "acme-box",
+        "installed": [],
+        "link_host": "",
+        "linked": false,
+        "ssh_key_fingerprints": [
+          "SHA256:fixture"
+        ],
+        "steps": {
+          "hostname": {
+            "at": "2026-09-27T11:00:00Z",
+            "status": "done"
+          }
+        },
+        "version": 2
+      },
+      "state": "ok",
+      "stdout_tail": "{\"version\": 2, \"hostname\": \"acme-box\", \"admin_user\": \"admin\", \"ssh_key_fingerprints\": [\"SHA256:fixture\"], \"core\": [], \"installed\": [], \"linked\": false, \"link_host\": \"\", \"steps\": {\"hostname\": {\"status\": \"done\", \"at\": \"2026-09-27T11:00:00Z\"}}, \"completed_at\": \"2026-09-27T11:05:00Z\"}\n",
+      "verb": "setup-status"
+    },
+    "status": 200
+  },
+  "surfaces_tenant": {
+    "body": {
+      "exit": 0,
+      "result": {
+        "console": {
+          "bind": "0.0.0.0",
+          "brand": "AcmeBot",
+          "profile": "acme"
+        },
+        "surfaces": [
+          {
+            "delivery": "baked",
+            "description": "This page: setup, activation, updates, components.",
+            "id": "console",
+            "label": "Appliance console",
+            "licence": "Apache-2.0"
+          },
+          {
+            "command": "awsh",
+            "delivery": "baked",
+            "description": "The terminal agent. Run it from an SSH session.",
+            "id": "awsh",
+            "label": "awsh",
+            "licence": "Apache-2.0"
+          },
+          {
+            "delivery": "image-private",
+            "description": "The desktop overlay. Delivered by a license-gated private pull.",
+            "id": "awdesk",
+            "label": "AitherDesktop",
+            "licence": "BUSL-1.1"
+          },
+          {
+            "delivery": "link",
+            "description": "The hosted Living Desktop.",
+            "id": "living_desktop",
+            "label": "Living Desktop",
+            "licence": "BUSL-1.1",
+            "url": "https://desktop.aitherium.com"
+          },
+          {
+            "delivery": "link",
+            "description": "The hosted AitherOS portal.",
+            "id": "aol",
+            "label": "AOL",
+            "licence": "BUSL-1.1",
+            "url": "https://aitherium.com"
+          },
+          {
+            "delivery": "link",
+            "description": "The hosted Veil dashboard.",
+            "id": "veil",
+            "label": "Veil",
+            "licence": "BUSL-1.1",
+            "url": "https://aitherium.com"
+          },
+          {
+            "delivery": "baked",
+            "description": "The AcmeBot product on this box.",
+            "id": "acme_ui",
+            "label": "AcmeBot",
+            "licence": "commercial",
+            "url": "https://127.0.0.1:8900"
+          }
+        ],
+        "variant": "acme-appliance"
+      },
+      "state": "ok",
+      "stdout_tail": "",
+      "verb": "surfaces"
+    },
+    "status": 200
+  },
+  "unauthorized": {
+    "body": {
+      "detail": "sign in with the console code",
+      "state": "refused"
+    },
+    "status": 401
+  },
+  "updates": {
+    "body": {
+      "exit": 0,
+      "result": {
+        "auto_apply": false,
+        "available_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "booted_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "channel": "stable",
+        "checked_at": "2026-09-27T12:00:00Z",
+        "detail": "",
+        "rollback_available": true,
+        "signer_identity": "https://github.com/Aitherium/awnix/.github/workflows/build-awnix-iso.yml@refs/heads/main",
+        "staged_digest": null,
+        "state": "current"
+      },
+      "state": "ok",
+      "stdout_tail": "{\"checked_at\": \"2026-09-27T12:00:00Z\", \"state\": \"current\", \"channel\": \"stable\", \"booted_digest\": \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"available_digest\": \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"staged_digest\": null, \"signer_identity\": \"https://github.com/Aitherium/awnix/.github/workflows/build-awnix-iso.yml@refs/heads/main\", \"rollback_available\": true, \"auto_apply\": false, \"detail\": \"\"}\n",
+      "verb": "updates-status"
+    },
+    "status": 200
+  }
+}

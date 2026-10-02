@@ -10,12 +10,20 @@
  * router's all-or-nothing `students/bulk`. Edits carry `profile_version`, the
  * optimistic lock the router enforces (409 on a stale edit). Progress is read
  * from the router's graded responses, never computed here.
+ *
+ * ONE ROSTER. For a class that is in Aither Classroom (`classroom: true` from the
+ * router) the roster is Classroom's: it makes the student account, the class member
+ * and the join code, after class consent. Enrol and Import are not rendered for
+ * such a class (the router refuses them too, 409) and the bridge links to the
+ * Classroom roster. They stay for a class made on the Academy API, whose only
+ * roster is this one. Profile edits and progress work for both.
  */
 
 import { useCallback, useEffect, useState } from 'react'
 import {
   ACADEMY_API, type AcademyClass, academyFetch, aliasProblem, listClasses, parseStudentCsv, pct,
 } from './academyApi'
+import AcademyClassroomBridge from './AcademyClassroomBridge'
 
 interface Student {
   student_id: string
@@ -35,10 +43,13 @@ interface Progress {
 
 export interface AcademyStudentProfilesPanelProps {
   apiBase?: string
+  /** Where Aither Classroom is on this host (default: academyApi `classroomHref()`). */
+  classroomUrl?: string
 }
 
-export default function AcademyStudentProfilesPanel({ apiBase = ACADEMY_API }: AcademyStudentProfilesPanelProps) {
+export default function AcademyStudentProfilesPanel({ apiBase = ACADEMY_API, classroomUrl }: AcademyStudentProfilesPanelProps) {
   const [classes, setClasses] = useState<AcademyClass[]>([])
+  const [classesLoaded, setClassesLoaded] = useState(false)
   const [selected, setSelected] = useState('')
   const [students, setStudents] = useState<Student[]>([])
   const [progress, setProgress] = useState<Record<string, Progress>>({})
@@ -61,13 +72,16 @@ export default function AcademyStudentProfilesPanel({ apiBase = ACADEMY_API }: A
     }
   }
 
-  useEffect(() => {
-    void act(async () => {
+  const loadClasses = useCallback(async () => {
+    await act(async () => {
       const cs = await listClasses(apiBase)
       setClasses(cs)
+      setClassesLoaded(true)
       setSelected((cur) => cur || cs[0]?.id || '')
     })
   }, [apiBase])
+
+  useEffect(() => { void loadClasses() }, [loadClasses])
 
   const loadStudents = useCallback(async () => {
     if (!selected) return
@@ -140,12 +154,16 @@ export default function AcademyStudentProfilesPanel({ apiBase = ACADEMY_API }: A
     setProgress((cur) => ({ ...cur, [s.student_id]: p }))
   })
 
+  const current = classes.find((c) => c.id === selected)
+  // The roster of a Classroom class is Classroom's; this panel never adds to it.
+  const rosterInClassroom = current?.classroom === true
+
   return (
     <div className="p-4 space-y-4">
       <header className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold">Student Profiles</h2>
-          <p className="text-sm text-gray-500">Who is in each class, how they learn, and how they are doing.</p>
+          <h2 className="text-lg font-semibold">Learning Profiles</h2>
+          <p className="text-sm text-gray-500">How each student learns, and their progress per standard.</p>
         </div>
         <select value={selected} onChange={(e) => setSelected(e.target.value)}
           className="rounded border px-2 py-1 text-sm" aria-label="Class">
@@ -155,8 +173,12 @@ export default function AcademyStudentProfilesPanel({ apiBase = ACADEMY_API }: A
 
       {error && <div className="rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800">{error}</div>}
 
-      {selected && (
-        <section className="flex flex-wrap items-end gap-2 rounded border p-3 text-sm">
+      {/* Where this class lives, and the way to Aither Classroom (a link, never bare words). */}
+      <AcademyClassroomBridge apiBase={apiBase} cls={current} noClasses={classesLoaded && !error && classes.length === 0}
+        onMoved={loadClasses} href={classroomUrl} />
+
+      {selected && !rosterInClassroom && (
+        <section className="flex flex-wrap items-end gap-2 rounded border p-3 text-sm" data-testid="academy-enroll">
           <label>Student (first name or alias only)
             <input value={form.name} maxLength={40} onChange={(e) => setForm({ ...form, name: e.target.value })}
               className="ml-1 rounded border px-2 py-1" />
@@ -181,8 +203,8 @@ export default function AcademyStudentProfilesPanel({ apiBase = ACADEMY_API }: A
         </section>
       )}
 
-      {selected && (
-        <section className="space-y-2 rounded border p-3 text-sm">
+      {selected && !rosterInClassroom && (
+        <section className="space-y-2 rounded border p-3 text-sm" data-testid="academy-import">
           <label className="block">Import roster (CSV: name, tier A/B/C, accommodations separated by ;)
             <textarea value={csv} onChange={(e) => setCsv(e.target.value)} rows={4}
               placeholder={'name,tier,accommodations\nMaya,A,extra time;large print\nJo,C,'}
@@ -199,7 +221,9 @@ export default function AcademyStudentProfilesPanel({ apiBase = ACADEMY_API }: A
       )}
 
       {selected && students.length === 0 && !busy && !error && (
-        <p className="text-sm text-gray-500">No students enrolled in this class.</p>
+        <p className="text-sm text-gray-500">
+          {rosterInClassroom ? 'No student profiles in this class yet. Students are added on the Aither Classroom roster.' : 'No students enrolled in this class.'}
+        </p>
       )}
 
       <ul className="divide-y rounded border">

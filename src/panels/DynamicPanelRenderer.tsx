@@ -16,7 +16,8 @@
 
 import { useState, useEffect, useCallback, type ReactNode } from 'react'
 import { useAuth, useConfig } from '../hooks'
-import { PANEL_REGISTRY, type PanelMeta } from './registry'
+import { PANEL_REGISTRY, getRetiredPanel, resolvePanelIds, type PanelMeta } from './registry'
+import RetiredPanelNotice from './RetiredPanelNotice'
 import { isPanelUsable, type PanelState } from './panel-state'
 
 // ── Panel component map ──────────────────────────────────────────────
@@ -162,7 +163,6 @@ import GymPanel from './GymPanel'
 // it was never imported here, so the panel rendered "no panel wired up" (RB010).
 import VolunteerComputePanel from './VolunteerComputePanel'
 import AcademyAnalyticsPanel from './AcademyAnalyticsPanel'
-import AcademyLessonStudioPanel from './AcademyLessonStudioPanel'
 import AcademyStudentProfilesPanel from './AcademyStudentProfilesPanel'
 import AcademyLessonsPanel from './AcademyLessonsPanel'
 import ClassroomPublisherPanel from './ClassroomPublisherPanel'
@@ -345,9 +345,9 @@ export const PANEL_COMPONENTS: Record<string, PanelEntry> = {
   'beadspace':           { component: BeadSpacePanel },
   'workspace-members':   { component: WorkspaceMembersPanel },
   'deployed-apps':       { component: DeployedAppsPanel },
-  // Aither Academy (.PRODUCTS/.ACADEMY)
+  // The Academy record tools (.PRODUCTS/.ACADEMY). 'academy-lesson-studio' is
+  // retired into Aither Classroom (registry.ts RETIRED_PANELS); it has no key here.
   'academy-analytics': { component: AcademyAnalyticsPanel },
-  'academy-lesson-studio': { component: AcademyLessonStudioPanel },
   'academy-student-profiles': { component: AcademyStudentProfilesPanel },
   'academy-lessons': { component: AcademyLessonsPanel },
   'classroom-publisher': { component: ClassroomPublisherPanel },
@@ -437,7 +437,7 @@ function resolveActivePanels(
   configOrder: string[] | undefined,
   filterByState: boolean = true,
   allowedStates: PanelState[] = ['usable'],
-): PanelMeta[] {
+): { panels: PanelMeta[]; retired: string[] } {
   // Start with config panels or registry defaults
   let ids: string[]
   if (configPanels && configPanels.length > 0) {
@@ -480,9 +480,18 @@ function resolveActivePanels(
   // wanted. Name every dropped id. PRP002 (check_panel_registry_parity.py) is
   // the build-time half of this.
   // Warned once per id: this runs on every render.
-  const droppedPanelIds = ids.filter(
-    (id) => (!metaMap.has(id) || !(id in PANEL_COMPONENTS)) && !warnedDroppedPanelIds.has(id),
-  )
+  // A RETIRED id is not a typo and is not dropped: it keeps a nav entry that says
+  // where its job went and links there (RetiredPanelNotice). The sorting rule is
+  // registry.ts resolvePanelIds, unit-tested in retired-panels.test.ts.
+  const resolved = resolvePanelIds(ids, (id) => id in PANEL_COMPONENTS)
+  resolved.retired
+    .filter((id) => !warnedDroppedPanelIds.has(id))
+    .forEach((id) => {
+      warnedDroppedPanelIds.add(id)
+      const gone = getRetiredPanel(id)!
+      console.warn(`[DynamicPanelRenderer] panel '${id}' is retired into ${gone.successor} (${gone.to}): ${gone.note}`)
+    })
+  const droppedPanelIds = resolved.dropped.filter((id) => !warnedDroppedPanelIds.has(id))
   if (droppedPanelIds.length > 0) {
     droppedPanelIds.forEach((id) => warnedDroppedPanelIds.add(id))
     console.warn(
@@ -490,10 +499,14 @@ function resolveActivePanels(
         `(no registry entry or no component): ${droppedPanelIds.join(', ')}`,
     )
   }
-  return ids
-    .map((id) => metaMap.get(id))
-    .filter((p): p is PanelMeta => !!p && p.id in PANEL_COMPONENTS)
+  return {
+    panels: resolved.active.map((id) => metaMap.get(id)).filter((p): p is PanelMeta => !!p),
+    retired: resolved.retired,
+  }
 }
+
+/** Nav id of a retired panel's notice: never collides with a live panel id. */
+const retiredNavId = (id: string): string => `retired:${id}`
 
 // ── Main Component ───────────────────────────────────────────────────
 
@@ -513,7 +526,7 @@ export default function DynamicPanelRenderer({
   const [activeTab, setActiveTab] = useState<string>('chat')
 
   // Resolve panels from config or override
-  const activePanels = resolveActivePanels(
+  const { panels: activePanels, retired: retiredIds } = resolveActivePanels(
     overridePanels || config.panels,
     config.disabled_panels,
     config.panel_order,
@@ -523,10 +536,12 @@ export default function DynamicPanelRenderer({
 
   // Default to first panel
   useEffect(() => {
-    if (activePanels.length > 0 && !activePanels.find((p) => p.id === activeTab)) {
-      setActiveTab(activePanels[0].id)
-    }
-  }, [activePanels, activeTab])
+    const onRetired = retiredIds.some((id) => retiredNavId(id) === activeTab)
+    if (onRetired || activePanels.find((p) => p.id === activeTab)) return
+    if (activePanels.length > 0) setActiveTab(activePanels[0].id)
+    // A host whose ONLY panels are retired still shows where they went.
+    else if (retiredIds.length > 0) setActiveTab(retiredNavId(retiredIds[0]))
+  }, [activePanels, retiredIds, activeTab])
 
   // Build NavItems from active panels
   const navItems: NavItem[] = [
@@ -536,10 +551,21 @@ export default function DynamicPanelRenderer({
       label: (config.ui_labels?.[panel.id] || panel.name),
       bottom: BOTTOM_CATEGORIES.has(panel.category),
     })),
+    // One entry per retired id, named for what the teacher is looking for.
+    ...retiredIds.map((id) => ({
+      id: retiredNavId(id),
+      label: `${getRetiredPanel(id)!.was} (moved)`,
+    })),
   ]
 
   // Render the active panel
   const renderPanel = useCallback(() => {
+    const retiredId = retiredIds.find((id) => retiredNavId(id) === activeTab)
+    const gone = retiredId ? getRetiredPanel(retiredId) : undefined
+    if (retiredId && gone) {
+      const hostUrl = gone.configKey ? (config as unknown as Record<string, unknown>)[gone.configKey] : undefined
+      return <RetiredPanelNotice id={retiredId} gone={gone} hostUrl={typeof hostUrl === 'string' ? hostUrl : undefined} />
+    }
     const entry = PANEL_COMPONENTS[activeTab]
     if (!entry) return null
 
@@ -555,6 +581,11 @@ export default function DynamicPanelRenderer({
     if (meta?.apiPrefix) {
       autoProps.apiBase = autoProps.apiBase || meta.apiPrefix
     }
+    // The Academy record panels link to Aither Classroom; a host that serves
+    // Classroom itself says where (AppConfig.classroom_url), else the public door.
+    if (config.classroom_url && activeTab.startsWith('academy-')) {
+      autoProps.classroomUrl = autoProps.classroomUrl || config.classroom_url
+    }
 
     // Chat panel gets the sidebar wrapper
     if (activeTab === 'chat' && chatWithSidebar) {
@@ -562,7 +593,7 @@ export default function DynamicPanelRenderer({
     }
 
     return <Component {...autoProps} />
-  }, [activeTab, chatWithSidebar, panelProps, panelPropOverrides])
+  }, [activeTab, chatWithSidebar, panelProps, panelPropOverrides, retiredIds, config])
 
   return (
     <PortalShell
