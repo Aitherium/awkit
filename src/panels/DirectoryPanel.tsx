@@ -108,6 +108,11 @@ export default function DirectoryPanel({ apiBase = '/api/directory' }: Directory
   const [showInvite, setShowInvite] = useState(false)
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteRole, setInviteRole] = useState('member')
+  // What the last invite actually did. The form used to close on ANY answer and
+  // swallow a failure, so a 404 looked exactly like a sent invitation.
+  const [inviteResult, setInviteResult] = useState<
+    { ok: boolean; text: string; link?: string } | null
+  >(null)
 
   // Roles state
   const [roles, setRoles] = useState<Role[]>([])
@@ -187,11 +192,25 @@ export default function DirectoryPanel({ apiBase = '/api/directory' }: Directory
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: inviteEmail, role: inviteRole }),
       })
-      if (resp.ok) {
-        setShowInvite(false); setInviteEmail(''); setInviteRole('member')
-        fetchMembers()
+      if (!resp.ok) {
+        setInviteResult({ ok: false, text: `The invitation was not created (error ${resp.status}).` })
+        return
       }
-    } catch (e) { console.error('Invite error:', e) }
+      const data = await resp.json().catch(() => ({}))
+      const sent = data.emailed === true
+      setInviteResult({
+        ok: true,
+        link: typeof data.link === 'string' ? data.link : undefined,
+        text: sent
+          ? `Invitation emailed to ${inviteEmail}.`
+          : `Invitation created for ${inviteEmail}. Send them this link — it only works for that address.`,
+      })
+      setInviteEmail(''); setInviteRole('member')
+      fetchMembers()
+    } catch (e) {
+      console.error('Invite error:', e)
+      setInviteResult({ ok: false, text: 'The invitation was not created — the server could not be reached.' })
+    }
   }
 
   const changeRole = async (userId: string, role: string) => {
@@ -392,8 +411,26 @@ export default function DirectoryPanel({ apiBase = '/api/directory' }: Directory
                   </select>
                 </div>
                 <button onClick={handleInvite} style={sBtn(true)}>Send Invite</button>
-                <button onClick={() => setShowInvite(false)} style={sBtn()}>Cancel</button>
+                <button onClick={() => { setShowInvite(false); setInviteResult(null) }} style={sBtn()}>Cancel</button>
               </div>
+              {inviteResult && (
+                <div
+                  role="status"
+                  data-testid="directory-invite-result"
+                  style={{ marginTop: 10, fontSize: '0.8rem', color: inviteResult.ok ? 'var(--text-secondary)' : 'var(--accent-coral)' }}
+                >
+                  {inviteResult.text}
+                  {inviteResult.link && (
+                    <input
+                      readOnly
+                      value={inviteResult.link}
+                      aria-label="Invitation link"
+                      onFocus={e => e.currentTarget.select()}
+                      style={{ ...sInput, marginTop: 6 }}
+                    />
+                  )}
+                </div>
+              )}
             </div>
           )}
 

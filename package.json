@@ -1,6 +1,6 @@
 {
   "name": "@aitherium/awkit",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Shared React workspace panels for AitherOS product portals",
   "type": "module",
   "main": "dist/index.js",
@@ -29,6 +29,110 @@
     "./panels/registry": {
       "types": "./src/panels/registry.ts",
       "import": "./src/panels/registry.ts"
+    },
+    "./panels/learnTheme": {
+      "types": "./src/panels/learnTheme.tsx",
+      "import": "./src/panels/learnTheme.tsx"
+    },
+    "./panels/learnParts": {
+      "types": "./src/panels/learnParts.tsx",
+      "import": "./src/panels/learnParts.tsx"
+    },
+    "./panels/academyApi": {
+      "types": "./src/panels/academyApi.ts",
+      "import": "./src/panels/academyApi.ts"
+    },
+    "./panels/KidQuestPanel": {
+      "types": "./src/panels/KidQuestPanel.tsx",
+      "import": "./src/panels/KidQuestPanel.tsx"
+    },
+    "./panels/FamilyTutorConsolePanel": {
+      "types": "./src/panels/FamilyTutorConsolePanel.tsx",
+      "import": "./src/panels/FamilyTutorConsolePanel.tsx"
+    },
+    "./panels/AcademyMirrorCard": {
+      "types": "./src/panels/AcademyMirrorCard.tsx",
+      "import": "./src/panels/AcademyMirrorCard.tsx"
+    },
+    "./panels/AcademyAnalyticsPanel": {
+      "types": "./src/panels/AcademyAnalyticsPanel.tsx",
+      "import": "./src/panels/AcademyAnalyticsPanel.tsx"
+    },
+    "./panels/AcademyLessonStudioPanel": {
+      "types": "./src/panels/AcademyLessonStudioPanel.tsx",
+      "import": "./src/panels/AcademyLessonStudioPanel.tsx"
+    },
+    "./panels/AcademyStudentProfilesPanel": {
+      "types": "./src/panels/AcademyStudentProfilesPanel.tsx",
+      "import": "./src/panels/AcademyStudentProfilesPanel.tsx"
+    },
+    "./panels/AcademyLessonsPanel": {
+      "types": "./src/panels/AcademyLessonsPanel.tsx",
+      "import": "./src/panels/AcademyLessonsPanel.tsx"
+    },
+    "./panels/classroomApi": {
+      "types": "./src/panels/classroomApi.ts",
+      "import": "./src/panels/classroomApi.ts"
+    },
+    "./panels/ClassroomConsolePanel": {
+      "types": "./src/panels/ClassroomConsolePanel.tsx",
+      "import": "./src/panels/ClassroomConsolePanel.tsx"
+    },
+    "./panels/ClassroomRosterSheet": {
+      "types": "./src/panels/ClassroomRosterSheet.tsx",
+      "import": "./src/panels/ClassroomRosterSheet.tsx"
+    },
+    "./panels/ClassroomSpriteStrip": {
+      "types": "./src/panels/ClassroomSpriteStrip.tsx",
+      "import": "./src/panels/ClassroomSpriteStrip.tsx"
+    },
+    "./panels/ClassroomStudioPanel": {
+      "types": "./src/panels/ClassroomStudioPanel.tsx",
+      "import": "./src/panels/ClassroomStudioPanel.tsx"
+    },
+    "./panels/ClassroomInsightsPanel": {
+      "types": "./src/panels/ClassroomInsightsPanel.tsx",
+      "import": "./src/panels/ClassroomInsightsPanel.tsx"
+    },
+    "./panels/ClassroomRoomPanel": {
+      "types": "./src/panels/ClassroomRoomPanel.tsx",
+      "import": "./src/panels/ClassroomRoomPanel.tsx"
+    },
+    "./panels/ClassroomParentPanel": {
+      "types": "./src/panels/ClassroomParentPanel.tsx",
+      "import": "./src/panels/ClassroomParentPanel.tsx"
+    },
+    "./panels/ClassroomFamilyLinkPanel": {
+      "types": "./src/panels/ClassroomFamilyLinkPanel.tsx",
+      "import": "./src/panels/ClassroomFamilyLinkPanel.tsx"
+    },
+    "./panels/ClassroomNoticesBell": {
+      "types": "./src/panels/ClassroomNoticesBell.tsx",
+      "import": "./src/panels/ClassroomNoticesBell.tsx"
+    },
+    "./panels/ClassroomAiPanel": {
+      "types": "./src/panels/ClassroomAiPanel.tsx",
+      "import": "./src/panels/ClassroomAiPanel.tsx"
+    },
+    "./panels/KidAssignmentsCard": {
+      "types": "./src/panels/KidAssignmentsCard.tsx",
+      "import": "./src/panels/KidAssignmentsCard.tsx"
+    },
+    "./panels/KidAssignmentView": {
+      "types": "./src/panels/KidAssignmentView.tsx",
+      "import": "./src/panels/KidAssignmentView.tsx"
+    },
+    "./appliance": {
+      "types": "./src/appliance/index.ts",
+      "import": "./src/appliance/index.ts"
+    },
+    "./appliance/*": {
+      "types": "./src/appliance/*.ts",
+      "import": [
+        "./src/appliance/*.ts",
+        "./src/appliance/*.tsx",
+        "./src/appliance/*"
+      ]
     },
     "./pages": {
       "types": "./src/pages/index.ts",
@@ -116,7 +220,20 @@
     "./terminal/wrapped-links": {
       "types": "./src/terminal/wrapped-links.ts",
       "import": "./src/terminal/wrapped-links.ts"
-    }
+    },
+    "./desktop": {
+      "types": "./src/desktop/index.ts",
+      "import": "./src/desktop/index.ts"
+    },
+    "./desktop/contexts": {
+      "types": "./src/desktop/contexts/index.ts",
+      "import": "./src/desktop/contexts/index.ts"
+    },
+    "./desktop/*": [
+      "./src/desktop/*.ts",
+      "./src/desktop/*.tsx",
+      "./src/desktop/*"
+    ]
   },
   "publishConfig": {
     "main": "dist/index.js",
@@ -221,6 +338,106 @@
         "types": "./dist/panels/registry.d.ts",
         "import": "./dist/panels/registry.js"
       },
+      "./panels/learnTheme": {
+        "types": "./dist/panels/learnTheme.d.ts",
+        "import": "./dist/panels/learnTheme.js"
+      },
+      "./panels/learnParts": {
+        "types": "./dist/panels/learnParts.d.ts",
+        "import": "./dist/panels/learnParts.js"
+      },
+      "./panels/academyApi": {
+        "types": "./dist/panels/academyApi.d.ts",
+        "import": "./dist/panels/academyApi.js"
+      },
+      "./panels/KidQuestPanel": {
+        "types": "./dist/panels/KidQuestPanel.d.ts",
+        "import": "./dist/panels/KidQuestPanel.js"
+      },
+      "./panels/FamilyTutorConsolePanel": {
+        "types": "./dist/panels/FamilyTutorConsolePanel.d.ts",
+        "import": "./dist/panels/FamilyTutorConsolePanel.js"
+      },
+      "./panels/AcademyMirrorCard": {
+        "types": "./dist/panels/AcademyMirrorCard.d.ts",
+        "import": "./dist/panels/AcademyMirrorCard.js"
+      },
+      "./panels/AcademyAnalyticsPanel": {
+        "types": "./dist/panels/AcademyAnalyticsPanel.d.ts",
+        "import": "./dist/panels/AcademyAnalyticsPanel.js"
+      },
+      "./panels/AcademyLessonStudioPanel": {
+        "types": "./dist/panels/AcademyLessonStudioPanel.d.ts",
+        "import": "./dist/panels/AcademyLessonStudioPanel.js"
+      },
+      "./panels/AcademyStudentProfilesPanel": {
+        "types": "./dist/panels/AcademyStudentProfilesPanel.d.ts",
+        "import": "./dist/panels/AcademyStudentProfilesPanel.js"
+      },
+      "./panels/AcademyLessonsPanel": {
+        "types": "./dist/panels/AcademyLessonsPanel.d.ts",
+        "import": "./dist/panels/AcademyLessonsPanel.js"
+      },
+      "./panels/classroomApi": {
+        "types": "./dist/panels/classroomApi.d.ts",
+        "import": "./dist/panels/classroomApi.js"
+      },
+      "./panels/ClassroomConsolePanel": {
+        "types": "./dist/panels/ClassroomConsolePanel.d.ts",
+        "import": "./dist/panels/ClassroomConsolePanel.js"
+      },
+      "./panels/ClassroomRosterSheet": {
+        "types": "./dist/panels/ClassroomRosterSheet.d.ts",
+        "import": "./dist/panels/ClassroomRosterSheet.js"
+      },
+      "./panels/ClassroomSpriteStrip": {
+        "types": "./dist/panels/ClassroomSpriteStrip.d.ts",
+        "import": "./dist/panels/ClassroomSpriteStrip.js"
+      },
+      "./panels/ClassroomStudioPanel": {
+        "types": "./dist/panels/ClassroomStudioPanel.d.ts",
+        "import": "./dist/panels/ClassroomStudioPanel.js"
+      },
+      "./panels/ClassroomInsightsPanel": {
+        "types": "./dist/panels/ClassroomInsightsPanel.d.ts",
+        "import": "./dist/panels/ClassroomInsightsPanel.js"
+      },
+      "./panels/ClassroomRoomPanel": {
+        "types": "./dist/panels/ClassroomRoomPanel.d.ts",
+        "import": "./dist/panels/ClassroomRoomPanel.js"
+      },
+      "./panels/ClassroomParentPanel": {
+        "types": "./dist/panels/ClassroomParentPanel.d.ts",
+        "import": "./dist/panels/ClassroomParentPanel.js"
+      },
+      "./panels/ClassroomFamilyLinkPanel": {
+        "types": "./dist/panels/ClassroomFamilyLinkPanel.d.ts",
+        "import": "./dist/panels/ClassroomFamilyLinkPanel.js"
+      },
+      "./panels/ClassroomNoticesBell": {
+        "types": "./dist/panels/ClassroomNoticesBell.d.ts",
+        "import": "./dist/panels/ClassroomNoticesBell.js"
+      },
+      "./panels/ClassroomAiPanel": {
+        "types": "./dist/panels/ClassroomAiPanel.d.ts",
+        "import": "./dist/panels/ClassroomAiPanel.js"
+      },
+      "./panels/KidAssignmentsCard": {
+        "types": "./dist/panels/KidAssignmentsCard.d.ts",
+        "import": "./dist/panels/KidAssignmentsCard.js"
+      },
+      "./panels/KidAssignmentView": {
+        "types": "./dist/panels/KidAssignmentView.d.ts",
+        "import": "./dist/panels/KidAssignmentView.js"
+      },
+      "./appliance": {
+        "types": "./dist/appliance/index.d.ts",
+        "import": "./dist/appliance/index.js"
+      },
+      "./appliance/*": {
+        "types": "./dist/appliance/*.d.ts",
+        "import": "./dist/appliance/*.js"
+      },
       "./terminal": {
         "types": "./dist/terminal/index.d.ts",
         "import": "./dist/terminal/index.js"
@@ -228,6 +445,18 @@
       "./terminal/wrapped-links": {
         "types": "./dist/terminal/wrapped-links.d.ts",
         "import": "./dist/terminal/wrapped-links.js"
+      },
+      "./desktop": {
+        "types": "./dist/desktop/index.d.ts",
+        "import": "./dist/desktop/index.js"
+      },
+      "./desktop/contexts": {
+        "types": "./dist/desktop/contexts/index.d.ts",
+        "import": "./dist/desktop/contexts/index.js"
+      },
+      "./desktop/*": {
+        "types": "./dist/desktop/*.d.ts",
+        "import": "./dist/desktop/*.js"
       }
     },
     "registry": "https://npm.pkg.github.com",
@@ -245,14 +474,26 @@
   },
   "dependencies": {
     "@aitherium/bead-space": "^0.1.0",
-    "d3-force": "^3.0.0"
+    "d3-force": "^3.0.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "dompurify": "^3.2.5",
+    "tailwind-merge": "^3.4.0",
+    "yaml": "^2.7.0",
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-dropdown-menu": "^2.1.16",
+    "@radix-ui/react-popover": "^1.1.6",
+    "@radix-ui/react-slider": "^1.3.6",
+    "@radix-ui/react-slot": "^1.2.4"
   },
   "peerDependencies": {
     "react": "^18.0.0 || ^19.0.0",
     "react-dom": "^18.0.0 || ^19.0.0",
     "lucide-react": ">=0.555.0",
     "next": ">=14.0.0",
-    "@huggingface/transformers": ">=3.0.0"
+    "@huggingface/transformers": ">=3.0.0",
+    "framer-motion": ">=10.0.0",
+    "sonner": ">=1.0.0"
   },
   "peerDependenciesMeta": {
     "next": {
@@ -276,7 +517,12 @@
     "@webgpu/types": "^0.1.71",
     "next": "^16.2.7",
     "typescript": "^5.9.3",
-    "esbuild": "^0.25.6"
+    "esbuild": "^0.25.6",
+    "framer-motion": "^12.23.24",
+    "sonner": "^2.0.7",
+    "lucide-react": "^0.555.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
   },
   "license": "UNLICENSED"
 }

@@ -108,7 +108,7 @@ describe('mobile window geometry', () => {
   // test that pins the wrong number is worse than none. Importing the component
   // is not an option: it pulls framer-motion and lucide into a unit test.
   const shell = resolve(
-    __dirname, '../../../desktop-core/src/components/desktop/desktop-window.tsx',
+    __dirname, '../desktop/components/desktop/desktop-window.tsx',
   )
   const src = readFileSync(shell, 'utf8')
   const m = src.match(/MOBILE_MAX_WIDTH\s*=\s*(\d+)/)

@@ -16,6 +16,8 @@ import {
   fromRegistry,
   fromScopeGraph,
   fromTaskHub,
+  fromWorkUniverse,
+  WORK_UNIVERSE_CLUSTER_ORDER,
   type AgentTaskRecord,
   type ComputePoolRecord,
   type ConstellationRecord,
@@ -36,6 +38,7 @@ export interface BeadSpacePanelProps {
 }
 
 type DataSource =
+  | 'universe'
   | 'work'
   | 'agents'
   | 'fleet'
@@ -91,6 +94,18 @@ function unwrap(payload: any, ...keys: string[]): any[] {
  *    AitherVeil/src/app/api/**\/route.ts before being written here.
  */
 const SOURCES: Record<DataSource, SourceConfig> = {
+  universe: {
+    label: "Agents' work",
+    // AitherVeil/src/app/api/beadspace/[...path]/route.ts -> Genesis /beadspace/graph
+    // (lib/beadspace/adapter.py). The REAL work graph: Atlas PM items on the agent
+    // holding their stage, TaskHub, salon threads, agent-written beads. The public
+    // view is the default because this panel opens for every signed-in member; the
+    // operator view (real titles) lives behind a platform-operator check server-side.
+    endpoint: '/beadspace/graph?view=public',
+    hint: 'Every agent a constellation — Atlas PM, tasks, salon threads, their own beads',
+    adapt: (p) => fromWorkUniverse(p),
+    clusterOrder: WORK_UNIVERSE_CLUSTER_ORDER,
+  },
   work: {
     label: 'Work',
     endpoint: '/tasks',
@@ -259,7 +274,7 @@ function useAdaptedBeadData(
 export default function BeadSpacePanel({
   apiBase = '/api',
 }: BeadSpacePanelProps) {
-  const [source, setSource] = useState<DataSource>('work')
+  const [source, setSource] = useState<DataSource>('universe')
   const [selectedNode, setSelectedNode] = useState<BeadNode | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')

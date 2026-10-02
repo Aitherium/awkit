@@ -1,7 +1,8 @@
 'use client'
 
 /**
- * ClassroomPublisherPanel — configure and publish a class's static classroom site
+ * ClassroomPublisherPanel — "Class Website Publisher": configure and publish a class's static website
+ * (an Academy record tool; NOT part of Aither Classroom, whose panels are Classroom{Console,Studio,...})
  * (`/api/v1/academy/classes/{id}/site*`, .PRODUCTS/.ACADEMY/04B).
  *
  * Init or edit the site (GitHub repo `owner/name`, custom domain, theme), request
@@ -119,7 +120,7 @@ export default function ClassroomPublisherPanel({ apiBase = ACADEMY_API }: Class
     <div className="p-4 space-y-4">
       <header className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold">Classroom Publisher</h2>
+          <h2 className="text-lg font-semibold">Class Website Publisher</h2>
           <p className="text-sm text-gray-500">A static site for your class on your own GitHub Pages.</p>
         </div>
         <select value={selected} onChange={(e) => setSelected(e.target.value)}

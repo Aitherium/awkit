@@ -1,0 +1,23 @@
+/**
+ * Desktop components barrel export
+ */
+export { DesktopShell } from './desktop-shell'
+export type { DesktopShellProps, WidgetImportMap } from './desktop-shell'
+export { DesktopCanvas } from './desktop-canvas'
+export { DesktopWindow } from './desktop-window'
+export { DesktopContextMenu } from './desktop-context-menu'
+export { Taskbar } from './taskbar'
+export { SystemTray } from './system-tray'
+export { StartMenu } from './start-menu'
+export { BootSequence } from './boot-sequence'
+export { AltTabSwitcher } from './alt-tab-switcher'
+export { NeuralMinimap } from './neural-minimap'
+export { LockScreen } from './lock-screen'
+export { NotificationCenter, NotificationToast } from './notification-center'
+export { WindowSnapPreview, detectSnapZone, getSnapGeometry } from './window-snap-preview'
+export { SpotlightSearch } from './spotlight-search'
+export { useAIDesktopController, parseDesktopCommand } from './ai-desktop-controller'
+export { AgentCommandPalette } from './agent-command-palette'
+export { AgentContextRegistrar } from './agent-context-registrar'
+export { AgentSidebar } from './agent-sidebar'
+export { AmbientSensesOverlay } from './ambient-senses-overlay'

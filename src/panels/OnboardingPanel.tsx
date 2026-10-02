@@ -20,6 +20,8 @@ interface Plan {
 
 export interface OnboardingPanelProps {
   apiBase?: string
+  /** The host product's name in the copy. */
+  productName?: string
 }
 
 const STATUS_COLOR: Record<string, string> = {
@@ -29,7 +31,7 @@ const STATUS_COLOR: Record<string, string> = {
   pending: 'var(--text-muted, #988294)',
 }
 
-export default function OnboardingPanel({ apiBase = '/api/onboarding' }: OnboardingPanelProps) {
+export default function OnboardingPanel({ apiBase = '/api/onboarding', productName = 'Your assistant' }: OnboardingPanelProps) {
   const [plan, setPlan] = useState<Plan | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState<string | null>(null)
@@ -61,7 +63,7 @@ export default function OnboardingPanel({ apiBase = '/api/onboarding' }: Onboard
     <div style={{ padding: 24, height: '100%', overflow: 'auto', color: 'var(--text-primary)' }}>
       <h2 style={{ margin: '0 0 4px', fontSize: 20 }}>Get set up</h2>
       <p style={{ margin: '0 0 16px', color: 'var(--text-secondary)', fontSize: 13 }}>
-        Connect your studio data and turn on automation — Chelle handles the rest.
+        Connect your studio data and turn on automation — {productName} handles the rest.
       </p>
 
       {/* progress bar */}

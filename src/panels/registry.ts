@@ -331,11 +331,48 @@ export const PANEL_REGISTRY: PanelMeta[] = [
     domain: 'development',
   },
   {
+    id: 'kv-handoff',
+    name: 'kv-handoff — Cross-Model KV Cache Handoff',
+    description: 'Which fleet model pairs can hand each other a KV cache (the bigger model skips prefill), and PASS/REFUSED for a mapper pack against its measured acceptance floors — read-only',
+    category: 'infrastructure',
+    icon: 'arrow-right-left',
+    apiPrefix: '/api/bridge/genesis/api/v1/kv-handoff',
+    requiresBackend: ['kv_handoff.py'],
+    planRequirement: 'free',
+    domain: 'development',
+  },
+  {
+    id: 'embed-migrate',
+    name: 'embed-migrate — Embedding Model Migration',
+    description: 'Switch the fleet embedding model without losing recall: which collections migrate and to what, per-collection progress with the recall verdict, and whether the old embedder is safe to retire (ready + blockers) — read-only, platform operators only',
+    category: 'infrastructure',
+    icon: 'database-zap',
+    apiPrefix: '/api/bridge/genesis/api/v1/embed-migrate',
+    requiresBackend: ['embed_migrate.py'],
+    planRequirement: 'enterprise',
+    domain: 'infrastructure',
+  },
+  {
     id: 'provision',
     name: 'Company Provisioning',
     description: 'One company.yaml provisions every agent: edit the company and its agents, get the YAML and the exact per-agent adk up plan (runs in the browser; provisions nothing itself)',
     category: 'infrastructure',
     icon: 'building-2',
+  },
+  {
+    id: 'appliance',
+    name: 'Appliance',
+    description:
+      'Manage the awnix box this product runs on: license, signed updates, components, ' +
+      'outbound endpoints and the admin guide, through the admin-gated /api/appliance proxy',
+    category: 'infrastructure',
+    icon: 'server',
+    apiPrefix: '/api/appliance',
+    requiresBackend: ['appliance.py'],
+    tiers: ['tenant'],
+    // Off by default: only a product that ships ON an awnix appliance mounts it.
+    defaultEnabled: false,
+    state: 'usable',
   },
   {
     id: 'taxdesk',
@@ -1520,25 +1557,20 @@ export const PANEL_REGISTRY: PanelMeta[] = [
     tenantIsolated: true,
     state: 'usable',
   },
-  // Aither Academy (.PRODUCTS/.ACADEMY). Served by the GENESIS router
+  // The Academy record tools (.PRODUCTS/.ACADEMY). Served by the GENESIS router
   // apps/AitherGenesis/routers/academy.py, not awkit-backend (no requiresBackend);
   // writes need can_teach / can_selfhost (plan >= pro). Pinned by
   // test_awkit_academy_panels_wired.
-  {
-    id: 'academy-lesson-studio',
-    name: 'Lesson Studio',
-    description: 'Classes and differentiated lessons, from draft to approved to published',
-    category: 'business',
-    icon: 'graduation-cap',
-    apiPrefix: '/api/v1/academy',
-    planRequirement: 'pro',
-    tenantIsolated: true,
-    state: 'usable',
-  },
+  //
+  // ONE CLASSROOM PRODUCT: the teacher's product is Aither Classroom (/classroom,
+  // the Classroom* panels). These five stay because each is the only home of
+  // something Classroom does not do yet, and each NAME says what it is without
+  // the word "Classroom" or a second "Studio" (test_one_classroom_product.py).
+  // The old 'academy-lesson-studio' entry is retired: see RETIRED_PANELS below.
   {
     id: 'academy-student-profiles',
-    name: 'Student Profiles',
-    description: 'Enroll students by first name or alias, record how they learn, read their progress',
+    name: 'Learning Profiles',
+    description: 'How each student learns: tier, modality and accommodations, with progress per standard. For a class in Aither Classroom the roster, join sheet and parent codes are there',
     category: 'business',
     icon: 'users',
     apiPrefix: '/api/v1/academy',
@@ -1548,8 +1580,8 @@ export const PANEL_REGISTRY: PanelMeta[] = [
   },
   {
     id: 'academy-analytics',
-    name: 'Class Analytics',
-    description: 'Mastery per standard, engagement and lesson effectiveness by tier for a class',
+    name: 'Mastery Analytics',
+    description: 'Mastery per standard, submission rate and lesson scores by tier for a class',
     category: 'analytics',
     icon: 'bar-chart-3',
     apiPrefix: '/api/v1/academy',
@@ -1559,8 +1591,8 @@ export const PANEL_REGISTRY: PanelMeta[] = [
   },
   {
     id: 'academy-lessons',
-    name: 'Lessons',
-    description: 'Find a lesson, download its artifacts, issue and revoke expiring share links',
+    name: 'Lesson Library',
+    description: 'Find a lesson again, download its artifacts, issue and revoke expiring share links',
     category: 'business',
     icon: 'book-open',
     apiPrefix: '/api/v1/academy',
@@ -1570,8 +1602,8 @@ export const PANEL_REGISTRY: PanelMeta[] = [
   },
   {
     id: 'classroom-publisher',
-    name: 'Classroom Publisher',
-    description: 'Configure a class site (GitHub repo, domain, theme), request a publish, read the publish log',
+    name: 'Class Website Publisher',
+    description: 'Configure a class website (GitHub repo, domain, theme), request a publish, read the publish log',
     category: 'business',
     icon: 'upload-cloud',
     apiPrefix: '/api/v1/academy',
@@ -1581,8 +1613,8 @@ export const PANEL_REGISTRY: PanelMeta[] = [
   },
   {
     id: 'classroom-site-viewer',
-    name: 'Classroom Site',
-    description: 'A class site\'s configuration, the published lessons it serves, and whether publishing is wired',
+    name: 'Class Website',
+    description: 'A class website\'s configuration, the published lessons it serves, and whether publishing is wired',
     category: 'business',
     icon: 'globe',
     apiPrefix: '/api/v1/academy',
@@ -1602,6 +1634,86 @@ export const PANEL_REGISTRY: PanelMeta[] = [
     state: 'usable',
   },
 ]
+
+/**
+ * Panel ids that were retired INTO another surface. A retired id has no
+ * PANEL_REGISTRY entry and no component: a host that still names one (a stored
+ * pack config, an old deep link) is told where the job went instead of getting
+ * an anonymous "unknown panel". `to` is the route that does the job now and is
+ * the same value as the id's `panel:` row in Veil's src/data/route-map.yaml
+ * (action: redirect); test_one_classroom_product.py holds the two together.
+ */
+export interface RetiredPanel {
+  /** Route of the surface that does this job now. */
+  to: string
+  /** The successor's public door: a host that does not serve `to` itself links here. */
+  door: string
+  /** AppConfig key a host sets when it serves the successor itself (useConfig.ts). */
+  configKey?: string
+  /** What the retired panel was called, as a person read it in the nav. */
+  was: string
+  /** What that surface is called, as a person reads it. */
+  successor: string
+  /** One line: what moved, and where it is inside the successor. */
+  note: string
+}
+
+export const RETIRED_PANELS: Readonly<Record<string, RetiredPanel>> = {
+  'academy-lesson-studio': {
+    to: '/classroom',
+    door: 'https://academy.aitherium.com',
+    configKey: 'classroom_url',
+    was: 'Lesson Studio',
+    successor: 'Aither Classroom',
+    note: 'Creating a class and drafting, tiering and publishing a lesson are in the Aither Classroom teacher console and its lesson studio',
+  },
+}
+
+/** Where a retired panel id went, or undefined for a live or unknown id. */
+export function getRetiredPanel(id: string): RetiredPanel | undefined {
+  return Object.prototype.hasOwnProperty.call(RETIRED_PANELS, id) ? RETIRED_PANELS[id] : undefined
+}
+
+/** What a host's list of panel ids resolves to. Every id lands in exactly one list. */
+export interface PanelIdResolution {
+  /** Registered and renderable, in the order given. */
+  active: string[]
+  /** Retired into another surface: the host shows where the job went, never nothing. */
+  retired: string[]
+  /** Neither: a typo or a panel not built yet. Named in a console warning. */
+  dropped: string[]
+}
+
+/**
+ * Sort a host's panel ids into active / retired / dropped. Pure (no React, no
+ * component imports) so the rule is unit-tested: DynamicPanelRenderer passes
+ * `hasComponent = id in PANEL_COMPONENTS`. A duplicate id is kept once. An id
+ * that is both live and in RETIRED_PANELS is active (retired-panels.test.ts
+ * forbids that state anyway).
+ */
+export function resolvePanelIds(ids: readonly string[], hasComponent: (id: string) => boolean): PanelIdResolution {
+  const live = new Set(PANEL_REGISTRY.map(p => p.id))
+  const seen = new Set<string>()
+  const out: PanelIdResolution = { active: [], retired: [], dropped: [] }
+  for (const id of ids) {
+    if (seen.has(id)) continue
+    seen.add(id)
+    if (live.has(id) && hasComponent(id)) out.active.push(id)
+    else if (getRetiredPanel(id)) out.retired.push(id)
+    else out.dropped.push(id)
+  }
+  return out
+}
+
+/**
+ * The link a retired-panel notice offers: `hostUrl` when the host says where it
+ * serves the successor (an http(s) URL or a rooted path), else the successor's
+ * public door. `to` alone is not used: a host that is not Veil has no such route.
+ */
+export function retiredPanelHref(gone: RetiredPanel, hostUrl?: string | null): string {
+  const v = typeof hostUrl === 'string' ? hostUrl.trim() : ''
+  return /^(https?:\/\/|\/(?!\/))/.test(v) ? v : gone.door
+}
 
 /** Lookup panel by ID */
 export function getPanelById(id: string): PanelMeta | undefined {

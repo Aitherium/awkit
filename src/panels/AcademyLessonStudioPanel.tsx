@@ -3,6 +3,11 @@
 /**
  * AcademyLessonStudioPanel — classes and lessons (`/api/v1/academy/classes/*`).
  *
+ * RETIRED 2026-10-01 (registry.ts RETIRED_PANELS): superseded by Aither Classroom
+ * (ClassroomConsolePanel creates the class, ClassroomStudioPanel drafts, tiers and
+ * publishes). No registry entry, no render-map key, no index export, no OS app. The
+ * module and its package.json export stay so an embedder that imports it by path builds.
+ *
  * Create a class, draft a differentiated lesson, approve and publish it. Lesson
  * GENERATION is not triggered from here (the router records `generation:
  * not_started`; artifacts arrive through the pipeline) — the panel shows that

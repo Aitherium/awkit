@@ -1,7 +1,8 @@
 'use client'
 
 /**
- * ClassroomSiteViewerPanel — what a class's site holds and where it lives
+ * ClassroomSiteViewerPanel — "Class Website": what a class's site holds and where it lives
+ * (an Academy record tool; NOT part of Aither Classroom)
  * (`/api/v1/academy/classes/{id}/site`, `/lessons`, `/health`). Read-only.
  *
  * Shows the site configuration, the published lessons it serves, and whether a
@@ -74,7 +75,7 @@ export default function ClassroomSiteViewerPanel({ apiBase = ACADEMY_API }: Clas
     <div className="p-4 space-y-4">
       <header className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold">Classroom Site</h2>
+          <h2 className="text-lg font-semibold">Class Website</h2>
           <p className="text-sm text-gray-500">Where your class site lives and which lessons it serves.</p>
         </div>
         <select value={selected} onChange={(e) => setSelected(e.target.value)}
@@ -93,7 +94,7 @@ export default function ClassroomSiteViewerPanel({ apiBase = ACADEMY_API }: Clas
 
       {noSite && (
         <p className="text-sm text-gray-500">
-          {cls?.name ?? 'This class'} has no classroom site. Set one up in Classroom Publisher.
+          {cls?.name ?? 'This class'} has no class website. Set one up in Class Website Publisher.
         </p>
       )}
       {site && (

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 
-interface Conversation {
+export interface ConversationListItem {
   conversation_id: string
   title: string
   started_by: string
@@ -9,20 +9,30 @@ interface Conversation {
   message_count: number
 }
 
+type Conversation = ConversationListItem
+
 interface Props {
   activeId: string | null
   onSelect: (id: string) => void
+  /** Controlled mode: the caller supplies the list (e.g. a browser extension with
+   *  its own store and a bearer-authed origin) and nothing is fetched here. */
+  conversations?: ConversationListItem[]
+  /** Controlled mode delete; replaces the confirm() + DELETE /api/chat/... calls. */
+  onDelete?: (id: string) => void | Promise<void>
   /** Bump this number from the parent to force a re-fetch (e.g. after a new
    *  conversation is created by the chat endpoint). */
   refreshKey?: number
 }
 
-export default function ConversationList({ activeId, onSelect, refreshKey = 0 }: Props) {
-  const [conversations, setConversations] = useState<Conversation[]>([])
+export default function ConversationList({ activeId, onSelect, refreshKey = 0, conversations: provided, onDelete }: Props) {
+  const [fetched, setConversations] = useState<Conversation[]>([])
+  const controlled = provided !== undefined
+  const conversations = provided ?? fetched
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [authError, setAuthError] = useState(false)
 
   const reload = useCallback(async () => {
+    if (controlled) return
     // Two parallel sources of truth: the native chat router
     // (`/api/chat/conversations`) and the aitherchat ReAct loop
     // (`/api/chat/aither/conversations`). Different apps wire one, the other,
@@ -82,7 +92,7 @@ export default function ConversationList({ activeId, onSelect, refreshKey = 0 }:
     })
     setAuthError(saw401 && out.length === 0)
     setConversations(out)
-  }, [])
+  }, [controlled])
 
   useEffect(() => { reload() }, [reload, refreshKey])
 
@@ -92,6 +102,11 @@ export default function ConversationList({ activeId, onSelect, refreshKey = 0 }:
 
   const handleDelete = useCallback(async (e: React.MouseEvent, id: string) => {
     e.stopPropagation()
+    if (onDelete) {
+      setDeletingId(id)
+      try { await onDelete(id) } finally { setDeletingId(null) }
+      return
+    }
     if (!window.confirm('Delete this conversation? This cannot be undone.')) return
     setDeletingId(id)
     try {
@@ -108,7 +123,7 @@ export default function ConversationList({ activeId, onSelect, refreshKey = 0 }:
     } finally {
       setDeletingId(null)
     }
-  }, [activeId, onSelect])
+  }, [activeId, onSelect, onDelete])
 
   return (
     <div style={{ overflow: 'auto', maxHeight: 300 }}>

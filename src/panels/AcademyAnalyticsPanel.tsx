@@ -10,6 +10,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { ACADEMY_API, type AcademyClass, academyFetch, listClasses, pct } from './academyApi'
+import AcademyClassroomBridge from './AcademyClassroomBridge'
 
 interface ClassAnalytics {
   class_id: string
@@ -40,6 +41,8 @@ export interface AcademyAnalyticsPanelProps {
   apiBase?: string
   /** Preselect a class; otherwise the first class is shown. */
   classId?: string
+  /** Where Aither Classroom is on this host (default: academyApi `classroomHref()`). */
+  classroomUrl?: string
 }
 
 function masteryTone(v: number | null): string {
@@ -52,6 +55,7 @@ function masteryTone(v: number | null): string {
 export default function AcademyAnalyticsPanel({
   apiBase = ACADEMY_API,
   classId,
+  classroomUrl,
 }: AcademyAnalyticsPanelProps) {
   const [classes, setClasses] = useState<AcademyClass[]>([])
   const [selected, setSelected] = useState<string>(classId || '')
@@ -59,19 +63,19 @@ export default function AcademyAnalyticsPanel({
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    listClasses(apiBase)
-      .then((cs) => {
-        setClasses(cs)
-        if (!selected && cs.length) setSelected(cs[0].id)
-        if (!cs.length) setLoading(false)
-      })
-      .catch((e: Error) => {
-        setError(e.message)
-        setLoading(false)
-      })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  const loadClasses = useCallback(async () => {
+    try {
+      const cs = await listClasses(apiBase)
+      setClasses(cs)
+      setSelected((cur) => cur || cs[0]?.id || '')
+      if (!cs.length) setLoading(false)
+    } catch (e) {
+      setError((e as Error).message)
+      setLoading(false)
+    }
   }, [apiBase])
+
+  useEffect(() => { void loadClasses() }, [loadClasses])
 
   const load = useCallback(async () => {
     if (!selected) return
@@ -102,8 +106,8 @@ export default function AcademyAnalyticsPanel({
     <div className="p-4 space-y-4">
       <header className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold">Class Analytics</h2>
-          <p className="text-sm text-gray-500">Mastery, engagement and which lessons land, per class.</p>
+          <h2 className="text-lg font-semibold">Mastery Analytics</h2>
+          <p className="text-sm text-gray-500">Mastery per standard, submission rate and lesson scores by tier, per class.</p>
         </div>
         <div className="flex gap-2">
           <select
@@ -128,9 +132,9 @@ export default function AcademyAnalyticsPanel({
         </div>
       )}
       {loading && <p className="text-sm text-gray-500">Loading…</p>}
-      {!loading && !error && classes.length === 0 && (
-        <p className="text-sm text-gray-500">No classes yet — create one in Lesson Studio.</p>
-      )}
+      {/* Where this class lives, and the way to Aither Classroom (a link, never bare words). */}
+      <AcademyClassroomBridge apiBase={apiBase} cls={classes.find((c) => c.id === selected)}
+        noClasses={!loading && !error && classes.length === 0} onMoved={loadClasses} href={classroomUrl} />
 
       {o && eng && (
         <>

@@ -350,6 +350,7 @@ const CompanyRoom = forwardRef<CompanyRoomHandle, CompanyRoomProps>(function Com
                 return enableHardware ? (
                   <div style={{ maxHeight: '70vh', overflowY: 'auto' }}>
                     <MyHardwarePanel
+                      productName={appName}
                       onShowUniverse={() => {
                         const space = SUMMONS.find((x) => x.id === 'bead-space')
                         if (!space) return

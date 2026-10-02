@@ -71,10 +71,10 @@ export function generateThemeFromColors(
 }
 
 //
-// The gargbot / chelle / wildroot presets were REMOVED 2026-09-05. They named
+// The three customer-named presets were REMOVED 2026-09-05. They named
 // customers inside a package strangers install, which is a disclosure no secret
 // scanner fires on -- and they had NO consumer: nothing anywhere passes
-// preset="gargbot", and StorefrontThemeProvider already falls back to
+// a customer preset key, and StorefrontThemeProvider already falls back to
 // `aitherium` for an unknown key while accepting a full theme via `themeProp`.
 // A tenant's real theme lives in its pack (`brand.color_primary` /
 // `color_accent` / `color_surface`), which is what actually deploys; these were

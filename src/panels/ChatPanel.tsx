@@ -12,6 +12,7 @@ import { markFile } from '../lib/brandTokens'
 import { useVoiceChat } from '../voice/useVoiceChat'
 import { VoiceMicButton } from '../voice/VoiceMicButton'
 import { getApiBase } from '../lib/apiBase'
+import { fetchThroughRestart } from '../lib/restartFetch'
 
 interface LLMUsage {
   provider: string
@@ -439,7 +440,7 @@ export default function ChatPanel({ conversationId, onNewConversation, externalI
     setMessages(prev => [...prev, { role: 'user', content: text }])
     setLoading(true)
     try {
-      const resp = await fetch(engine === 'aitherchat' ? '/api/chat/aither' : '/api/chat/stream', {
+      const resp = await fetchThroughRestart(engine === 'aitherchat' ? '/api/chat/aither' : '/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: text, conversation_id: conversationId || undefined }),
@@ -677,9 +678,7 @@ export default function ChatPanel({ conversationId, onNewConversation, externalI
     let doneReceived = false
 
     try {
-      const controller = new AbortController()
-      const connectTimeout = setTimeout(() => controller.abort(), 60_000)
-      const resp = await fetch(`${getApiBase()}/api/chat/aither`, {
+      const resp = await fetchThroughRestart(`${getApiBase()}/api/chat/aither`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -687,9 +686,11 @@ export default function ChatPanel({ conversationId, onNewConversation, externalI
           conversation_id: conversationId || undefined,
           stream: true,
         }),
-        signal: controller.signal,
+      }, {
+        attemptTimeoutMs: 60_000,
+        onRetry: () => setStreamStatus('Reconnecting: the server is restarting, your message will be sent again'),
       })
-      clearTimeout(connectTimeout)
+      setStreamStatus(null)
       if (!resp.ok) {
         let detail = `Server error (${resp.status})`
         try { const err = await resp.json(); detail = err.detail || err.error || detail } catch {}
@@ -857,11 +858,12 @@ export default function ChatPanel({ conversationId, onNewConversation, externalI
     let usage: LLMUsage | undefined
 
     try {
-      const resp = await fetch(`${getApiBase()}/api/chat/stream`, {
+      const resp = await fetchThroughRestart(`${getApiBase()}/api/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: msg, conversation_id: conversationId || undefined }),
-      })
+      }, { onRetry: () => setStreamStatus('Reconnecting: the server is restarting, your message will be sent again') })
+      setStreamStatus(null)
       if (!resp.ok) {
         let detail = `Server error (${resp.status})`
         try { const err = await resp.json(); detail = err.detail || err.error || detail } catch {}

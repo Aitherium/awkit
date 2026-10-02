@@ -1,0 +1,335 @@
+/*
+ * Appliance console styles. awkit-vars.css tokens ONLY (no literal colours), so the
+ * ThemeProvider palette and the [data-theme="light"] block both apply. Every class is
+ * prefixed awx- so the console can be embedded in a tenant portal without collisions.
+ * Holds at 360 px: cards stack, the tab bar scrolls inside itself, never the page.
+ */
+.awx-root {
+  min-height: 100%;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-sans, system-ui, sans-serif);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.awx-pad {
+  padding: 16px;
+}
+
+.awx-muted {
+  color: var(--text-muted);
+}
+
+/* ── header + tabs ─────────────────────────────────────────────────────── */
+
+.awx-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+}
+
+.awx-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.awx-brand-name {
+  font-family: var(--font-display, var(--font-sans, system-ui, sans-serif));
+  font-weight: 600;
+  font-size: 17px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.awx-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px 0;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+  scrollbar-width: thin;
+}
+
+.awx-tab {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border-bottom: 2px solid transparent;
+  color: var(--text-secondary);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.awx-tab:hover {
+  color: var(--text-primary);
+}
+
+.awx-tab:focus-visible,
+.awx-btn:focus-visible,
+.awx-input:focus-visible,
+.awx-link:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+.awx-tab-active {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent-primary);
+}
+
+.awx-main {
+  padding: 16px;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+/* ── cards ─────────────────────────────────────────────────────────────── */
+
+.awx-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  gap: 16px;
+}
+
+.awx-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg, 10px);
+  padding: 16px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.awx-card h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.awx-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.awx-card-head h2 {
+  margin: 0;
+}
+
+.awx-dl {
+  margin: 8px 0 0;
+}
+
+.awx-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.awx-row:last-child {
+  border-bottom: 0;
+}
+
+.awx-row dt {
+  color: var(--text-muted);
+}
+
+.awx-row dd {
+  margin: 0;
+  text-align: right;
+  min-width: 0;
+}
+
+.awx-licence {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.awx-link {
+  color: var(--accent-primary);
+}
+
+.awx-root code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+.awx-command {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius, 6px);
+  background: var(--bg-base);
+}
+
+.awx-command code {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+/* ── badges + notices ──────────────────────────────────────────────────── */
+
+.awx-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.awx-tone-ok {
+  color: var(--accent-success);
+}
+
+.awx-tone-warn {
+  color: var(--accent-warn);
+}
+
+.awx-tone-danger {
+  color: var(--accent-danger);
+}
+
+.awx-tone-muted {
+  color: var(--text-muted);
+}
+
+.awx-notice {
+  border: 1px solid currentColor;
+  border-radius: var(--radius-lg, 10px);
+  padding: 12px 16px;
+  background: var(--bg-elevated);
+}
+
+.awx-notice strong {
+  display: block;
+}
+
+.awx-notice-detail {
+  margin: 4px 0 8px;
+  color: var(--text-secondary);
+}
+
+.awx-inline-msg {
+  margin: 0;
+  font-size: 14px;
+}
+
+/* ── controls ──────────────────────────────────────────────────────────── */
+
+.awx-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 8px 14px;
+  border-radius: var(--radius, 6px);
+  border: 1px solid var(--border-default);
+  background: var(--bg-overlay);
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.awx-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.awx-btn-primary {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: var(--bg-deep);
+  font-weight: 600;
+}
+
+.awx-btn-quiet {
+  background: transparent;
+}
+
+.awx-btn-danger {
+  border-color: var(--accent-danger);
+  color: var(--accent-danger);
+  background: transparent;
+}
+
+.awx-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.awx-field > span {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.awx-input {
+  min-height: 40px;
+  padding: 8px 10px;
+  border-radius: var(--radius, 6px);
+  border: 1px solid var(--border-default);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font: inherit;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* ── login ─────────────────────────────────────────────────────────────── */
+
+.awx-login {
+  display: flex;
+  justify-content: center;
+  padding: 48px 16px;
+}
+
+.awx-login-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  max-width: 420px;
+}
+
+.awx-login-title {
+  margin: 0;
+  font-family: var(--font-display, var(--font-sans, system-ui, sans-serif));
+  font-size: 22px;
+}
+
+.awx-code-input {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 20px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 480px) {
+  .awx-main {
+    padding: 12px;
+  }
+  .awx-header {
+    padding: 10px 12px;
+  }
+  .awx-login {
+    padding: 24px 12px;
+  }
+}

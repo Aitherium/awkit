@@ -12,7 +12,7 @@
  * AUTO-GENERATED from `AitherOS/config/registry-unified.json`
  * DO NOT EDIT by hand. Run: python AitherOS/dev/tools/generate_panel_state.py
  *
- * Generated: 2026-09-27T12:21:23.211770
+ * Generated: 2026-09-28T08:38:06.742925
  * Source: AitherOS/config/registry-unified.json
  * Panels: 142 total
  * State breakdown: demo: 2, unbuilt: 1, usable: 139
@@ -40,7 +40,6 @@ export interface PanelStateEntry {
  */
 export const PANEL_STATE_MAP: Record<string, PanelState> = {
   'academy-analytics': 'usable',
-  'academy-lesson-studio': 'usable',
   'academy-lessons': 'usable',
   'academy-student-profiles': 'usable',
   'access-policy': 'usable',
@@ -53,6 +52,7 @@ export const PANEL_STATE_MAP: Record<string, PanelState> = {
   'aither-sprite': 'usable',
   'aithergraph': 'usable',
   'analytics': 'usable',
+  'appliance': 'usable',
   'approval-queue': 'usable',
   'approvals-inbox': 'usable',
   'audit': 'usable',
