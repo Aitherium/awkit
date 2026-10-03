@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { getApiBase } from '../lib/apiBase'
 
 interface ActivityEvent {
   id: string
@@ -44,24 +45,50 @@ export default function ActivityFeedPanel({ apiBase = '/api/activity', limit = 1
   const esRef = useRef<EventSource | null>(null)
 
   useEffect(() => {
-    const es = new EventSource(`${apiBase}/stream`)
-    esRef.current = es
+    let closed = false
+    let retry: ReturnType<typeof setTimeout> | undefined
 
-    es.onmessage = (msg) => {
-      try {
-        const event: ActivityEvent = JSON.parse(msg.data)
-        setEvents(prev => [event, ...prev].slice(0, limit))
-      } catch { /* ignore parse errors */ }
+    // Recent history first: the stream only carries NEW events, so a quiet
+    // workspace used to read "No recent activity" forever.
+    fetch(`${apiBase}?limit=${limit}`, { credentials: 'include' })
+      .then(r => (r.ok ? r.json() : null))
+      .then((d: { activity?: ActivityEvent[] } | null) => {
+        if (!closed && d && Array.isArray(d.activity)) {
+          setEvents(prev => (prev.length ? prev : d.activity!.slice(0, limit)))
+        }
+      })
+      .catch(() => { /* the stream below still delivers new events */ })
+
+    // EventSource is not routed by the fetch wrapper, so a relative URL on a
+    // static tenant site (<tenant>.aitherium.com) hit the CDN and 404'd on every
+    // page (measured 2026-10-03). Resolve the API base explicitly.
+    const streamUrl = /^https?:\/\//.test(apiBase) ? `${apiBase}/stream`
+      : `${getApiBase()}${apiBase}/stream`
+
+    const open = () => {
+      if (closed) return
+      const es = new EventSource(streamUrl, { withCredentials: true })
+      esRef.current = es
+      es.onmessage = (msg) => {
+        try {
+          const event: ActivityEvent = JSON.parse(msg.data)
+          setEvents(prev => [event, ...prev.filter(p => p.id !== event.id)].slice(0, limit))
+        } catch { /* ignore parse errors */ }
+      }
+      // Reconnect with the SAME handlers. The old retry made a bare EventSource
+      // with no onmessage, so after the first drop the feed went silent.
+      es.onerror = () => {
+        es.close()
+        if (!closed) retry = setTimeout(open, 5000)
+      }
     }
+    open()
 
-    es.onerror = () => {
-      es.close()
-      setTimeout(() => {
-        esRef.current = new EventSource(`${apiBase}/stream`)
-      }, 5000)
+    return () => {
+      closed = true
+      if (retry) clearTimeout(retry)
+      esRef.current?.close()
     }
-
-    return () => { es.close() }
   }, [apiBase, limit])
 
   return (
