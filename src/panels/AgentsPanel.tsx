@@ -29,11 +29,70 @@ interface Node {
 
 type View = 'fleet' | 'nodes' | 'dispatch'
 
-interface AgentsPanelProps {
-  apiBase?: string
+/** One agent -> person row from /api/agents/assignments. */
+export interface AgentAssignment {
+  agent_id: string
+  agent_name?: string
+  assignee_id: string
+  assignee_name?: string
+  assignee_email?: string
 }
 
-export default function AgentsPanel({ apiBase = '/api/platform' }: AgentsPanelProps = {}) {
+/** Someone an agent can be assigned to: a directory employee or a workspace user. */
+export interface AssignablePerson {
+  id: string
+  name: string
+  email?: string
+}
+
+/** The key the assignment store files an agent under; the same one dispatch uses. */
+export function agentKey(a: Agent, i = 0): string {
+  return a.agent_id || a.id || a.name || `agent-${i}`
+}
+
+/**
+ * Tenant sites hold people in two places -- the directory (employees, keyed by
+ * entity id) and the signed-in workspace members (keyed by user id). The backend
+ * accepts either id, so the picker offers both, de-duplicated by email.
+ */
+export function mergePeople(directory: any, workspace: any): AssignablePerson[] {
+  const out: AssignablePerson[] = []
+  const seen = new Set<string>()
+  const push = (id: string, name: string, email?: string) => {
+    const k = (email || '').toLowerCase() || `id:${id}`
+    if (!id || seen.has(k)) return
+    seen.add(k)
+    out.push({ id, name: name || email || id, email })
+  }
+  for (const m of directory?.members || []) push(m.id, m.data?.name || m.title, m.data?.email)
+  for (const m of workspace?.members || []) push(m.user_id, m.display_name, m.email)
+  return out
+}
+
+/**
+ * A readable message from an error body's `detail`. FastAPI sends a string for
+ * an HTTPException but an ARRAY of `{loc, msg}` for a 422 validation error, and
+ * `${detail}` of that array rendered "Failed: [object Object]".
+ */
+export function detailMessage(detail: unknown, status: number | string): string {
+  const one = (d: any): string =>
+    typeof d === 'string' ? d
+      : d && typeof d === 'object' ? String(d.msg || d.message || d.detail || JSON.stringify(d))
+        : d == null ? '' : String(d)
+  const text = Array.isArray(detail) ? detail.map(one).filter(Boolean).join('; ') : one(detail)
+  return text || String(status)
+}
+
+interface AgentsPanelProps {
+  apiBase?: string
+  /** Agent -> person assignments (awkit-backend routers/agent_assignments.py). */
+  assignmentsBase?: string
+}
+
+export default function AgentsPanel({
+  apiBase = '/api/platform',
+  assignmentsBase = '/api/agents/assignments',
+}: AgentsPanelProps = {}) {
   const [view, setView] = useState<View>('fleet')
   const [agents, setAgents] = useState<Agent[]>([])
   const [nodes, setNodes] = useState<Node[]>([])
@@ -49,6 +108,13 @@ export default function AgentsPanel({ apiBase = '/api/platform' }: AgentsPanelPr
   const [registerUrl, setRegisterUrl] = useState('')
   const [registering, setRegistering] = useState(false)
   const [registerStatus, setRegisterStatus] = useState('')
+  // Assignments: who owns which agent. `canManage` comes from the server (admin
+  // role), never inferred here -- the backend refuses non-admin writes anyway.
+  const [assignments, setAssignments] = useState<Record<string, AgentAssignment>>({})
+  const [canManage, setCanManage] = useState(false)
+  const [people, setPeople] = useState<AssignablePerson[]>([])
+  const [assignee, setAssignee] = useState('')
+  const [assignStatus, setAssignStatus] = useState('')
 
   const fetchFleet = useCallback(async () => {
     setLoading(true)
@@ -70,10 +136,56 @@ export default function AgentsPanel({ apiBase = '/api/platform' }: AgentsPanelPr
     finally { setLoading(false) }
   }, [])
 
+  const fetchAssignments = useCallback(async () => {
+    try {
+      const r = await fetch(assignmentsBase)
+      if (!r.ok) { setAssignments({}); setCanManage(false); return }
+      const d = await r.json()
+      const map: Record<string, AgentAssignment> = {}
+      for (const a of (d.assignments || []) as AgentAssignment[]) map[a.agent_id] = a
+      setAssignments(map)
+      setCanManage(Boolean(d.can_manage))
+      if (d.can_manage) {
+        const [dir, ws] = await Promise.all([
+          fetch('/api/directory/members').then(x => x.ok ? x.json() : {}).catch(() => ({})),
+          fetch('/api/workspace/members').then(x => x.ok ? x.json() : {}).catch(() => ({})),
+        ])
+        setPeople(mergePeople(dir, ws))
+      }
+    } catch { setAssignments({}); setCanManage(false) }
+  }, [assignmentsBase])
+
   useEffect(() => {
-    if (view === 'fleet') fetchFleet()
+    if (view === 'fleet') { fetchFleet(); fetchAssignments() }
     if (view === 'nodes') fetchNodes()
-  }, [view, fetchFleet, fetchNodes])
+  }, [view, fetchFleet, fetchNodes, fetchAssignments])
+
+  const assignAgent = async (a: Agent, personId: string) => {
+    if (!personId) return
+    setAssignStatus('')
+    try {
+      const r = await fetch(`${assignmentsBase}/${encodeURIComponent(agentKey(a))}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assignee_id: personId, agent_name: a.name }),
+      })
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}))
+        setAssignStatus(`Failed: ${detailMessage(d.detail, r.status)}`)
+        return
+      }
+      setAssignee('')
+      await fetchAssignments()
+    } catch { setAssignStatus('Failed: network error') }
+  }
+
+  const unassignAgent = async (a: Agent) => {
+    setAssignStatus('')
+    try {
+      const r = await fetch(`${assignmentsBase}/${encodeURIComponent(agentKey(a))}`, { method: 'DELETE' })
+      if (!r.ok && r.status !== 404) { setAssignStatus(`Failed: ${r.status}`); return }
+      await fetchAssignments()
+    } catch { setAssignStatus('Failed: network error') }
+  }
 
   const dispatch = async () => {
     if (!dispatchAgent || !dispatchTask) return
@@ -141,7 +253,8 @@ export default function AgentsPanel({ apiBase = '/api/platform' }: AgentsPanelPr
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '0.75rem' }}>
             {agents.map((a, i) => {
-              const id = a.agent_id || a.id || a.name || `agent-${i}`
+              const id = agentKey(a, i)
+              const owner = assignments[id]
               const isOnline = a.status === 'active' || a.status === 'online' || a.status === 'ok'
               return (
                 <div key={id} onClick={() => setSelectedAgent(a)} style={{
@@ -161,6 +274,10 @@ export default function AgentsPanel({ apiBase = '/api/platform' }: AgentsPanelPr
                       {a.description}
                     </p>
                   )}
+                  <p data-testid={`assigned-to-${id}`}
+                    style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginBottom: '0.4rem' }}>
+                    Assigned to: {owner ? (owner.assignee_name || owner.assignee_email || owner.assignee_id) : 'Unassigned'}
+                  </p>
                   <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
                     {(a.capabilities || []).slice(0, 4).map((c, ci) => (
                       <span key={ci} style={{ background: 'var(--bg-elevated)', padding: '0.1rem 0.4rem',
@@ -211,7 +328,40 @@ export default function AgentsPanel({ apiBase = '/api/platform' }: AgentsPanelPr
                 <span>{selectedAgent.tools.join(', ')}</span>
               </>
             )}
+            <span style={{ color: 'var(--text-muted)' }}>Assigned to:</span>
+            <span>{(() => {
+              const o = assignments[agentKey(selectedAgent)]
+              return o ? `${o.assignee_name || o.assignee_id}${o.assignee_email ? ` (${o.assignee_email})` : ''}` : 'Unassigned'
+            })()}</span>
           </div>
+          {canManage && (
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.75rem' }}>
+              <select aria-label="Assign to person" value={assignee} onChange={e => setAssignee(e.target.value)}
+                style={{ flex: 1, padding: '0.5rem 0.75rem', background: 'var(--bg-deep)',
+                  border: '1px solid var(--glass-border)', borderRadius: 'var(--radius)',
+                  color: 'var(--text-primary)', fontSize: '0.8rem' }}>
+                <option value="">Assign to...</option>
+                {people.map(p => (
+                  <option key={p.id} value={p.id}>{p.email ? `${p.name} (${p.email})` : p.name}</option>
+                ))}
+              </select>
+              <button onClick={() => assignAgent(selectedAgent, assignee)} disabled={!assignee} style={{
+                padding: '0.5rem 0.85rem', background: 'var(--accent-primary)', color: 'var(--bg-deep)',
+                borderRadius: 'var(--radius)', fontSize: '0.8rem', fontWeight: 600, opacity: assignee ? 1 : 0.5 }}>
+                Assign
+              </button>
+              {assignments[agentKey(selectedAgent)] && (
+                <button onClick={() => unassignAgent(selectedAgent)} style={{
+                  padding: '0.5rem 0.85rem', background: 'var(--bg-elevated)', color: 'var(--text-secondary)',
+                  borderRadius: 'var(--radius)', fontSize: '0.8rem', border: '1px solid var(--glass-border)' }}>
+                  Unassign
+                </button>
+              )}
+            </div>
+          )}
+          {assignStatus && (
+            <p style={{ fontSize: '0.8rem', marginTop: '0.5rem', color: 'var(--accent-coral)' }}>{assignStatus}</p>
+          )}
         </div>
       )}
 
