@@ -27,7 +27,7 @@
     "bonsai-webgpu/gguf/parser.ts": "0736f30cca0828fd68af47e34794fc62da0535cb562fd032b2b7cd6ee4b310b6",
     "bonsai-webgpu/gguf/reader.ts": "62f2734675bea94b4611c75f9420c424881e8fb8a4b463c4f65d2ea7258c99eb",
     "bonsai-webgpu/gguf/types.ts": "5dae154b2362f22385f39cddea626c1cf251ce07802190e489efbe6251aa5805",
-    "bonsai-webgpu/gpu-class.ts": "b70500f3b3b2b6b5bce2d8849ff395f65fe7084382536b8b1c2f84ff663ad53c",
+    "bonsai-webgpu/gpu-class.ts": "b673f36b52cf0cb2c162a6adaad35d334247e942c32ff27608b71887b522849b",
     "bonsai-webgpu/image/gguf-weights.ts": "3f76aceb72456bb054dcdc80e796a4a53ee7073cc7b6382403ecb8bfc284d89b",
     "bonsai-webgpu/image/gpu-runtime.ts": "df326c3a09a401f0e6cd6ca4320ec585acd477518f3564b9779c580dd72b6686",
     "bonsai-webgpu/image/mmdit.ts": "93dade8ed85ae957e6079346de1b4d53e452d6e26e3a4e77d3921f441ca80c29",

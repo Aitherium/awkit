@@ -7,7 +7,7 @@
  *
  * Child-first rules this card keeps:
  * - One big card, the newest note only. A speaker button reads it aloud
- *   (speechSynthesis); nothing plays by itself.
+ *   (the voice plane via learnVoice, the device's best voice as fallback); nothing plays by itself.
  * - Replies are big picture buttons and a few ready-made sayings. Free typing
  *   appears only when the server offers it (older band, <= free_text_max chars).
  * - No red, no X, no timers, no counts of missed notes, no "you haven't replied".
@@ -15,6 +15,7 @@
  */
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { C, FONT_MONO, FONT_UI } from './learnTheme'
+import { createLearnVoice, type LearnSpeak } from './learnVoice'
 
 export interface KidInboxCardProps {
   /** Base of the tutor proxy, e.g. '/api/tutor'. */
@@ -48,20 +49,6 @@ const BIG: CSSProperties = {
   touchAction: 'manipulation',
 }
 
-function speak(text: string | undefined) {
-  if (!text || typeof window === 'undefined') return
-  const synth = (window as unknown as { speechSynthesis?: SpeechSynthesis }).speechSynthesis
-  const Utter = (window as unknown as { SpeechSynthesisUtterance?: typeof SpeechSynthesisUtterance })
-    .SpeechSynthesisUtterance
-  if (!synth || !Utter) return
-  try {
-    synth.cancel()
-    const u = new Utter(text)
-    u.rate = 0.9
-    u.pitch = 1.05
-    synth.speak(u)
-  } catch { /* speech is a nicety, never a blocker */ }
-}
 
 function asOptions(raw: unknown): ReplyOptions {
   const o = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
@@ -91,6 +78,12 @@ function asMessages(raw: unknown): KidMessage[] {
 export default function KidInboxCard({ apiBase, extraHeaders = {} }: KidInboxCardProps) {
   const headersRef = useRef(extraHeaders)
   headersRef.current = extraHeaders
+  const speakRef = useRef<LearnSpeak>(() => {})
+  const voiceBase = useRef<string | null>(null)
+  if (voiceBase.current !== apiBase) {
+    voiceBase.current = apiBase
+    speakRef.current = createLearnVoice(apiBase, () => headersRef.current)
+  }
   const [note, setNote] = useState<KidMessage | null>(null)
   const [opts, setOpts] = useState<ReplyOptions>({ reactions: [], phrases: [], free_text_max: 0 })
   const [typed, setTyped] = useState('')
@@ -164,7 +157,7 @@ export default function KidInboxCard({ apiBase, extraHeaders = {} }: KidInboxCar
           Practice: {note.practice.title}
         </div>
       )}
-      <button type="button" aria-label="read it to me" className="al-focus" style={BIG} onClick={() => speak(spoken)}>🔊</button>
+      <button type="button" aria-label="read it to me" className="al-focus" style={BIG} onClick={() => speakRef.current(spoken)}>🔊</button>
       {said ? (
         <div data-testid="inbox-said" className="al-in" style={{ fontSize: 24, fontWeight: 500 }}>{said}</div>
       ) : (
@@ -181,7 +174,7 @@ export default function KidInboxCard({ apiBase, extraHeaders = {} }: KidInboxCar
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
               {opts.phrases.map((p) => (
                 <button key={p} type="button" className="al-focus" style={{ ...BIG, fontSize: 20, fontWeight: 600 }} disabled={busy}
-                  onClick={() => { speak(p); send({ phrase: p }) }}>{p}</button>
+                  onClick={() => { speakRef.current(p); send({ phrase: p }) }}>{p}</button>
               ))}
             </div>
           )}
