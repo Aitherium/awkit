@@ -18,6 +18,7 @@
  */
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import FamilySpaceCard from './FamilySpaceCard'
+import { createLearnVoice, type LearnSpeak } from './learnVoice'
 import { C, EASE, FONT_MONO, FONT_UI, LEARN_CSS, LearnModeSwitch, learnVars, useLearnMode } from './learnTheme'
 import { KidSpriteCard, spriteEmoji, type KidSprite } from './LearnerSprite'
 
@@ -128,20 +129,6 @@ const LABEL: CSSProperties = {
   fontFamily: FONT_MONO, fontSize: 12, letterSpacing: '.18em', textTransform: 'lowercase', color: C.faint,
 }
 
-function speak(text: string | undefined) {
-  if (!text || typeof window === 'undefined') return
-  const synth = (window as unknown as { speechSynthesis?: SpeechSynthesis }).speechSynthesis
-  const Utter = (window as unknown as { SpeechSynthesisUtterance?: typeof SpeechSynthesisUtterance })
-    .SpeechSynthesisUtterance
-  if (!synth || !Utter) return
-  try {
-    synth.cancel()
-    const u = new Utter(text)
-    u.rate = 0.9
-    u.pitch = 1.05
-    synth.speak(u)
-  } catch { /* speech is a nicety, never a blocker */ }
-}
 
 function themeList(me: MeView | null): string[] {
   const raw = me?.choices
@@ -315,6 +302,13 @@ function SpriteOrb({ sprite, size = 120, grow = false }: { sprite?: KidSprite | 
 export default function KidQuestPanel({ apiBase, extraHeaders = {}, homeExtra, homeLead, onQuestEnd, onGuardian }: KidQuestPanelProps) {
   const headersRef = useRef(extraHeaders)
   headersRef.current = extraHeaders
+  // Read-aloud: the voice plane first, the device's best voice only as a fallback.
+  const speakRef = useRef<LearnSpeak>(() => {})
+  const voiceBase = useRef<string | null>(null)
+  if (voiceBase.current !== apiBase) {
+    voiceBase.current = apiBase
+    speakRef.current = createLearnVoice(apiBase, () => headersRef.current)
+  }
 
   const [screen, setScreen] = useState<Screen>({ kind: 'loading' })
   const [me, setMe] = useState<MeView | null>(null)
@@ -375,7 +369,7 @@ export default function KidQuestPanel({ apiBase, extraHeaders = {}, homeExtra, h
     setTyped('')
     setScreen({ kind: 'item' })
     shownAt.current = Date.now()
-    speak(next.tts_text ?? next.prompt_text)
+    speakRef.current(next.tts_text ?? next.prompt_text)
   }, [])
 
   const bumpProgress = (p?: { done?: number; total?: number }) => {
@@ -437,7 +431,7 @@ export default function KidQuestPanel({ apiBase, extraHeaders = {}, homeExtra, h
     setQuestId(null)
     setItem(null)
     setScreen({ kind: 'saved', say })
-    speak(say)
+    speakRef.current(say)
   }
 
   const answer = async (value: string) => {
@@ -463,13 +457,13 @@ export default function KidQuestPanel({ apiBase, extraHeaders = {}, homeExtra, h
         const steps = Array.isArray(out.hint_steps) ? out.hint_steps.filter((s) => typeof s === 'string') : []
         const say = out.say || LOOK_LINE
         setScreen({ kind: 'look', say, steps, thenBreak: Boolean(out.break) })
-        speak([say, ...steps].join('. '))
+        speakRef.current([say, ...steps].join('. '))
         return
       }
-      if (out.break) { setScreen({ kind: 'break', afterLook: false }); speak('Wiggle break!'); return }
+      if (out.break) { setScreen({ kind: 'break', afterLook: false }); speakRef.current('Wiggle break!'); return }
       const say = out.say || 'Yay!'
       setScreen({ kind: 'yay', say })
-      speak(say)
+      speakRef.current(say)
     } catch {
       setScreen({ kind: 'oops', say: 'Let’s try that again.' })
     } finally {
@@ -610,7 +604,7 @@ export default function KidQuestPanel({ apiBase, extraHeaders = {}, homeExtra, h
         <Card testId="item-screen">
           <div style={{ fontSize: 32, fontWeight: 500, letterSpacing: '-0.02em' }}>{item.prompt_text || item.tts_text}</div>
           <button type="button" aria-label="hear it again" className="al-focus" style={BIG}
-            onClick={() => speak(item.tts_text ?? item.prompt_text)}>🔊</button>
+            onClick={() => speakRef.current(item.tts_text ?? item.prompt_text)}>🔊</button>
           <Visual visual={item.visual} />
           {numeric ? (
             <NumberPad value={typed} onChange={setTyped} onGo={() => answer(typed)} disabled={busy} />
@@ -662,7 +656,7 @@ export default function KidQuestPanel({ apiBase, extraHeaders = {}, homeExtra, h
             className="al-focus"
             style={{ ...BIG, background: C.amber, borderColor: C.amber, color: C.onAccent }}
             onClick={() => {
-              if (screen.thenBreak) { setScreen({ kind: 'break', afterLook: true }); speak('Wiggle break!'); return }
+              if (screen.thenBreak) { setScreen({ kind: 'break', afterLook: true }); speakRef.current('Wiggle break!'); return }
               goOn(true)
             }}
           >

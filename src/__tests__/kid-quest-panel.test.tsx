@@ -29,7 +29,11 @@ function installFetch(route: Route) {
   const calls: { url: string; init?: RequestInit }[] = []
   const impl = jest.fn(async (url: string, init?: RequestInit) => {
     calls.push({ url, init })
-    const r = route(url, init) ?? { status: 404, body: { detail: 'nope' } }
+    // Read-aloud (learnVoice) is not under test here: the plane is "down", so the panel
+    // falls back to the device voice and a scripted route never sees a /me/say call.
+    const r = url.endsWith('/me/say')
+      ? { status: 503, body: { detail: 'Voice unavailable' } }
+      : route(url, init) ?? { status: 404, body: { detail: 'nope' } }
     return {
       status: r.status,
       ok: r.status >= 200 && r.status < 300,
