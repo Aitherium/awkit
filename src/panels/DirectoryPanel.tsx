@@ -96,6 +96,73 @@ const sBadge = (variant: string): React.CSSProperties => {
   }
 }
 
+/* ── Row normalisation ─────────────────────────────────────────────── */
+
+// The shared directory router answers stored entities -- {id, status, data:
+// {name, email, role, ...}} -- while this panel reads flat rows keyed by
+// user_id / group_id / role_id. Read without this, every member had no id, so
+// a role change went to PUT /members/undefined/role (measured on a hosted tenant app,
+// 2026-10-02). Flat rows from older backends pass through unchanged.
+type Row = Record<string, any>
+const fields = (r: Row): Row => ({ ...(r?.data ?? {}), ...r })
+// A stored entity is addressed by its row id, never by a user_id copied into
+// its data -- the edit routes look the row up by id.
+const isEntity = (r: Row) => !!r && typeof r.data === 'object' && r.data !== null && 'id' in r
+const idOf = (r: Row, flatKey: string): string => (isEntity(r) ? r.id : (r?.[flatKey] ?? r?.id))
+
+export function toMember(r: Row): Member {
+  const f = fields(r)
+  return {
+    user_id: idOf(r, 'user_id'),
+    name: f.name ?? f.title ?? '',
+    email: f.email ?? '',
+    role: f.role ?? 'member',
+    status: (r?.data?.status ?? f.status ?? 'active') as Member['status'],
+    last_active: f.last_active,
+    mailbox: f.mailbox,
+    avatar_url: f.avatar_url,
+  }
+}
+
+export function toRole(r: Row): Role {
+  const f = fields(r)
+  return {
+    role_id: idOf(r, 'role_id'),
+    name: f.name ?? f.title ?? '',
+    description: f.description,
+    permissions: Array.isArray(f.permissions) ? f.permissions : [],
+    member_count: typeof f.member_count === 'number' ? f.member_count : 0,
+  }
+}
+
+export function toGroup(r: Row): Group {
+  // `members` lives in data as stored keys, or at the top level once the
+  // detail route has resolved them to {user_id, name, email}.
+  const resolved: GroupMember[] | null = Array.isArray(r?.members) ? r.members : null
+  const stored: string[] = Array.isArray(r?.data?.members) ? r.data.members : []
+  const f = fields(r)
+  return {
+    group_id: idOf(r, 'group_id'),
+    name: f.name ?? f.title ?? '',
+    description: f.description,
+    member_count: typeof f.member_count === 'number'
+      ? f.member_count
+      : (resolved ?? stored).length,
+    members: resolved
+      ?? stored.map(k => ({ user_id: k, name: '', email: k.includes('@') ? k : '' })),
+  }
+}
+
+/** What a refused write says, in words the admin can act on. */
+async function failureText(what: string, resp: Response): Promise<string> {
+  const body = await resp.json().catch(() => null)
+  const detail = typeof body?.detail === 'string' ? body.detail
+    : typeof body?.error === 'string' ? body.error : ''
+  const why = resp.status === 403 ? 'only a workspace admin can do this'
+    : detail || `error ${resp.status}`
+  return `${what} failed: ${why}.`
+}
+
 /* ── Component ─────────────────────────────────────────────────────── */
 
 export default function DirectoryPanel({ apiBase = '/api/directory' }: DirectoryPanelProps) {
@@ -132,6 +199,33 @@ export default function DirectoryPanel({ apiBase = '/api/directory' }: Directory
   // Confirm dialogs
   const [confirmAction, setConfirmAction] = useState<{ label: string; action: () => void } | null>(null)
 
+  // The last refused edit. Role, status and group changes used to ignore the
+  // answer entirely, so a 405 or a 403 looked exactly like a saved change.
+  const [actionError, setActionError] = useState<string | null>(null)
+
+  /** Send one write; on refusal show why and return false. */
+  const send = async (what: string, url: string, method: string, body?: unknown): Promise<boolean> => {
+    try {
+      const resp = await fetch(url, {
+        method,
+        ...(body === undefined ? {} : {
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        }),
+      })
+      if (!resp.ok) {
+        setActionError(await failureText(what, resp))
+        return false
+      }
+      setActionError(null)
+      return true
+    } catch (e) {
+      console.error(`${what} error:`, e)
+      setActionError(`${what} failed: the server could not be reached.`)
+      return false
+    }
+  }
+
   /* ── Data Fetching ───────────────────────────────────────────── */
 
   const fetchMembers = useCallback(async () => {
@@ -140,7 +234,7 @@ export default function DirectoryPanel({ apiBase = '/api/directory' }: Directory
       const resp = await fetch(`${apiBase}/members`)
       if (resp.ok) {
         const data = await resp.json()
-        setMembers(data?.data?.members ?? data?.members ?? [])
+        setMembers((data?.data?.members ?? data?.members ?? []).map(toMember))
       }
     } catch (e) { console.error('Members fetch error:', e) }
     setLoading(false)
@@ -151,7 +245,7 @@ export default function DirectoryPanel({ apiBase = '/api/directory' }: Directory
       const resp = await fetch(`${apiBase}/roles`)
       if (resp.ok) {
         const data = await resp.json()
-        setRoles(data?.data?.roles ?? data?.roles ?? [])
+        setRoles((data?.data?.roles ?? data?.roles ?? []).map(toRole))
       }
     } catch (e) { console.error('Roles fetch error:', e) }
   }, [apiBase])
@@ -161,7 +255,7 @@ export default function DirectoryPanel({ apiBase = '/api/directory' }: Directory
       const resp = await fetch(`${apiBase}/groups`)
       if (resp.ok) {
         const data = await resp.json()
-        setGroups(data?.data?.groups ?? data?.groups ?? [])
+        setGroups((data?.data?.groups ?? data?.groups ?? []).map(toGroup))
       }
     } catch (e) { console.error('Groups fetch error:', e) }
   }, [apiBase])
@@ -171,7 +265,7 @@ export default function DirectoryPanel({ apiBase = '/api/directory' }: Directory
       const resp = await fetch(`${apiBase}/groups/${groupId}`)
       if (resp.ok) {
         const data = await resp.json()
-        setSelectedGroup(data?.data?.group ?? data?.group ?? data?.data ?? data)
+        setSelectedGroup(toGroup(data?.data?.group ?? data?.group ?? data?.data ?? data))
       }
     } catch (e) { console.error('Group detail error:', e) }
   }, [apiBase])
@@ -214,39 +308,25 @@ export default function DirectoryPanel({ apiBase = '/api/directory' }: Directory
   }
 
   const changeRole = async (userId: string, role: string) => {
-    try {
-      await fetch(`${apiBase}/members/${userId}/role`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role }),
-      })
-      fetchMembers()
-      if (selectedMember?.user_id === userId) {
-        setSelectedMember(prev => prev ? { ...prev, role } : null)
-      }
-    } catch (e) { console.error('Change role error:', e) }
+    if (!await send('Changing the role', `${apiBase}/members/${userId}/role`, 'PUT', { role })) return
+    fetchMembers()
+    if (selectedMember?.user_id === userId) {
+      setSelectedMember(prev => prev ? { ...prev, role } : null)
+    }
   }
 
   const changeStatus = async (userId: string, status: string) => {
-    try {
-      await fetch(`${apiBase}/members/${userId}/status`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status }),
-      })
-      fetchMembers()
-      if (selectedMember?.user_id === userId) {
-        setSelectedMember(prev => prev ? { ...prev, status: status as Member['status'] } : null)
-      }
-    } catch (e) { console.error('Change status error:', e) }
+    if (!await send('Changing the status', `${apiBase}/members/${userId}/status`, 'PUT', { status })) return
+    fetchMembers()
+    if (selectedMember?.user_id === userId) {
+      setSelectedMember(prev => prev ? { ...prev, status: status as Member['status'] } : null)
+    }
   }
 
   const removeMember = async (userId: string) => {
-    try {
-      await fetch(`${apiBase}/members/${userId}`, { method: 'DELETE' })
-      setSelectedMember(null)
-      fetchMembers()
-    } catch (e) { console.error('Remove member error:', e) }
+    if (!await send('Removing the member', `${apiBase}/members/${userId}`, 'DELETE')) return
+    setSelectedMember(null)
+    fetchMembers()
   }
 
   /* ── Role Actions ────────────────────────────────────────────── */
@@ -269,10 +349,8 @@ export default function DirectoryPanel({ apiBase = '/api/directory' }: Directory
   }
 
   const deleteRole = async (roleId: string) => {
-    try {
-      await fetch(`${apiBase}/roles/${roleId}`, { method: 'DELETE' })
-      fetchRoles()
-    } catch (e) { console.error('Delete role error:', e) }
+    if (!await send('Deleting the role', `${apiBase}/roles/${roleId}`, 'DELETE')) return
+    fetchRoles()
   }
 
   /* ── Group Actions ───────────────────────────────────────────── */
@@ -294,36 +372,22 @@ export default function DirectoryPanel({ apiBase = '/api/directory' }: Directory
 
   const addGroupMember = async (groupId: string, email: string) => {
     if (!email) return
-    try {
-      await fetch(`${apiBase}/groups/${groupId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ add_member_email: email }),
-      })
-      setAddMemberEmail('')
-      fetchGroupDetail(groupId)
-      fetchGroups()
-    } catch (e) { console.error('Add group member error:', e) }
+    if (!await send('Adding to the group', `${apiBase}/groups/${groupId}`, 'PUT', { add_member_email: email })) return
+    setAddMemberEmail('')
+    fetchGroupDetail(groupId)
+    fetchGroups()
   }
 
   const removeGroupMember = async (groupId: string, userId: string) => {
-    try {
-      await fetch(`${apiBase}/groups/${groupId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ remove_member_id: userId }),
-      })
-      fetchGroupDetail(groupId)
-      fetchGroups()
-    } catch (e) { console.error('Remove group member error:', e) }
+    if (!await send('Removing from the group', `${apiBase}/groups/${groupId}`, 'PUT', { remove_member_id: userId })) return
+    fetchGroupDetail(groupId)
+    fetchGroups()
   }
 
   const deleteGroup = async (groupId: string) => {
-    try {
-      await fetch(`${apiBase}/groups/${groupId}`, { method: 'DELETE' })
-      setSelectedGroup(null)
-      fetchGroups()
-    } catch (e) { console.error('Delete group error:', e) }
+    if (!await send('Deleting the group', `${apiBase}/groups/${groupId}`, 'DELETE')) return
+    setSelectedGroup(null)
+    fetchGroups()
   }
 
   /* ── Helpers ─────────────────────────────────────────────────── */
@@ -366,6 +430,21 @@ export default function DirectoryPanel({ apiBase = '/api/directory' }: Directory
           </button>
         ))}
       </div>
+
+      {actionError && (
+        <div
+          role="alert"
+          data-testid="directory-action-error"
+          style={{
+            ...sCard, marginBottom: '1rem', borderColor: '#dc2626',
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            fontSize: '0.85rem', color: 'var(--accent-coral)',
+          }}
+        >
+          <span>{actionError}</span>
+          <button onClick={() => setActionError(null)} style={sBtn()}>Dismiss</button>
+        </div>
+      )}
 
       {/* Confirmation Dialog */}
       {confirmAction && (

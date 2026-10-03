@@ -19,7 +19,7 @@
  * The signed-in user's display name is passed as `nick` so the embed connects
  * immediately (no nick picker), and the workspace slug scopes channels/DMs: the
  * embed lists `scope=workspace:<slug>` (membership checked server-side against the
- * authenticated caller) and lands on `#<slug>-general`, never a platform room.
+ * authenticated caller) and lands on the Company Room `#<slug>-room`, never a platform room.
  */
 
 import { useMemo } from 'react'
@@ -68,14 +68,18 @@ function isValidRelayBase(url: string | undefined): boolean {
 }
 
 /**
- * The channel a tenant Comms embed opens on. Workspace channels are provisioned as
- * `#<slug>-general`, `#<slug>-random`…; anything else (`#general`, `#playground`) is a
- * platform room and is replaced by the workspace default. Exported for tests.
+ * The channel a tenant Comms embed opens on: the workspace's Company Room,
+ * `#<slug>-room`, where the tenant's own bot and its staff's device agents already
+ * sit (awkit room.py's rule; Relay `/v1/agent/home-room` names the same channel).
+ * It used to open `#<slug>-general`, so staff and their agents were in two
+ * different channels (measured on a hosted tenant app, 2026-10-02). A requested workspace
+ * channel is honoured; a platform room (`#general`, `#playground`) is replaced.
+ * Exported for tests.
  */
 export function relayEmbedChannel(workspace: string | undefined, requested?: string): string | undefined {
   if (!workspace) return requested
   if (requested && requested.toLowerCase().startsWith(`#${workspace}-`.toLowerCase())) return requested
-  return `#${workspace}-general`
+  return `#${workspace}-room`
 }
 
 export default function RelayEmbedPanel({

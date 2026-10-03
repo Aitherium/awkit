@@ -351,6 +351,8 @@ export const PANEL_REGISTRY: PanelMeta[] = [
     requiresBackend: ['embed_migrate.py'],
     planRequirement: 'enterprise',
     domain: 'infrastructure',
+    // operator lens only: the router answers 403 to everyone else
+    tiers: ['platform'],
   },
   {
     id: 'provision',

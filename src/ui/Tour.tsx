@@ -10,7 +10,7 @@
  * it teaches.
  *
  *   <Tour
- *     storageKey="gargbot_toured"
+ *     storageKey="myapp_toured"
  *     steps={[
  *       { targetSel: '[data-tour="composer"]', title: 'Say something', body: '…' },
  *       { targetSel: '[data-tour="beadspace"]', title: 'The universe', body: '…', summon: 'bead-space' },

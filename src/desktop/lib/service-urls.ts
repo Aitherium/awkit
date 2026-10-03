@@ -458,9 +458,16 @@ export const RELAY_URL = typeof window === 'undefined'
 //   Explicit env var (NEXT_PUBLIC_RELAY_WS_URL) always wins — used for
 //     static/demo deployments pointing directly to wss://irc.aitherium.com/ws/chat
 //   Local dev (localhost / LAN)  →  ws://<host>:8205/ws/chat   (direct to relay)
+//   An API-less host (the GitHub Pages apex) has no ws-proxy behind it, so it
+//     dials the live API origin: wss://api.aitherium.com/ws/chat. This mirrors
+//     Veil's getRelayWsUrl() + lib/live-api.ts, which awkit cannot import; keep
+//     the host list and the fallback in step with that file.
 //   Docker/production (ws-proxy available) →  wss://<same-origin>/ws/chat
 //     Veil's ws-proxy-server.js intercepts the upgrade and forwards to
 //     CommunicationCore on the Docker network.
+const RELAY_API_LESS_HOSTS = new Set(['aitherium.com', 'www.aitherium.com'])
+const RELAY_LIVE_API_FALLBACK = 'https://api.aitherium.com'
+
 export function getRelayWsUrl(): string {
   if (typeof window === 'undefined') {
     return `ws://localhost:${SERVICE_PORTS.relay}/ws/chat`
@@ -481,13 +488,20 @@ export function getRelayWsUrl(): string {
   const envUrl = process.env.NEXT_PUBLIC_RELAY_WS_URL
   if (envUrl) return envUrl
 
+  // Keyed on the host alone, as in Veil: a host with its own ws-proxy keeps it.
+  if (RELAY_API_LESS_HOSTS.has(host) || host.endsWith('.github.io')) {
+    const live = process.env.NEXT_PUBLIC_LIVE_API_ORIGIN || RELAY_LIVE_API_FALLBACK
+    return `${live.replace(/^http/, 'ws').replace(/\/+$/, '')}/ws/chat`
+  }
+
   // Production — same-origin WebSocket through Veil's ws-proxy
   // This works through any reverse proxy / tunnel that forwards to Veil.
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   return `${proto}//${window.location.host}/ws/chat`
 }
 
-export const RELAY_WS_URL = getRelayWsUrl()
+// No RELAY_WS_URL constant: a module-load snapshot froze whichever branch ran
+// at import (the SSR localhost one during prerender). Call getRelayWsUrl().
 
 // ============================================================================
 // HELPER FOR GETTING HOST - works in Docker and locally

@@ -1,7 +1,7 @@
 /**
  * T1: the tenant Comms panel defaulted to the platform's global `#general`, so a
  * customer's staff posted company chat into Aitherium's public community. With a
- * workspace it must open on `#<slug>-general`.
+ * workspace it must open on its Company Room, `#<slug>-room`.
  */
 import React from 'react'
 import { render } from '@testing-library/react'
@@ -14,17 +14,17 @@ jest.mock('../../hooks/useConfig', () => ({
 import RelayEmbedPanel, { relayEmbedChannel } from '../RelayEmbedPanel'
 
 describe('RelayEmbedPanel landing channel', () => {
-  it('lands a workspace on its own room, not the platform #general', () => {
+  it('lands a workspace on its Company Room, where its agents are', () => {
     const { container } = render(<RelayEmbedPanel />)
     const src = container.querySelector('iframe')!.getAttribute('src')!
     const qs = new URLSearchParams(src.split('?')[1])
     expect(qs.get('workspace')).toBe('acme')
-    expect(qs.get('channel')).toBe('#acme-general')
+    expect(qs.get('channel')).toBe('#acme-room')
   })
 
   it('refuses a platform room even when a caller asks for it', () => {
-    expect(relayEmbedChannel('acme', '#general')).toBe('#acme-general')
-    expect(relayEmbedChannel('acme', '#playground')).toBe('#acme-general')
+    expect(relayEmbedChannel('acme', '#general')).toBe('#acme-room')
+    expect(relayEmbedChannel('acme', '#playground')).toBe('#acme-room')
     expect(relayEmbedChannel('acme', '#acme-support')).toBe('#acme-support')
   })
 
