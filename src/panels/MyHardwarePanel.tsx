@@ -41,6 +41,12 @@ interface DeviceInfo {
   created_at?: string | null
 }
 
+/** A row of the workspace-wide view: the device plus who enrolled it. */
+interface WorkspaceDeviceInfo extends DeviceInfo {
+  owner?: string
+  mine?: boolean
+}
+
 interface PackageInfo {
   id: string
   name: string
@@ -164,6 +170,10 @@ export default function MyHardwarePanel({
   const [appliance, setAppliance] = useState<ApplianceInfo | null>(null)
   const [devices, setDevices] = useState<DeviceInfo[]>([])
   const [devicesError, setDevicesError] = useState('')
+  // null = this caller has no workspace-wide view (a member, or a host without the
+  // route); the section is then absent rather than shown empty.
+  const [workspaceDevices, setWorkspaceDevices] = useState<WorkspaceDeviceInfo[] | null>(null)
+  const [workspaceError, setWorkspaceError] = useState('')
   const [enrollOpen, setEnrollOpen] = useState(false)
   const [name, setName] = useState('')
   const [enrolling, setEnrolling] = useState(false)
@@ -213,6 +223,20 @@ export default function MyHardwarePanel({
       })
       .then((list: DeviceInfo[]) => { setDevices(list); setDevicesError('') })
       .catch((e: Error) => setDevicesError(e.message))
+    // The workspace-wide view. `GET /devices` is the caller's OWN machines, so the
+    // person who runs the workspace saw one laptop while their staff had enrolled a
+    // dozen. The backend decides who may look (owner/admin): 401/403/404 mean "this
+    // view is not yours / not served here" and hide the section; any other failure
+    // is shown, because an admin reading nothing must not mistake it for "none".
+    fetch(`${apiBase}/devices/workspace`, { credentials: 'include' })
+      .then(async (r) => {
+        if (r.status === 401 || r.status === 403 || r.status === 404 || r.status === 405) return null
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        const d = await r.json()
+        return (Array.isArray(d) ? d : d.devices ?? []) as WorkspaceDeviceInfo[]
+      })
+      .then((list) => { setWorkspaceDevices(list); setWorkspaceError('') })
+      .catch((e: Error) => setWorkspaceError(e.message))
   }, [apiBase])
 
   useEffect(() => {
@@ -494,6 +518,42 @@ export default function MyHardwarePanel({
           </button>
         </div>
       ))}
+
+      {/* 4 — Everyone's devices (owner/admin only; read-only) */}
+      {(workspaceDevices !== null || workspaceError) && (
+        <>
+          <h3 style={{ fontSize: '0.85rem', fontWeight: 700, margin: '1.25rem 0 0.6rem', color: 'var(--text-muted)' }}>
+            4 · Workspace devices
+          </h3>
+          {workspaceError && (
+            <p style={{ fontSize: '0.75rem', color: 'var(--accent-coral)', margin: '0 0 0.5rem' }}>
+              Could not load the workspace's devices — {workspaceError}
+            </p>
+          )}
+          {workspaceDevices !== null && workspaceDevices.length === 0 && !workspaceError && (
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0 }}>
+              Nobody in this workspace has enrolled a device yet.
+            </p>
+          )}
+          {(workspaceDevices ?? []).map((d) => (
+            <div key={`ws-${d.id}`} data-testid="workspace-device"
+              style={{ ...row, display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <span style={{ width: 10, height: 10, borderRadius: '50%', flexShrink: 0,
+                background: statusColor(d.status) }} aria-hidden="true" />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>{d.name}</div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                  {d.mine ? 'yours' : `enrolled by ${d.owner || 'unknown'}`} · {d.node_id}
+                  {d.os && d.os !== 'unknown' ? ` · ${d.os}` : ''}
+                </div>
+              </div>
+              <span style={{ fontSize: '0.72rem', textTransform: 'capitalize', color: statusColor(d.status) }}>
+                {d.status}
+              </span>
+            </div>
+          ))}
+        </>
+      )}
     </div>
   )
 }

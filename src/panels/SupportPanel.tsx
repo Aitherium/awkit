@@ -71,7 +71,9 @@ function captureClientLogs(): {
 
   // Performance metrics
   const perf: Record<string, number> = {}
-  if (typeof window !== 'undefined' && window.performance) {
+  // Diagnostics must never cost the report: a runtime without the Performance
+  // Timeline threw here, inside the click handler, and the submit never ran.
+  if (typeof window !== 'undefined' && typeof window.performance?.getEntriesByType === 'function') {
     const nav = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined
     if (nav) {
       perf.dns_ms = Math.round(nav.domainLookupEnd - nav.domainLookupStart)
@@ -231,7 +233,7 @@ export default function SupportPanel({ apiBase = '', showChat = true, appName, r
     setLoading(true)
     const logs = attachLogs ? captureClientLogs() : null
     try {
-      await fetch(`${apiBase}/api/feedback`, {
+      const resp = await fetch(`${apiBase}/api/feedback`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -245,6 +247,9 @@ export default function SupportPanel({ apiBase = '', showChat = true, appName, r
           client_logs: logs,
         }),
       })
+      // A rejected report used to read as a sent one: fetch resolves on a 4xx,
+      // so only the status says whether anybody received it.
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
       setSubmitted('Bug report submitted! We\'ll get back to you soon.')
       setBugTitle(''); setBugDesc(''); setBugSteps('')
       fetchTickets()
@@ -260,7 +265,7 @@ export default function SupportPanel({ apiBase = '', showChat = true, appName, r
     if (!featureTitle.trim() || !featureDesc.trim()) return
     setLoading(true)
     try {
-      await fetch(`${apiBase}/api/feedback`, {
+      const resp = await fetch(`${apiBase}/api/feedback`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -272,6 +277,7 @@ export default function SupportPanel({ apiBase = '', showChat = true, appName, r
           client_logs: attachLogs ? captureClientLogs() : undefined,
         }),
       })
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
       setSubmitted('Feature request submitted! Thank you for your feedback.')
       setFeatureTitle(''); setFeatureDesc('')
       fetchTickets()

@@ -172,6 +172,8 @@ import DiscordPanel from './DiscordPanel'
 import TaxDeskPanel from './TaxDeskPanel'
 import ThemisLegalPanel from './ThemisLegalPanel'
 import SecretguardPanel from './SecretguardPanel'
+import KvHandoffPanel from './KvHandoffPanel'
+import EmbedMigratePanel from './EmbedMigratePanel'
 
 import PortalShell from './PortalShell'
 import type { NavItem } from './PortalShell'
@@ -243,6 +245,10 @@ export const PANEL_COMPONENTS: Record<string, PanelEntry> = {
   'studio':              { component: StudioPanel },
   'iris':                { component: IrisPanel },
   'provision':           { component: ProvisionPanel },
+  // Registered in registry.ts but never keyed here, so no shell could open them (the
+  // RB010 class again, found 2026-10-02 by an aw*-stack gap sweep).
+  'kv-handoff':          { component: KvHandoffPanel },
+  'embed-migrate':       { component: EmbedMigratePanel },
   // Declared in registry.ts (apiPrefix auto-wires apiBase) but never keyed
   // here, so it rendered 'no panel wired up' (RB010, 2026-09-27).
   'awprove':             { component: AwprovePanel },

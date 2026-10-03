@@ -127,6 +127,13 @@ export async function loadWikipedia(): Promise<CorpusIndex | { error: string }> 
   return wikiPromise;
 }
 
+/** The product-docs corpus — the /docs manual + Awnix guide (connector search_docs). */
+let docsPromise: ReturnType<typeof fetchIndex> | null = null;
+export async function loadDocsCorpus(): Promise<CorpusIndex | { error: string }> {
+  docsPromise ??= fetchIndex('/corpus/docs.json');
+  return docsPromise;
+}
+
 /**
  * BM25 + IDF-weighted coverage over a loaded index. SHARED by every corpus.
  *

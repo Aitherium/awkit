@@ -205,7 +205,7 @@ export async function loadMcpTools(
     params: {
       protocolVersion: PROTOCOL_VERSION,
       capabilities: {},
-      clientInfo: { name: 'aither-browser-agent', version: '1.0.0' },
+      clientInfo: { name: 'aitherium-browser-agent', version: '1.0.0' },
     },
   }, bearer, undefined, LIST_TIMEOUT_MS, f);
   if (init.error) return { tools: {}, error: init.error };
@@ -302,4 +302,57 @@ export function loadMcpToolsCached(
 
 export function clearMcpToolCache(): void {
   cached = null;
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * One direct call — for an app that drives a KNOWN tool rather than a model.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+export interface McpCallResult {
+  /** The tool's answer: parsed JSON when the tool returned a JSON object, else the text. */
+  value?: unknown;
+  /** Present when nothing ran. Always says which failure it was. */
+  error?: string;
+}
+
+/**
+ * `initialize` then one `tools/call` on that session. Same door, same bearer rules as
+ * `loadMcpTools`: no bearer, no request. It never throws.
+ *
+ * Desktop apps use this (the Hearth window calls `hearth_approve` on a button press); a
+ * model never should, because a model's tool calls go through the budgeted registry.
+ */
+export async function callMcpTool(
+  bearer: string | null | undefined,
+  name: string,
+  args: Record<string, unknown> = {},
+  opts: { fetchImpl?: typeof fetch } = {},
+): Promise<McpCallResult> {
+  if (!bearer) return { error: NO_BEARER_REFUSAL };
+  const f = opts.fetchImpl ?? fetch;
+  const init = await rpc({
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'initialize',
+    params: {
+      protocolVersion: PROTOCOL_VERSION,
+      capabilities: {},
+      clientInfo: { name: 'aither-desktop-app', version: '1.0.0' },
+    },
+  }, bearer, undefined, LIST_TIMEOUT_MS, f);
+  if (init.error) return { error: init.error };
+  const called = await rpc(
+    { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name, arguments: args } },
+    bearer, init.sessionId, CALL_TIMEOUT_MS, f,
+  );
+  if (called.error) return { error: called.error };
+  const text = renderCallResult(called.result);
+  if (called.result?.isError) return { error: text };
+  const structured = called.result?.structuredContent;
+  if (structured && typeof structured === 'object') return { value: structured };
+  try {
+    return { value: JSON.parse(text) };
+  } catch {
+    return { value: text };
+  }
 }

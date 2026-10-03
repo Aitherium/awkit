@@ -26,8 +26,8 @@ export {
 } from './page-tools';
 export {
   loadMcpTools, loadMcpToolsCached, clearMcpToolCache, MCP_ENDPOINT,
-  MCP_TOOLS_LIST_METHOD, NO_BEARER_REFUSAL,
-  type McpToolsResult, type LoadMcpToolsOptions,
+  MCP_TOOLS_LIST_METHOD, NO_BEARER_REFUSAL, callMcpTool,
+  type McpToolsResult, type LoadMcpToolsOptions, type McpCallResult,
 } from './mcp-client-tools';
 export { parseToolCalls, type ParsedToolCall } from './parser';
 export {
