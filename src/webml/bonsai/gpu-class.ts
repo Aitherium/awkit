@@ -82,7 +82,9 @@ export interface AdapterHint {
  * because the vendor string alone cannot separate a discrete Radeon from an APU, and
  * guessing wrong there downgrades a real GPU.
  */
-const INTEGRATED_VENDORS = ['intel', 'arm', 'qualcomm', 'imgtec'] as const;
+// 'img-tec' is what Chrome reports on the Pixel 10 Pro Fold (seen 2026-10-03); 'imgtec' alone
+// sent it to 'unknown', the DISCRETE fast path.
+const INTEGRATED_VENDORS = ['intel', 'arm', 'qualcomm', 'imgtec', 'img-tec'] as const;
 
 /** `microsoft` is WARP, Chrome's SOFTWARE rasteriser fallback — no usable GPU present. */
 const SOFTWARE_VENDORS = ['microsoft'] as const;
@@ -216,7 +218,8 @@ export function isMobileDevice(): boolean {
   const ua = navigator.userAgent ?? '';
   if (/Android|iPhone|iPad|iPod|Mobile|Silk|Kindle/i.test(ua)) return true;
   const touch = (navigator as Navigator & { maxTouchPoints?: number }).maxTouchPoints ?? 0;
-  return /Macintosh/i.test(ua) && touch > 1;
+  if (/Macintosh/i.test(ua) && touch > 1) return true;
+  return phoneClassBeyondUa();
 }
 
 /**
@@ -231,7 +234,70 @@ export function isMobileDevice(): boolean {
 export function isPhoneDevice(): boolean {
   if (typeof navigator === 'undefined') return false;
   const ua = navigator.userAgent ?? '';
-  return /Android.+Mobile|iPhone|iPod/i.test(ua);
+  return /Android.+Mobile|iPhone|iPod/i.test(ua) || phoneClassBeyondUa();
+}
+
+// ── PHONE-CLASS BEYOND THE USER AGENT (2026-10-03) ──────────────────────────
+//
+// The UA alone was the whole phone gate, and Chrome's "Desktop site" — ON by default on
+// the Pixel 10 Pro Fold — replaces it with `X11; Linux x86_64`. isPhoneDevice() read false,
+// so the owner's Fold was offered Bonsai on WebGPU: the exact device class that rebooted
+// on 09-01. A UA is a request header the browser rewrites on purpose; these signals are not:
+//   - UA Client Hints (`mobile`, platform `Android`) where the browser sends them
+//   - navigator.platform keeps the ARM truth (`Linux aarch64`) when the UA says x86_64
+//   - a touch device with NO fine pointer on desktop Linux is a handset (laptops have a pad)
+//   - the WebGPU adapter: a mobile SoC GPU (img-tec, arm/mali, qualcomm/adreno) is
+//     phone-class whatever the UA claims; Windows/macOS/ChromeOS laptops with those GPUs
+//     are not handsets and are excluded by their own UA
+// Android TABLETS land here too (same SoCs, same memory killer). Kept byte-identical in
+// AitherVeil gpu-class.ts and awkit device-class.ts / bonsai/gpu-class.ts (BIH004).
+const MOBILE_GPU_RE = /img-?tec|imagination|powervr|\barm\b|mali|valhall|bifrost|immortalis|qualcomm|adreno/i;
+const MOBILE_GPU_KEY = 'aither.device.mobile-gpu';
+let mobileGpuSeen = false;
+
+type PhoneNavigator = Navigator & {
+  userAgentData?: { mobile?: boolean; platform?: string };
+  maxTouchPoints?: number;
+  platform?: string;
+};
+
+/** Is this adapter a mobile SoC GPU on a device whose UA does not say laptop? */
+export function isMobileGpu(hint?: { vendor?: string; architecture?: string } | null): boolean {
+  if (!hint) return false;
+  if (!MOBILE_GPU_RE.test(`${hint.vendor ?? ''} ${hint.architecture ?? ''}`)) return false;
+  const ua = typeof navigator === 'undefined' ? '' : (navigator.userAgent ?? '');
+  return !/Windows NT|Macintosh|CrOS/i.test(ua);
+}
+
+/** Record what the WebGPU probe saw. A mobile GPU makes this device phone-class, sticky. */
+export function noteAdapterHint(hint?: { vendor?: string; architecture?: string } | null): void {
+  if (!isMobileGpu(hint)) return;
+  mobileGpuSeen = true;
+  try { globalThis.localStorage?.setItem(MOBILE_GPU_KEY, '1'); } catch { /* in-memory holds */ }
+}
+
+/** Phone-class signals a UA rewrite cannot hide. See the block comment above. */
+export function phoneClassBeyondUa(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const nav = navigator as PhoneNavigator;
+  if (nav.userAgentData?.mobile === true) return true;
+  if (/^android$/i.test(nav.userAgentData?.platform ?? '')) return true;
+  const touch = (nav.maxTouchPoints ?? 0) > 0;
+  const ua = nav.userAgent ?? '';
+  const platform = nav.platform ?? '';
+  if (touch && /linux/i.test(platform) && /arm|aarch64/i.test(platform)) return true;
+  if (touch && /X11; Linux/i.test(ua) && !/CrOS/i.test(ua)) {
+    let fine = true;
+    try { fine = typeof matchMedia === 'function' && matchMedia('(any-pointer: fine)').matches; } catch { fine = true; }
+    if (!fine) return true;
+  }
+  if (mobileGpuSeen) return true;
+  try { return globalThis.localStorage?.getItem(MOBILE_GPU_KEY) === '1'; } catch { return false; }
+}
+
+/** Test seam: forget this load's adapter verdict. */
+export function __resetPhoneClassForTests(): void {
+  mobileGpuSeen = false;
 }
 
 // ── WASP PHONE RATCHET ──────────────────────────────────────────────────────
