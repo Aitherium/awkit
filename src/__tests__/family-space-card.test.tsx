@@ -6,7 +6,7 @@
  */
 import React from 'react'
 import { act, fireEvent, render, screen } from '@testing-library/react'
-import FamilySpaceCard from '../panels/FamilySpaceCard'
+import FamilySpaceCard, { PAGE_CSP, pageDocument } from '../panels/FamilySpaceCard'
 
 type Reply = { status: number; body: unknown }
 
@@ -102,5 +102,78 @@ describe('FamilySpaceCard', () => {
     expect(Object.keys(JSON.parse(String(post!.init!.body))).sort()).toEqual(['animals', 'colors'])
     await screen.findByTestId('space-favorites')
     expect(screen.getByTestId('space-favorites').textContent).toMatch(/Owl/)
+  })
+
+  it('My page: the frame is sandboxed, has the no-network CSP and frames SERVER output only', async () => {
+    const PAGE = { html: '<h1>Hi</h1>', css: 'h1{color:red}', rev: 1, at: '2026-10-03T10:00:00', by: 'learner' }
+    const calls = installFetch((url, init) => {
+      if (url.endsWith('/me/space') && (!init?.method || init.method === 'GET')) {
+        return { status: 200, body: { space: { ...SPACE, page: PAGE }, choices: CHOICES } }
+      }
+      if (url.endsWith('/me/space/page/preview') && init?.method === 'POST') {
+        return { status: 200, body: { page: { html: '<span>go</span>', css: '' } } }
+      }
+      if (url.endsWith('/me/space/page') && init?.method === 'POST') {
+        return { status: 200, body: { space: { ...SPACE, page: { ...PAGE, html: '<span>go</span>', rev: 2 } } } }
+      }
+      return undefined
+    })
+    await act(async () => { render(<FamilySpaceCard mode="kid" apiBase="/api/tutor" />) })
+    fireEvent.click(await screen.findByRole('button', { name: /my space/i }))
+    const frame = screen.getByTestId('space-page-frame') as HTMLIFrameElement
+    expect(frame.getAttribute('sandbox')).toBe('')
+    expect(frame.getAttribute('srcdoc')).toContain(`content="${PAGE_CSP}"`)
+    expect(frame.getAttribute('srcdoc')).toContain('<h1>Hi</h1>')
+    fireEvent.click(screen.getByRole('button', { name: /change my page/i }))
+    const raw = '<a href="https://x.example">go</a>'
+    fireEvent.change(screen.getByTestId('space-page-html'), { target: { value: raw } })
+    // The raw text never reaches a frame, before or after Look.
+    const framed = () => screen.queryAllByTestId('space-page-frame').map((f) => f.getAttribute('srcdoc') || '').join('')
+    expect(framed()).not.toContain('x.example')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Look' })) })
+    expect(framed()).toContain('<span>go</span>')
+    expect(framed()).not.toContain('x.example')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save' })) })
+    const post = calls.find((c) => c.url.endsWith('/me/space/page'))
+    expect(Object.keys(JSON.parse(String(post!.init!.body))).sort()).toEqual(['css', 'html'])
+    await screen.findByText(/Saved!/)
+    noPublicControls()
+  })
+
+  it('pageDocument keeps a < out of the style element and puts the CSP first', () => {
+    const doc = pageDocument({ html: '<p>x</p>', css: '</style><script>alert(1)</script>' })
+    expect(doc).not.toContain('<script>')
+    expect(doc.indexOf('Content-Security-Policy')).toBeLessThan(doc.indexOf('<body>'))
+    expect(PAGE_CSP).toContain("default-src 'none'")
+    expect(PAGE_CSP).not.toMatch(/https?:|\*/)
+  })
+
+  it('guardian: sees every version and can bring one back or clear the page', async () => {
+    const V1 = { html: '<p>one</p>', css: '', rev: 1, at: '2026-10-03T09:00:00', by: 'learner' }
+    const V2 = { html: '<p>two</p>', css: '', rev: 2, at: '2026-10-03T09:30:00', by: 'learner' }
+    const calls = installFetch((url, init) => {
+      if (url.endsWith('/family/learners/l-a/space') && init?.method === 'POST') {
+        return { status: 201, body: { created: false, space: { ...SPACE, page: V2, page_history: [V1] }, choices: CHOICES } }
+      }
+      if (url.endsWith('/family/learners/l-a/space/page/restore')) {
+        const b = JSON.parse(String(init!.body))
+        return { status: 200, body: { space: { ...SPACE, page: b.clear ? null : { ...V1, rev: 3, by: 'guardian' }, page_history: [V2, V1] } } }
+      }
+      return undefined
+    })
+    await act(async () => {
+      render(<FamilySpaceCard mode="guardian" apiBase="/api/tutor" lid="l-a" name="Athena" />)
+    })
+    await screen.findByTestId('space-page-versions')
+    expect(screen.getAllByTestId('space-page-version')).toHaveLength(1)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /bring this back/i })) })
+    const r1 = calls.filter((c) => c.url.endsWith('/space/page/restore'))
+    expect(JSON.parse(String(r1[0].init!.body))).toEqual({ rev: 1 })
+    await screen.findByText(/Version 1 is back/)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /clear page/i })) })
+    const r2 = calls.filter((c) => c.url.endsWith('/space/page/restore'))
+    expect(JSON.parse(String(r2[1].init!.body))).toEqual({ clear: true })
+    await screen.findByText(/Page cleared/)
+    noPublicControls()
   })
 })

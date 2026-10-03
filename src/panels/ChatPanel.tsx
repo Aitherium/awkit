@@ -14,6 +14,21 @@ import { VoiceMicButton } from '../voice/VoiceMicButton'
 import { getApiBase } from '../lib/apiBase'
 import { fetchThroughRestart } from '../lib/restartFetch'
 
+/**
+ * What the user has open on the desktop, as published by the host's window
+ * manager (`window.__AITHER_DESKTOP__`). Sent with each message so the
+ * workspace agent can resolve "this", "the open document", "what am I looking
+ * at". Undefined when there is no desktop (a standalone panel).
+ */
+export function desktopContext(): Record<string, unknown> | undefined {
+  try {
+    const d = (globalThis as unknown as { __AITHER_DESKTOP__?: unknown }).__AITHER_DESKTOP__
+    return d && typeof d === 'object' ? (d as Record<string, unknown>) : undefined
+  } catch {
+    return undefined
+  }
+}
+
 interface LLMUsage {
   provider: string
   model: string
@@ -443,7 +458,7 @@ export default function ChatPanel({ conversationId, onNewConversation, externalI
       const resp = await fetchThroughRestart(engine === 'aitherchat' ? '/api/chat/aither' : '/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, conversation_id: conversationId || undefined }),
+        body: JSON.stringify({ message: text, conversation_id: conversationId || undefined, desktop_context: desktopContext() }),
       })
       if (!resp.ok) throw new Error(`Server error (${resp.status})`)
       const data = await resp.json()
@@ -685,6 +700,7 @@ export default function ChatPanel({ conversationId, onNewConversation, externalI
           message: msg,
           conversation_id: conversationId || undefined,
           stream: true,
+          desktop_context: desktopContext(),
         }),
       }, {
         attemptTimeoutMs: 60_000,
@@ -861,7 +877,7 @@ export default function ChatPanel({ conversationId, onNewConversation, externalI
       const resp = await fetchThroughRestart(`${getApiBase()}/api/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: msg, conversation_id: conversationId || undefined }),
+        body: JSON.stringify({ message: msg, conversation_id: conversationId || undefined, desktop_context: desktopContext() }),
       }, { onRetry: () => setStreamStatus('Reconnecting: the server is restarting, your message will be sent again') })
       setStreamStatus(null)
       if (!resp.ok) {
