@@ -1535,6 +1535,20 @@ export const PANEL_REGISTRY: PanelMeta[] = [
     state: 'usable',
   },
   {
+    // Managed agents on a tenant workspace: BYOK key, deploy, status, chat.
+    // The plan gate is Genesis's (`managed_agent_deploy`, tier_features.yaml);
+    // the panel says a plan refusal out loud rather than gating its own render.
+    id: 'managed-agents',
+    name: 'Managed Agents',
+    description: "Run the workspace's agent as a hosted agent on your own Anthropic key, and chat with it",
+    category: 'intelligence',
+    icon: 'bot',
+    apiPrefix: '/api/managed-agents',
+    domain: 'agents',
+    tenantIsolated: true,
+    state: 'usable',
+  },
+  {
     id: 'awgym',
     name: 'awgym',
     description: 'ARC-AGI-3 training gym: live world-model state, runs and the solver bridge',

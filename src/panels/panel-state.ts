@@ -114,6 +114,7 @@ export const PANEL_STATE_MAP: Record<string, PanelState> = {
   'llm-config': 'usable',
   'lockbox': 'usable',
   'mail': 'usable',
+  'managed-agents': 'usable',
   'marketing-calendar': 'usable',
   'marketing-dashboard': 'usable',
   'migration': 'usable',
