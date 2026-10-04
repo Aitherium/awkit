@@ -1549,6 +1549,19 @@ export const PANEL_REGISTRY: PanelMeta[] = [
     state: 'usable',
   },
   {
+    // Self-service read-only Microsoft 365 / Google Workspace: an admin registers
+    // the workspace's own OAuth app (routers/connector_config.py), people connect.
+    id: 'connectors',
+    name: 'Calendar & Drive',
+    description: 'Connect Microsoft 365 or Google Workspace read-only with your own OAuth app',
+    category: 'integrations',
+    icon: 'plug',
+    apiPrefix: '/api/connectors',
+    domain: 'integrations',
+    tenantIsolated: true,
+    state: 'usable',
+  },
+  {
     id: 'awgym',
     name: 'awgym',
     description: 'ARC-AGI-3 training gym: live world-model state, runs and the solver bridge',

@@ -75,6 +75,7 @@ export const PANEL_STATE_MAP: Record<string, PanelState> = {
   'cms': 'usable',
   'comms': 'usable',
   'connectivity-wizard': 'usable',
+  'connectors': 'usable',
   'contacts': 'usable',
   'content-studio': 'usable',
   'dashboard': 'usable',

@@ -123,6 +123,38 @@ describe('FamilyTutorConsolePanel', () => {
     await screen.findByText('Practice assigned.')
   })
 
+  it('settings PATCH carries only the form fields; the voice card picks from the roster', async () => {
+    const withExtras = [{ ...LEARNERS[0], settings: { quest_minutes: 7, voice: 'emma', guardian_focus: { skills: [] } } }]
+    const choices = [{ id: 'ava', name: 'Ava', about: 'Warm' }, { id: 'emma', name: 'Emma' }, { id: 'andrew', name: 'Andrew' }]
+    const calls = installFetch((url, init) => {
+      if (url.endsWith('/family/learners') && (!init?.method || init.method === 'GET')) return { status: 200, body: withExtras }
+      if (url.endsWith('/family/learners/l-x') && init?.method === 'PATCH') return { status: 200, body: { ok: true } }
+      if (url.endsWith('/family/learners/l-x/voice') && (!init?.method || init.method === 'GET')) {
+        return { status: 200, body: { voice: 'emma', choices } }
+      }
+      if (url.endsWith('/family/learners/l-x/voice') && init?.method === 'PUT') {
+        return { status: 200, body: { voice: JSON.parse(String(init.body)).voice, choices } }
+      }
+      return undefined
+    })
+    render(<FamilyTutorConsolePanel apiBase="/api/tutor" />)
+    await screen.findByText('X')
+    fireEvent.click(screen.getByRole('button', { name: 'More' }))
+    fireEvent.click(screen.getByRole('button', { name: /^settings$/i }))
+    const emma = await screen.findByTestId('voice-emma')
+    expect(emma.getAttribute('aria-checked')).toBe('true')
+    await act(async () => { fireEvent.click(screen.getByTestId('voice-andrew')) })
+    await screen.findByText('X will hear Andrew.')
+    const put = calls.find((c) => c.init?.method === 'PUT')
+    expect(JSON.parse(String(put?.init?.body))).toEqual({ voice: 'andrew' })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /save settings/i })) })
+    const patch = calls.find((c) => c.init?.method === 'PATCH')
+    const sent = JSON.parse(String(patch?.init?.body)).settings
+    expect(sent).toMatchObject({ quest_minutes: 7 })
+    expect(sent).not.toHaveProperty('voice')
+    expect(sent).not.toHaveProperty('guardian_focus')
+  })
+
   it('a non-guardian sees a plain note, not learners', async () => {
     installFetch(() => ({ status: 403, body: { detail: 'forbidden' } }))
     render(<FamilyTutorConsolePanel apiBase="/api/tutor" />)

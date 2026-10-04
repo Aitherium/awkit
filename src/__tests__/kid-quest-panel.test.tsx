@@ -31,7 +31,7 @@ function installFetch(route: Route) {
     calls.push({ url, init })
     // Read-aloud (learnVoice) is not under test here: the plane is "down", so the panel
     // falls back to the device voice and a scripted route never sees a /me/say call.
-    const r = url.endsWith('/me/say')
+    const r = /\/me\/say(\/stream)?$/.test(url)
       ? { status: 503, body: { detail: 'Voice unavailable' } }
       : route(url, init) ?? { status: 404, body: { detail: 'nope' } }
     return {
@@ -67,7 +67,8 @@ async function typeAnswer(value: string) {
 
 async function startQuest(index = 0) {
   await screen.findByTestId('home-screen')
-  await act(async () => { fireEvent.click(screen.getAllByRole('button', { name: /start/i })[index]) })
+  // The world tiles ("Start space"); "Start my lesson" above them has its own suite.
+  await act(async () => { fireEvent.click(screen.getAllByRole('button', { name: /^start (?!my lesson)/i })[index]) })
 }
 
 describe('KidQuestPanel', () => {
@@ -147,7 +148,8 @@ describe('KidQuestPanel', () => {
 
     const { container } = render(<KidQuestPanel apiBase="/api/tutor" />)
     await screen.findByTestId('home-screen')
-    expect(screen.getAllByRole('button', { name: /start/i })).toHaveLength(2)
+    expect(screen.getAllByRole('button', { name: /^start (?!my lesson)/i })).toHaveLength(2)
+    expect(screen.getByTestId('start-lesson')).toBeTruthy()
     await startQuest(0)
     await screen.findByTestId('item-screen')
     expect(screen.getAllByTestId('ten-frame')).toHaveLength(2)
@@ -285,6 +287,7 @@ describe('KidQuestPanel', () => {
         }
       }
       if (url.endsWith('/me/space')) return { status: 404, body: {} } // FamilySpaceCard probe
+      if (url.endsWith('/me/progress')) return { status: 404, body: {} } // home encouragement card
       n += 1
       // The server reporting a smaller "done" later must not step a stone back.
       const done = n === 1 ? 1 : 0

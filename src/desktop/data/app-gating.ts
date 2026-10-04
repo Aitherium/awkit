@@ -130,6 +130,12 @@ export const APP_GATING: Readonly<Record<string, AppGating>> = {
     class: 'rbac',
     rbac: { resource: 'system', action: 'admin' },
   },
+  // Aither Control: the owner's device/lending/model console. The tile shows only to
+  // platform operators; /api/control refuses everyone but the platform owner.
+  control: {
+    class: 'rbac',
+    rbac: { resource: 'system', action: 'admin' },
+  },
   registry: {
     class: 'rbac',
     rbac: { resource: 'system', action: 'admin' },

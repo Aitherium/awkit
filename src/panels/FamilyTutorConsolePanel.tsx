@@ -24,7 +24,9 @@ import AcademyMirrorCard from './AcademyMirrorCard'
 import FamilySpaceCard from './FamilySpaceCard'
 import FamilyMessagesSection from './FamilyMessagesSection'
 import TutorFocusCard from './TutorFocusCard'
+import TutorProgressCard from './TutorProgressCard'
 import LearnerGuardCard from './LearnerGuardCard'
+import LearnVoiceCard from './LearnVoiceCard'
 import CoGuardiansCard from './CoGuardiansCard'
 import { LearnerSpriteButton, SpriteOfferCard, spriteEmoji, type KidSprite } from './LearnerSprite'
 import { C, EASE, FONT_MONO, FONT_UI, LEARN_CSS, LearnModeSwitch, learnVars, useLearnMode } from './learnTheme'
@@ -219,7 +221,7 @@ interface PairCode { alias: string; pair_code: string; expires_at?: string | num
 
 type View = { kind: 'none' } | { kind: 'report'; lid: string } | { kind: 'transcript'; lid: string }
   | { kind: 'settings'; lid: string } | { kind: 'assign'; lid: string } | { kind: 'messages'; lid: string }
-  | { kind: 'focus'; lid: string }
+  | { kind: 'focus'; lid: string } | { kind: 'progress'; lid: string }
 
 type LoadState = 'loading' | 'ready' | 'error' | 'forbidden'
 type Glance = Report | 'offline'
@@ -571,7 +573,11 @@ export default function FamilyTutorConsolePanel({ apiBase, extraHeaders = {} }: 
   const saveSettings = async (e: FormEvent) => {
     e.preventDefault()
     if (view.kind !== 'settings') return
-    const r = await call(`/family/learners/${encodeURIComponent(view.lid)}`, 'PATCH', { settings }).catch(() => null)
+    // Only the fields this form edits: other settings keys (the focus card's, the voice
+    // card's) have their own doors, and the PATCH model refuses unknown keys.
+    const { quest_minutes, daily_cap_minutes, focus, theme, ask_enabled } = settings
+    const patch = { quest_minutes, daily_cap_minutes, focus, theme, ask_enabled }
+    const r = await call(`/family/learners/${encodeURIComponent(view.lid)}`, 'PATCH', { settings: patch }).catch(() => null)
     setNote(r?.ok ? 'Settings saved.' : 'Could not save settings.')
     if (r?.ok) load()
   }
@@ -703,6 +709,7 @@ export default function FamilyTutorConsolePanel({ apiBase, extraHeaders = {} }: 
 
                     <nav aria-label={`More for ${l.alias}`} style={{ borderTop: `1px solid ${C.hairline}`, marginTop: -4 }}>
                       <div style={S.links}>
+                        {linkBtn('Progress', () => setView({ kind: 'progress', lid: l.lid }))}
                         {linkBtn('Weekly report', () => openReport(l.lid))}
                         {linkBtn('Weekly focus', () => setView({ kind: 'focus', lid: l.lid }))}
                         {linkBtn('Messages', () => setView({ kind: 'messages', lid: l.lid }))}
@@ -1024,6 +1031,10 @@ export default function FamilyTutorConsolePanel({ apiBase, extraHeaders = {} }: 
             </form>
           )}
           {view.kind === 'settings' && (
+            <LearnVoiceCard key={`voice-${view.lid}`} call={call} apiBase={apiBase}
+              getHeaders={() => headersRef.current} lid={view.lid} alias={current?.alias} onNote={setNote} />
+          )}
+          {view.kind === 'settings' && (
             <LearnerGuardCard key={`guard-${view.lid}`} call={call} lid={view.lid} alias={current?.alias}
               canRemove={current?.guardian_role !== 'co'}
               onNote={setNote} onRemoved={() => { closeView(); load() }} />
@@ -1047,6 +1058,10 @@ export default function FamilyTutorConsolePanel({ apiBase, extraHeaders = {} }: 
 
           {view.kind === 'messages' && (
             <FamilyMessagesSection key={view.lid} apiBase={apiBase} extraHeaders={extraHeaders} lid={view.lid} name={current?.alias} />
+          )}
+          {view.kind === 'progress' && (
+            <TutorProgressCard key={view.lid} apiBase={apiBase} lid={view.lid} alias={current?.alias}
+              extraHeaders={extraHeaders} onNote={setNote} />
           )}
           {view.kind === 'focus' && (
             <TutorFocusCard key={view.lid} apiBase={apiBase} lid={view.lid} alias={current?.alias}

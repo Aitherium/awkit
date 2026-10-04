@@ -71,7 +71,7 @@ export function PageFrame({ page, height = 320, title = 'My page' }: { page: Pag
       sandbox=""
       referrerPolicy="no-referrer"
       srcDoc={pageDocument(page)}
-      style={{ width: '100%', height, border: `1px solid ${C.hairline}`, borderRadius: 16, background: '#fff' }}
+      style={{ width: '100%', height, border: `1px solid ${C.hairline}`, borderRadius: 16, background: C.pagePaper }}
     />
   )
 }

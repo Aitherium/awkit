@@ -35,6 +35,9 @@ export interface LearnTokenSet {
   amberWash: string
   qrField: string
   qrPaper: string
+  /** Behind a child's own HTML page (FamilySpaceCard): white in both modes, so a page
+   *  written with default black text stays readable whatever the Learn mode is. */
+  pagePaper: string
   scrim: string
   shadow: string
   skeleton: string
@@ -58,6 +61,7 @@ export const LEARN_TOKENS: Record<LearnMode, LearnTokenSet> = {
     amberWash: 'rgba(212,135,43,.12)',
     qrField: '#000000',
     qrPaper: '#FFFFFF',
+    pagePaper: '#FFFFFF',
     scrim: 'rgba(3,3,5,.62)',
     shadow: '0 40px 120px -24px rgba(0,0,0,.9)',
     skeleton: 'rgba(255,255,255,.06)',
@@ -80,6 +84,7 @@ export const LEARN_TOKENS: Record<LearnMode, LearnTokenSet> = {
     amberWash: 'rgba(184,110,22,.10)',
     qrField: '#0E1116',
     qrPaper: '#FFFFFF',
+    pagePaper: '#FFFFFF',
     scrim: 'rgba(14,17,22,.32)',
     shadow: '0 24px 60px -24px rgba(14,17,22,.22)',
     skeleton: 'rgba(14,17,22,.06)',

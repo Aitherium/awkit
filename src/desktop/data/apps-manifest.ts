@@ -3510,7 +3510,7 @@ const WORKSPACE_APPS: AitherApp[] = [
         // route-map: /workspace/dashboard -> /?view=welcome
         icon: 'layout-dashboard', route: '/?view=welcome',
         category: 'core', status: 'stable', requiresAuth: true,
-        availability: 'local', showInNav: true, navGroup: 'Team', navOrder: 0,
+        availability: 'local', showInNav: true, navGroup: 'Home', navOrder: 0,
         keywords: ['workspace', 'dashboard', 'home'],
     },
     {
@@ -3520,7 +3520,7 @@ const WORKSPACE_APPS: AitherApp[] = [
         // on the home, not a page of its own)
         icon: 'monitor-smartphone', route: '/?shell=aither-desktop',
         category: 'core', status: 'stable', requiresAuth: true,
-        availability: 'local', showInNav: true, navGroup: 'Team', navOrder: 2,
+        availability: 'local', showInNav: true, navGroup: 'Home', navOrder: 1,
         keywords: ['desktop', 'os', 'windows', 'aither-desktop', 'environment', 'taskbar'],
     },
     {
@@ -3529,7 +3529,7 @@ const WORKSPACE_APPS: AitherApp[] = [
         // route-map: /workspace/apps -> /studio?view=apps (the Studio's apps view)
         icon: 'grid-3x3', route: '/studio?view=apps',
         category: 'core', status: 'stable', requiresAuth: true,
-        availability: 'gateway', showInNav: true, navGroup: 'Team', navOrder: 1,
+        availability: 'gateway', showInNav: true, navGroup: 'Home', navOrder: 2,
         keywords: ['apps', 'install', 'catalog', 'marketplace', 'deploy'],
     },
     {
@@ -3538,7 +3538,7 @@ const WORKSPACE_APPS: AitherApp[] = [
         // route-map: /marketplace -> /?app=shop (the shop window on the OS home)
         icon: 'store', route: '/?app=shop',
         category: 'core', status: 'stable', requiresAuth: true,
-        availability: 'gateway', showInNav: true, navGroup: 'Commerce', navOrder: 0,
+        availability: 'gateway', showInNav: true, navGroup: 'Home', navOrder: 3,
         keywords: ['marketplace', 'store', 'community', 'apps', 'deploy', 'install'],
     },
     // ── Communicate ──
@@ -3549,7 +3549,7 @@ const WORKSPACE_APPS: AitherApp[] = [
         // Room renders RelayShell itself — relay is a tab of the room now).
         icon: 'zap', route: '/workspace/room?tab=rooms',
         category: 'social', status: 'stable', requiresAuth: true,
-        availability: 'gateway', showInNav: true, navGroup: 'Harness', navOrder: 0,
+        availability: 'gateway', showInNav: true, navGroup: 'Communicate', navOrder: 0,
         keywords: ['relay', 'irc', 'messaging', 'channels', 'chat', 'home', 'team', 'room'],
     },
     {
@@ -3558,7 +3558,7 @@ const WORKSPACE_APPS: AitherApp[] = [
         // route-map: /workspace/mail -> /workspace/one?tab=mail (AitherOne suite)
         icon: 'mail', route: '/workspace/one?tab=mail',
         category: 'social', status: 'beta', requiresAuth: true,
-        availability: 'gateway', showInNav: true, navGroup: 'Harness', navOrder: 3,
+        availability: 'gateway', showInNav: true, navGroup: 'Communicate', navOrder: 1,
         keywords: ['mail', 'email', 'correspondence'],
     },
     {
@@ -3647,7 +3647,7 @@ const WORKSPACE_APPS: AitherApp[] = [
         // route-map: /workspace/knowledge -> /workspace/one?tab=knowledge (AitherOne suite)
         icon: 'library', route: '/workspace/one?tab=knowledge',
         category: 'core', status: 'beta', requiresAuth: true,
-        availability: 'gateway', showInNav: true, navGroup: 'Workspace', navOrder: 7,
+        availability: 'gateway', showInNav: true, navGroup: 'Workspace', navOrder: 1,
         keywords: ['knowledge', 'embeddings', 'rag'],
     },
     {
@@ -3744,7 +3744,7 @@ const WORKSPACE_APPS: AitherApp[] = [
         description: 'Workspace calendar — schedule, meetings, events',
         icon: 'calendar-days', route: '/workspace/one?tab=calendar',
         category: 'core', status: 'stable', requiresAuth: true,
-        availability: 'gateway', showInNav: true, navGroup: 'Docs & Files', navOrder: 10,
+        availability: 'gateway', showInNav: true, navGroup: 'Communicate', navOrder: 2,
         keywords: ['calendar', 'schedule', 'meetings', 'events'],
     },
     {
@@ -3805,7 +3805,7 @@ const WORKSPACE_APPS: AitherApp[] = [
         // route-map: /workspace/sprite -> /spaces?tab=sprite (Sprite lives in the neighborhood)
         icon: 'heart', route: '/spaces?tab=sprite',
         category: 'core', status: 'beta', requiresAuth: true,
-        availability: 'gateway', showInNav: true, navGroup: 'Workspace', navOrder: 60,
+        availability: 'gateway', showInNav: false, navGroup: 'Workspace', navOrder: 60,
         keywords: ['sprite', 'companion', 'pet', 'tamagotchi', 'creature', 'ai pet'],
     },
     // ── Workspace ──
@@ -4036,7 +4036,7 @@ const WORKSPACE_APPS: AitherApp[] = [
         description: 'The office & creative suite — docs, slides, media, creative studio, canvas',
         icon: 'layout-grid', route: '/workspace/one',
         category: 'creative', status: 'beta', requiresAuth: true,
-        availability: 'gateway', showInNav: true, navGroup: 'Studio', navOrder: 0,
+        availability: 'gateway', showInNav: true, navGroup: 'Workspace', navOrder: 0,
         keywords: ['aitherone', 'suite', 'office', 'docs', 'slides', 'presentations', 'media', 'creative', 'canvas'],
     },
     {
@@ -4055,7 +4055,7 @@ const WORKSPACE_APPS: AitherApp[] = [
         // route-map: /workspace/iris -> /studio (the ONE Studio; Iris is its create lane)
         icon: 'eye', route: '/studio',
         category: 'creative', status: 'beta', requiresAuth: true,
-        availability: 'gateway', showInNav: true, navGroup: 'Studio', navOrder: 1,
+        availability: 'gateway', showInNav: true, navGroup: 'Agents', navOrder: 1,
         agent: 'iris',
         keywords: ['iris', 'vision', 'image', 'builder', 'app', 'agent', 'intake', 'design'],
     },
@@ -4065,7 +4065,7 @@ const WORKSPACE_APPS: AitherApp[] = [
         // route-map: /workspace/saga -> /?channel=arcade&keyword=saga (Saga lives in the arcade)
         icon: 'book-open', route: '/?channel=arcade&keyword=saga',
         category: 'creative', status: 'beta', requiresAuth: true,
-        availability: 'gateway', showInNav: true, navGroup: 'Studio', navOrder: 7,
+        availability: 'gateway', showInNav: true, navGroup: 'Agents', navOrder: 2,
         keywords: ['saga', 'story', 'narrative', 'game'],
     },
     {

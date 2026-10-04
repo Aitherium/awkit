@@ -15,6 +15,13 @@
  * - The progress path only grows, and the quest always ends on "Saved, all done!".
  * - Nothing the server might mistakenly send (for example an answer key) is ever
  *   rendered: only named, expected fields are read.
+ *
+ * "Start my lesson" (POST /me/lesson/start) runs the same item loop as a quest,
+ * shaped by the server into warm-up, one new step, practice and a fun finish. A
+ * segment change shows its opener (read aloud); the new step opens with a worked
+ * "watch me" card. Items arrive at the level the server's difficulty dial chose;
+ * the child never sees a level. "I'm not sure" is always there: it gets the same
+ * kind worked steps as a miss and tells the dial to ease off.
  */
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import FamilySpaceCard from './FamilySpaceCard'
@@ -80,6 +87,31 @@ interface AnswerOutcome {
   done?: boolean
   progress?: { done?: number; total?: number }
   sprite_event?: SpriteEvent | null
+  segment?: string | null
+}
+
+/** The worked "watch me" example for a lesson's new step (never graded). */
+interface TeachCard {
+  kid_title?: string
+  prompt_text?: string
+  tts_text?: string
+  visual?: ItemVisual | null
+  steps?: string[]
+  answer_label?: string
+}
+
+interface LessonInfo {
+  segment?: string | null
+  segments?: { id: string; label: string; items: number }[]
+  lines?: Record<string, string>
+  teach?: TeachCard | null
+}
+
+interface KidProgress {
+  learned?: string[]
+  learned_count?: number
+  growing?: string[]
+  today?: { goal_met?: boolean; goal_minutes?: number | null }
 }
 
 type Screen =
@@ -96,6 +128,8 @@ type Screen =
   // afterLook: the break followed a miss, so the redo still comes after it.
   | { kind: 'break'; afterLook: boolean }
   | { kind: 'saved'; say: string }
+  // A lesson segment opener; `teach` is the worked example before the new step.
+  | { kind: 'segment'; segment: string; line: string; teach: TeachCard | null }
 
 const DEFAULT_THEMES = ['space', 'ocean']
 const THEME_EMOJI: Record<string, string> = {
@@ -103,6 +137,10 @@ const THEME_EMOJI: Record<string, string> = {
 }
 const LOOK_LINE = "Let's look together"
 const SAVED_LINE = 'Saved, all done!'
+const SEGMENT_LABEL: Record<string, string> = {
+  warmup: 'warm-up', new: 'something new', practice: 'practice', finish: 'fun finish',
+}
+const SEGMENT_EMOJI: Record<string, string> = { warmup: '🌤️', new: '✨', practice: '💪', finish: '🎉' }
 
 const BIG: CSSProperties = {
   minHeight: 64,
@@ -183,9 +221,33 @@ export function TenFrame({ filled }: { filled: number }) {
   )
 }
 
+/** Place value: one tall bar per ten, one small square per one. */
+export function TensOnes({ tens, ones }: { tens: number; ones: number }) {
+  const t = Math.max(0, Math.min(9, Math.floor(tens)))
+  const o = Math.max(0, Math.min(19, Math.floor(ones)))
+  return (
+    <div data-testid="tens-ones" role="img" aria-label={`${t} tens and ${o} ones`}
+      style={{ display: 'flex', gap: 6, alignItems: 'flex-end', justifyContent: 'center', flexWrap: 'wrap' }}>
+      {Array.from({ length: t }, (_, i) => (
+        <span key={`t${i}`} style={{ width: 14, height: 120, borderRadius: 4, background: C.accent, boxShadow: `0 0 10px ${C.accentGlow}` }} />
+      ))}
+      <span style={{ width: 12 }} />
+      <span style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 14px)', gap: 4 }}>
+        {Array.from({ length: o }, (_, i) => (
+          <span key={`o${i}`} style={{ width: 14, height: 14, borderRadius: 3, background: C.accent }} />
+        ))}
+      </span>
+    </div>
+  )
+}
+
 function Visual({ visual }: { visual?: ItemVisual | null }) {
   if (!visual) return null
   const kind = String(visual.kind ?? visual.type ?? '').replace(/[-_]/g, '')
+  if (kind === 'tensones') {
+    const v = visual as ItemVisual & { tens?: number; ones?: number }
+    return <TensOnes tens={Number(v.tens ?? 0)} ones={Number(v.ones ?? 0)} />
+  }
   if (kind === 'tenframe') {
     const frames = Array.isArray(visual.frames) && visual.frames.length
       ? visual.frames
@@ -322,7 +384,13 @@ export default function KidQuestPanel({ apiBase, extraHeaders = {}, homeExtra, h
   const [typed, setTyped] = useState('')
   const [progress, setProgress] = useState({ done: 0, total: 0 })
   const [spriteEvent, setSpriteEvent] = useState<SpriteEvent | null>(null)
+  // The open lesson (null for a plain quest) and the segment on screen.
+  const [lesson, setLesson] = useState<LessonInfo | null>(null)
+  const [segment, setSegment] = useState<string | null>(null)
+  const [kidProgress, setKidProgress] = useState<KidProgress | null>(null)
   const shownAt = useRef<number>(0)
+  // The segment the server said the pending next item belongs to.
+  const pendingSegment = useRef<string | null>(null)
   const { mode, pref, setPref } = useLearnMode()
   const onGuardianRef = useRef(onGuardian)
   onGuardianRef.current = onGuardian
@@ -354,7 +422,13 @@ export default function KidQuestPanel({ apiBase, extraHeaders = {}, homeExtra, h
         setScreen({ kind: 'pair' })
         return
       }
-      if (r.ok && r.data) { setMe(r.data as MeView); setScreen({ kind: 'home' }); return }
+      if (r.ok && r.data) {
+        setMe(r.data as MeView)
+        setScreen({ kind: 'home' })
+        // Encouragement only (what was learned, today's goal); never a score.
+        call('/me/progress').then((p) => { if (p.ok && p.data) setKidProgress(p.data as KidProgress) }).catch(() => {})
+        return
+      }
       setScreen({ kind: 'oops', say: 'Let’s try again in a little bit.' })
     } catch {
       setScreen({ kind: 'oops', say: 'Let’s try again in a little bit.' })
@@ -418,6 +492,57 @@ export default function KidQuestPanel({ apiBase, extraHeaders = {}, homeExtra, h
     }
   }
 
+  /** Show the next item, opening its lesson segment first when the segment changes. */
+  const advanceTo = (next: QuestItem, nextSegment: string | null | undefined, isRedo: boolean) => {
+    if (lesson && nextSegment && nextSegment !== segment) {
+      setSegment(nextSegment)
+      setPendingNext(next)
+      const line = lesson.lines?.[nextSegment] || SEGMENT_LABEL[nextSegment] || ''
+      const teach = nextSegment === 'new' ? lesson.teach ?? null : null
+      setScreen({ kind: 'segment', segment: nextSegment, line, teach })
+      speakRef.current([line, teach?.tts_text].filter(Boolean).join('. '))
+      return
+    }
+    showItem(next, isRedo)
+  }
+
+  const startLesson = async (theme: string) => {
+    setBusy(true)
+    try {
+      const r = await call('/me/lesson/start', 'POST', { theme })
+      const d = (r.data || {}) as {
+        quest_id?: string; items_total?: number; item?: QuestItem; say?: string; lesson?: LessonInfo
+        progress?: { done?: number; total?: number }
+      }
+      if (r.status === 429) { setScreen({ kind: 'rest', say: d.say || 'That’s lots of learning today. Rest time!' }); return }
+      if (r.ok && d.quest_id && d.item) {
+        setQuestId(d.quest_id)
+        setProgress({ done: Number(d.progress?.done ?? 0), total: Number(d.items_total ?? 0) })
+        setSpriteEvent(null)
+        const info = d.lesson ?? null
+        setLesson(info)
+        setSegment(null)
+        if (info && info.segment) {
+          // Open the first segment (its line, and the watch-me card if it is the new step).
+          setSegment(info.segment)
+          setPendingNext(d.item)
+          const line = info.lines?.[info.segment] || SEGMENT_LABEL[info.segment] || ''
+          const teach = info.segment === 'new' ? info.teach ?? null : null
+          setScreen({ kind: 'segment', segment: info.segment, line, teach })
+          speakRef.current([line, teach?.tts_text].filter(Boolean).join('. '))
+          return
+        }
+        showItem(d.item, false)
+        return
+      }
+      setScreen({ kind: 'oops', say: 'Let’s try again in a little bit.' })
+    } catch {
+      setScreen({ kind: 'oops', say: 'Let’s try again in a little bit.' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const finish = async () => {
     let say = SAVED_LINE
     if (questId) {
@@ -430,20 +555,23 @@ export default function KidQuestPanel({ apiBase, extraHeaders = {}, homeExtra, h
     }
     setQuestId(null)
     setItem(null)
+    setLesson(null)
+    setSegment(null)
     setScreen({ kind: 'saved', say })
     speakRef.current(say)
   }
 
-  const answer = async (value: string) => {
+  const answer = async (value: string, idk = false) => {
     if (!item || !questId || busy) return
     setBusy(true)
     const latency = Math.max(0, Date.now() - shownAt.current)
     try {
       const r = await call(`/me/quest/${encodeURIComponent(questId)}/answer`, 'POST', {
         item_id: item.item_id,
-        answer: value.slice(0, 16),
+        answer: idk ? '' : value.slice(0, 16),
         latency_ms: latency,
-        redo,
+        redo: idk ? false : redo,
+        idk,
       })
       if (!r.ok || !r.data) { setScreen({ kind: 'oops', say: 'Let’s try that again.' }); return }
       const out = r.data as AnswerOutcome
@@ -451,6 +579,9 @@ export default function KidQuestPanel({ apiBase, extraHeaders = {}, homeExtra, h
       if (out.sprite_event) setSpriteEvent(out.sprite_event)
       if (out.done) { await finish(); return }
       setPendingNext(out.next_item ?? null)
+      pendingSegment.current = out.segment ?? null
+      // Warm the next prompt's audio while the child hears this feedback.
+      if (out.next_item) speakRef.current.prefetch?.(out.next_item.tts_text ?? out.next_item.prompt_text)
       if (out.feedback === 'lets_look') {
         // A miss never loses its worked steps, even when it also triggers a break:
         // the look card comes first, then the break, then the redo.
@@ -472,7 +603,12 @@ export default function KidQuestPanel({ apiBase, extraHeaders = {}, homeExtra, h
   }
 
   const goOn = (afterLook: boolean) => {
-    if (pendingNext) { showItem(pendingNext, false); setPendingNext(null); return }
+    if (pendingNext) {
+      const next = pendingNext
+      setPendingNext(null)
+      advanceTo(next, pendingSegment.current, false)
+      return
+    }
     // After "let's look", the same item comes back as a redo (the server caps redos).
     if (item && afterLook) { showItem(item, true); return }
     finish()
@@ -562,7 +698,37 @@ export default function KidQuestPanel({ apiBase, extraHeaders = {}, homeExtra, h
           {me?.sprite && me.sprite.name ? <KidSpriteCard sprite={me.sprite} /> : <SpriteOrb sprite={me?.sprite} size={128} />}
           <div style={{ fontSize: 36, fontWeight: 500, letterSpacing: '-0.02em' }}>Hi{me?.alias ? `, ${me.alias}` : ''}!</div>
           {homeLead && <div style={{ width: '100%', textAlign: 'left' }}>{homeLead}</div>}
-          <div style={{ color: C.dim }}>Pick a world, then start.</div>
+          <button type="button" data-testid="start-lesson" className="al-primary al-focus" disabled={busy}
+            onClick={() => startLesson(themes[0])}
+            style={{ ...PRIMARY, width: '100%', minHeight: 96, fontSize: 30, borderRadius: 28 }}>
+            ✨ Start my lesson
+          </button>
+          {kidProgress && (kidProgress.learned_count || kidProgress.today?.goal_minutes) ? (
+            <div data-testid="kid-progress" style={{
+              width: '100%', background: C.surface, border: `1px solid ${C.hairline}`, borderRadius: 24,
+              padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 10, textAlign: 'left',
+            }}>
+              {kidProgress.today?.goal_minutes ? (
+                <div style={{ fontSize: 22 }}>
+                  {kidProgress.today.goal_met ? '🌟 You did your learning today!' : '🌱 Today’s learning is waiting for you.'}
+                </div>
+              ) : null}
+              {kidProgress.learned && kidProgress.learned.length > 0 && (
+                <div>
+                  <div style={LABEL}>things you learned</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+                    {kidProgress.learned.slice(0, 6).map((t) => (
+                      <span key={t} style={{ fontSize: 17, padding: '6px 12px', borderRadius: 999, background: C.accentWash, border: `1px solid ${C.hairline}` }}>{t}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {kidProgress.growing && kidProgress.growing.length > 0 && (
+                <div style={{ color: C.dim, fontSize: 18 }}>Growing: {kidProgress.growing.slice(0, 2).join(' · ')}</div>
+              )}
+            </div>
+          ) : null}
+          <div style={{ color: C.dim }}>Or pick a world for quick practice.</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 14, width: '100%' }}>
             {themes.map((t) => (
               <button key={t} type="button" className="al-tile al-focus" disabled={busy}
@@ -602,6 +768,7 @@ export default function KidQuestPanel({ apiBase, extraHeaders = {}, homeExtra, h
       const numeric = item.input === 'number' || (!choices.length)
       body = (
         <Card testId="item-screen">
+          {lesson && segment && <div data-testid="segment-chip" style={LABEL}>{SEGMENT_LABEL[segment] ?? segment}</div>}
           <div style={{ fontSize: 32, fontWeight: 500, letterSpacing: '-0.02em' }}>{item.prompt_text || item.tts_text}</div>
           <button type="button" aria-label="hear it again" className="al-focus" style={BIG}
             onClick={() => speakRef.current(item.tts_text ?? item.prompt_text)}>🔊</button>
@@ -624,6 +791,42 @@ export default function KidQuestPanel({ apiBase, extraHeaders = {}, homeExtra, h
             </div>
           )}
           {left === 3 && <div data-testid="three-more" style={{ color: C.dim }}>3 more then done</div>}
+          <button type="button" data-testid="not-sure" className="al-quiet al-focus" disabled={busy}
+            style={{ ...BIG, fontSize: 20, background: 'transparent', color: C.dim }}
+            onClick={() => answer('', true)}>
+            🤔 I’m not sure
+          </button>
+        </Card>
+      )
+      break
+    }
+    case 'segment': {
+      const t = screen.teach
+      body = (
+        <Card testId="segment-card">
+          <div aria-hidden className="al-grow" style={{ fontSize: 52 }}>{SEGMENT_EMOJI[screen.segment] ?? '⭐'}</div>
+          <div style={LABEL}>{SEGMENT_LABEL[screen.segment] ?? screen.segment}</div>
+          <div style={title}>{screen.line}</div>
+          {t && (
+            <div data-testid="teach-card" style={{
+              alignSelf: 'stretch', background: C.accentWash, borderRadius: 20, border: `1px solid ${C.hairline}`,
+              padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 12, textAlign: 'left',
+            }}>
+              <div style={LABEL}>watch me</div>
+              <div style={{ fontSize: 28, fontWeight: 500 }}>{t.prompt_text}</div>
+              <Visual visual={t.visual} />
+              {Array.isArray(t.steps) && t.steps.length > 0 && (
+                <ol style={{ margin: 0, paddingLeft: 24 }}>
+                  {t.steps.filter((x) => typeof x === 'string').map((x, i) => <li key={i} style={{ margin: '4px 0' }}>{x}</li>)}
+                </ol>
+              )}
+              {t.answer_label && <div style={{ fontSize: 26 }}>So it is <b>{t.answer_label}</b>!</div>}
+            </div>
+          )}
+          <button type="button" className="al-primary al-focus" style={PRIMARY}
+            onClick={() => { const next = pendingNext; setPendingNext(null); if (next) showItem(next, false); else finish() }}>
+            {t ? 'My turn!' : 'Let’s go'}
+          </button>
         </Card>
       )
       break
@@ -687,7 +890,7 @@ export default function KidQuestPanel({ apiBase, extraHeaders = {}, homeExtra, h
       break
   }
 
-  const inQuest = questId !== null && ['item', 'yay', 'look', 'break'].includes(screen.kind)
+  const inQuest = questId !== null && ['item', 'yay', 'look', 'break', 'segment'].includes(screen.kind)
   return (
     <div style={shell} data-testid="kid-quest-panel" data-learn-theme={mode}>
       <style>{LEARN_CSS}</style>

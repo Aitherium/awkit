@@ -346,11 +346,11 @@ export default function WorkspaceAdminPanel({ apiBase = '/api/platform' }: Props
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: '0.82rem', fontWeight: 500 }}>Microsoft 365</div>
                   <div style={{ fontSize: '0.7rem', color: 'var(--text-muted, #888)' }}>
-                    {m365Status?.connected ? 'Connected (Calendar, Email, OneDrive)' : m365Status?.configured ? 'Configured but not connected' : 'Configure via MICROSOFT_* env vars'}
+                    {m365Status?.connected ? 'Connected (Calendar, Email, OneDrive)' : m365Status?.configured ? 'Configured but not connected' : 'Not set up: an admin registers your app in Calendar & Drive'}
                   </div>
                 </div>
                 {m365Status?.configured && !m365Status?.connected ? (
-                  <button onClick={() => window.location.href = '/api/auth/m365/login'} style={{
+                  <button onClick={() => window.location.href = `${getApiBase()}/api/auth/m365/login`} style={{
                     padding: '0.35rem 0.7rem', background: 'var(--accent-primary, #5EC9CC)', color: 'var(--bg-deep, #000)',
                     borderRadius: 4, fontSize: '0.7rem', fontWeight: 600,
                   }}>Connect</button>

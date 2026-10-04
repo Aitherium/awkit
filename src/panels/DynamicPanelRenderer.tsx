@@ -87,6 +87,7 @@ import SettingsPanel from './SettingsPanel'
 import AccessPolicyPanel from './AccessPolicyPanel'
 import DoorPeoplePanel from './DoorPeoplePanel'
 import ManagedAgentsPanel from './ManagedAgentsPanel'
+import ConnectorsPanel from './ConnectorsPanel'
 import PreferencesPanel from './PreferencesPanel'
 import WorkspaceAdminPanel from './WorkspaceAdminPanel'
 import AgentsPanel from './AgentsPanel'
@@ -270,6 +271,7 @@ export const PANEL_COMPONENTS: Record<string, PanelEntry> = {
   'settings':            { component: SettingsPanel },
   'access-policy':       { component: AccessPolicyPanel },
   'managed-agents':      { component: ManagedAgentsPanel },
+  'connectors':          { component: ConnectorsPanel },
   'door-people':         { component: DoorPeoplePanel },
   'preferences':         { component: PreferencesPanel },
   'workspace-admin':     { component: WorkspaceAdminPanel },
