@@ -22,6 +22,8 @@ export { default as TutorFocusCard } from './TutorFocusCard'
 export type { TutorFocusCardProps } from './TutorFocusCard'
 export { default as TutorProgressCard } from './TutorProgressCard'
 export type { TutorProgressCardProps } from './TutorProgressCard'
+export { default as TutorLevelCard } from './TutorLevelCard'
+export type { TutorLevelCardProps } from './TutorLevelCard'
 // Aither Classroom (the schools version of Aither Learn): teacher, parent and kid surfaces.
 export { default as ClassroomConsolePanel } from './ClassroomConsolePanel'
 export type { ClassroomConsolePanelProps } from './ClassroomConsolePanel'

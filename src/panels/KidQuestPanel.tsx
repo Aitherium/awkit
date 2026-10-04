@@ -56,6 +56,15 @@ interface ItemVisual {
   count?: number
   frames?: number[]
   emoji?: string
+  /** passage / sentence / word: the text the question is about */
+  text?: string
+  title?: string
+  /** fraction_bar: equal parts and how many are shaded */
+  parts?: number
+  shaded?: number
+  /** grid: an area model */
+  rows?: number
+  cols?: number
 }
 
 interface QuestItem {
@@ -241,9 +250,59 @@ export function TensOnes({ tens, ones }: { tens: number; ones: number }) {
   )
 }
 
+/** A bar cut into `parts` equal pieces with `shaded` filled (a fraction model). */
+export function FractionBar({ parts, shaded }: { parts: number; shaded: number }) {
+  const n = Math.max(1, Math.min(24, Math.floor(parts)))
+  const s = Math.max(0, Math.min(n, Math.floor(shaded)))
+  return (
+    <div data-testid="fraction-bar" role="img" aria-label={`${s} of ${n} equal parts shaded`}
+      style={{ display: 'flex', width: 'min(100%, 420px)', height: 56, borderRadius: 10, overflow: 'hidden', border: `2px solid ${C.hairlineStrong}` }}>
+      {Array.from({ length: n }, (_, i) => (
+        <span key={i} style={{
+          flex: 1, background: i < s ? C.accent : C.surface,
+          borderLeft: i ? `2px solid ${C.hairlineStrong}` : 'none',
+        }} />
+      ))}
+    </div>
+  )
+}
+
+/** The text a reading question is about: a short story, a sentence or one word. */
+function ReadingText({ visual, kind }: { visual: ItemVisual; kind: string }) {
+  const text = String(visual.text ?? '')
+  if (!text) return null
+  if (kind === 'word') {
+    return <div data-testid="reading-word" style={{ fontSize: 44, fontWeight: 600, letterSpacing: '0.02em' }}>{text}</div>
+  }
+  const passage = kind === 'passage'
+  return (
+    <div data-testid={passage ? 'reading-passage' : 'reading-sentence'} style={{
+      alignSelf: 'stretch', textAlign: 'left', background: C.ground, border: `1px solid ${C.hairline}`,
+      borderRadius: 18, padding: '14px 18px', fontSize: passage ? 20 : 24, lineHeight: 1.6, maxWidth: 680, margin: '0 auto',
+    }}>
+      {passage && visual.title && <div style={{ fontWeight: 600, marginBottom: 6 }}>{String(visual.title)}</div>}
+      {text}
+    </div>
+  )
+}
+
 function Visual({ visual }: { visual?: ItemVisual | null }) {
   if (!visual) return null
   const kind = String(visual.kind ?? visual.type ?? '').replace(/[-_]/g, '')
+  if (kind === 'passage' || kind === 'sentence' || kind === 'word') return <ReadingText visual={visual} kind={kind} />
+  if (kind === 'fractionbar') return <FractionBar parts={Number(visual.parts ?? 1)} shaded={Number(visual.shaded ?? 0)} />
+  if (kind === 'grid') {
+    const rows = Math.max(1, Math.min(10, Number(visual.rows ?? 1)))
+    const cols = Math.max(1, Math.min(10, Number(visual.cols ?? 1)))
+    return (
+      <div data-testid="area-grid" role="img" aria-label={`${rows} rows of ${cols} squares`}
+        style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, 22px)`, gap: 3, justifyContent: 'center' }}>
+        {Array.from({ length: rows * cols }, (_, i) => (
+          <span key={i} style={{ width: 22, height: 22, borderRadius: 3, background: C.accentWash, border: `1px solid ${C.accent}` }} />
+        ))}
+      </div>
+    )
+  }
   if (kind === 'tensones') {
     const v = visual as ItemVisual & { tens?: number; ones?: number }
     return <TensOnes tens={Number(v.tens ?? 0)} ones={Number(v.ones ?? 0)} />
@@ -291,6 +350,15 @@ function ProgressPath({ done, total }: { done: number; total: number }) {
   )
 }
 
+/** Big for "7 + 5 = ?", smaller for a word problem so it fits without scrolling. */
+function promptSize(text?: string): number {
+  const n = (text || '').length
+  return n > 90 ? 20 : n > 40 ? 24 : 32
+}
+
+/** Digits the pad accepts: grade 4-5 answers reach six digits (999,999). */
+const PAD_DIGITS = 6
+
 function NumberPad({ value, onChange, onGo, disabled }: {
   value: string; onChange: (v: string) => void; onGo: () => void; disabled: boolean
 }) {
@@ -301,7 +369,7 @@ function NumberPad({ value, onChange, onGo, disabled }: {
         data-testid="number-display"
         aria-live="polite"
         style={{
-          ...BIG, fontSize: 44, textAlign: 'center', margin: '0 auto 14px', width: 168, cursor: 'default',
+          ...BIG, fontSize: 40, textAlign: 'center', margin: '0 auto 14px', width: 232, cursor: 'default',
           background: C.ground, borderColor: C.hairline, fontVariantNumeric: 'tabular-nums',
         }}
       >
@@ -323,7 +391,7 @@ function NumberPad({ value, onChange, onGo, disabled }: {
           }
           return (
             <button key={k} type="button" className="al-focus" style={BIG} disabled={disabled}
-              onClick={() => onChange(value.length >= 3 ? value : value + k)}>{k}</button>
+              onClick={() => onChange(value.length >= PAD_DIGITS ? value : value + k)}>{k}</button>
           )
         })}
       </div>
@@ -769,7 +837,7 @@ export default function KidQuestPanel({ apiBase, extraHeaders = {}, homeExtra, h
       body = (
         <Card testId="item-screen">
           {lesson && segment && <div data-testid="segment-chip" style={LABEL}>{SEGMENT_LABEL[segment] ?? segment}</div>}
-          <div style={{ fontSize: 32, fontWeight: 500, letterSpacing: '-0.02em' }}>{item.prompt_text || item.tts_text}</div>
+          <div style={{ fontSize: promptSize(item.prompt_text || item.tts_text), fontWeight: 500, letterSpacing: '-0.02em' }}>{item.prompt_text || item.tts_text}</div>
           <button type="button" aria-label="hear it again" className="al-focus" style={BIG}
             onClick={() => speakRef.current(item.tts_text ?? item.prompt_text)}>🔊</button>
           <Visual visual={item.visual} />
@@ -782,7 +850,12 @@ export default function KidQuestPanel({ apiBase, extraHeaders = {}, homeExtra, h
                 return (
                   <button key={`${choiceValue(c)}-${i}`} type="button" disabled={busy} className="al-tile al-focus"
                     aria-label={face.label || `choice ${i + 1}`}
-                    style={{ ...BIG, minWidth: 110, minHeight: 110, borderRadius: 24, fontSize: face.emoji ? 56 : 32 }}
+                    style={{
+                      ...BIG, minWidth: 110, minHeight: 110, borderRadius: 24,
+                      // A phrase answer (a meaning, a story answer) wraps at reading size.
+                      fontSize: face.emoji ? 56 : (face.label && face.label.length > 12 ? 20 : 32),
+                      maxWidth: '100%', whiteSpace: 'normal', lineHeight: 1.3,
+                    }}
                     onClick={() => answer(choiceValue(c))}>
                     {face.emoji ?? face.label}
                   </button>

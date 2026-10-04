@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { C, FONT_UI } from './learnTheme'
 import { SheetHeading, Skel, fieldBox, help, labelText, mono, primary, quiet } from './learnParts'
+import TutorLevelCard from './TutorLevelCard'
 
 export interface TutorProgressCardProps {
   apiBase: string
@@ -171,6 +172,9 @@ export default function TutorProgressCard({ apiBase, lid, alias, extraHeaders = 
               </div>
             ))}
           </div>
+
+          <TutorLevelCard apiBase={apiBase} lid={lid} alias={who} extraHeaders={extraHeaders}
+            onNote={(m) => noteRef.current?.(m)} onChanged={load} />
 
           {view.next && view.next.length > 0 && (
             <div data-testid="progress-next">
