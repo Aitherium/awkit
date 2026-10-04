@@ -7,6 +7,10 @@
  * - Remove from Learn: POST {apiBase}/family/learners/{lid}/remove after a typed
  *   confirmation. The child's history stays readable to the guardian; the child can no
  *   longer start quests.
+ * - Delete permanently: POST {apiBase}/family/learners/{lid}/erase with
+ *   {"confirm": <the child's name>}. Deletes the child's profile, account, devices,
+ *   sprite, Space and every record, history included (COPPA / Play Families).
+ *   Guardian of record only, like Remove.
  */
 import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
 import { C, FONT_UI } from './learnTheme'
@@ -40,6 +44,8 @@ export default function LearnerGuardCard({ call, lid, alias, onNote, onRemoved, 
   const [pin, setPin] = useState('')
   const [busy, setBusy] = useState(false)
   const [confirm, setConfirm] = useState('')
+  const [eraseName, setEraseName] = useState('')
+  const eraseOk = !!alias && eraseName.trim().toLowerCase() === alias.trim().toLowerCase()
 
   useEffect(() => {
     let alive = true
@@ -74,6 +80,16 @@ export default function LearnerGuardCard({ call, lid, alias, onNote, onRemoved, 
     setBusy(false)
     if (r?.ok) { onNote?.(`${name} was removed from Learn.`); onRemoved?.() }
     else onNote?.('Could not remove. Try again in a moment.')
+  }
+
+  const erase = async () => {
+    if (!eraseOk || busy) return
+    setBusy(true)
+    const r = await call(`${base}/erase`, 'POST', { confirm: eraseName.trim() }).catch(() => null)
+    setBusy(false)
+    if (r?.ok) { onNote?.(`${name} and all of their records were deleted.`); onRemoved?.() }
+    else if (r?.status === 400) onNote?.(`Type ${name} exactly as shown to confirm.`)
+    else onNote?.('Could not delete. Nothing was lost; try again in a moment.')
   }
 
   return (
@@ -116,6 +132,22 @@ export default function LearnerGuardCard({ call, lid, alias, onNote, onRemoved, 
           <button type="button" className="al-quiet al-focus" style={S.danger} onClick={remove}
             disabled={confirm.trim().toLowerCase() !== 'remove' || busy} data-testid="remove-learner-btn">
             Remove
+          </button>
+        </div>
+      </section>}
+
+      {canRemove && alias && <section style={{ ...S.card, borderTop: `1px solid ${C.hairline}`, paddingTop: 14 }} data-testid="erase-learner">
+        <SheetHeading label="delete" title={`Delete ${name} permanently`} />
+        <p style={{ ...help, margin: 0 }}>
+          Deletes {name}&apos;s profile, account, devices, sprite, Space and every record, including
+          past reports. This cannot be undone. Type {name} to confirm.
+        </p>
+        <div style={S.row}>
+          <input value={eraseName} placeholder={alias} className="al-field" style={{ ...fieldBox, maxWidth: 200 }}
+            data-testid="erase-confirm" onChange={(e) => setEraseName(e.target.value)} />
+          <button type="button" className="al-quiet al-focus" style={S.danger} onClick={erase}
+            disabled={!eraseOk || busy} data-testid="erase-learner-btn">
+            Delete permanently
           </button>
         </div>
       </section>}

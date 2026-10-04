@@ -66,6 +66,33 @@ describe('LearnerGuardCard', () => {
     expect(onRemoved).toHaveBeenCalled()
   })
 
+  it('deletes permanently only after typing the child name', async () => {
+    const { call, calls } = makeCall((path, method) => {
+      if (path === `${P}/sprite/parental`) return reply(200, { chat_disabled: false, pin_set: false })
+      if (path === `${P}/erase` && method === 'POST') return reply(200, { lid: 'l-x', erased: true })
+      return reply(404, {})
+    })
+    const onRemoved = jest.fn()
+    const notes: string[] = []
+    render(<LearnerGuardCard call={call} lid="l-x" alias="Mia" onRemoved={onRemoved} onNote={(m) => notes.push(m)} />)
+    const btn = await screen.findByTestId('erase-learner-btn')
+    expect(btn).toBeDisabled()
+    fireEvent.change(screen.getByTestId('erase-confirm'), { target: { value: 'remove' } })
+    expect(btn).toBeDisabled()
+    fireEvent.change(screen.getByTestId('erase-confirm'), { target: { value: ' mia ' } })
+    await act(async () => { fireEvent.click(btn) })
+    expect(calls.find((c) => c.path === `${P}/erase`)?.body).toEqual({ confirm: 'mia' })
+    expect(onRemoved).toHaveBeenCalled()
+    expect(notes.pop()).toBe('Mia and all of their records were deleted.')
+  })
+
+  it('offers no permanent delete to a co-guardian', async () => {
+    const { call } = makeCall(() => reply(200, { chat_disabled: false, pin_set: false }))
+    render(<LearnerGuardCard call={call} lid="l-x" alias="Mia" canRemove={false} />)
+    await screen.findByTestId('sprite-chat-state')
+    expect(screen.queryByTestId('erase-learner')).toBeNull()
+  })
+
   it('says unavailable when the sprite store is down', async () => {
     const { call } = makeCall(() => reply(503, {}))
     render(<LearnerGuardCard call={call} lid="l-x" />)
