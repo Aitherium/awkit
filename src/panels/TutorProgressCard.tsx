@@ -51,6 +51,12 @@ export interface ProgressView {
   knobs?: { pins?: Record<string, number>; daily_goal_minutes?: number | null }
   lesson_minutes?: number
   how_it_works?: string
+  /** Skills marked learned by placement and never practised: one collapsed line. */
+  placed?: {
+    count?: number
+    summary?: string
+    skills?: Array<{ skill_id: string; kid_title: string; domain?: string; grade?: number }>
+  }
 }
 
 const DOMAIN_LABEL: Record<string, string> = { math: 'Numbers', reading: 'Words' }
@@ -90,6 +96,7 @@ export default function TutorProgressCard({ apiBase, lid, alias, extraHeaders = 
   const [busy, setBusy] = useState(false)
   const [goal, setGoal] = useState('')
   const [showHow, setShowHow] = useState(false)
+  const [showPlaced, setShowPlaced] = useState(false)
   const headerKey = JSON.stringify(extraHeaders)
   const noteRef = useRef(onNote)
   noteRef.current = onNote
@@ -175,6 +182,20 @@ export default function TutorProgressCard({ apiBase, lid, alias, extraHeaders = 
 
           <TutorLevelCard apiBase={apiBase} lid={lid} alias={who} extraHeaders={extraHeaders}
             onNote={(m) => noteRef.current?.(m)} onChanged={load} />
+
+          {view.placed && (view.placed.count ?? 0) > 0 && (
+            <div data-testid="progress-placed">
+              <button type="button" className="al-quiet al-focus" style={quiet} aria-expanded={showPlaced}
+                onClick={() => setShowPlaced(!showPlaced)}>
+                {view.placed.summary || `Placed out of ${view.placed.count} skills`}
+              </button>
+              {showPlaced && (
+                <ul data-testid="progress-placed-list" style={{ margin: '6px 0 0', paddingLeft: 20, ...help }}>
+                  {(view.placed.skills || []).map((p) => <li key={p.skill_id}>{p.kid_title}</li>)}
+                </ul>
+              )}
+            </div>
+          )}
 
           {view.next && view.next.length > 0 && (
             <div data-testid="progress-next">

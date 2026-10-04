@@ -10,6 +10,7 @@ import React from 'react'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import KidQuestPanel from '../panels/KidQuestPanel'
 import TutorLevelCard from '../panels/TutorLevelCard'
+import TutorProgressCard from '../panels/TutorProgressCard'
 
 type Reply = { status: number; body: unknown }
 type Route = (url: string, init?: RequestInit) => Reply | undefined
@@ -128,5 +129,29 @@ describe('TutorLevelCard', () => {
     const { container } = render(<TutorLevelCard apiBase="/api/tutor" lid="l1" />)
     await act(async () => { await Promise.resolve() })
     expect(container.textContent).toBe('')
+  })
+})
+
+describe('TutorProgressCard placed-out group', () => {
+  it('shows placed skills as one collapsed line and practised skills as rows', async () => {
+    installFetch((url) => {
+      if (url.endsWith('/family/learners/l1/progress')) {
+        return { status: 200, body: {
+          alias: 'Tess', working_grade: { math: 4, reading: 4 },
+          skills: [{ skill_id: 'math.add_within_10', kid_title: 'I can add within 10!', domain: 'math', state: 'secure', level: 0, level_name: 'core', percent: 90, answers: 8 }],
+          placed: { count: 2, summary: 'Placed out of 2 skills (grade 5 math, grade 5 reading)',
+            skills: [{ skill_id: 'math.number_bonds_10', kid_title: 'I know the pairs that make 10!' },
+              { skill_id: 'read.phx.cvc', kid_title: 'I can read words like cat!' }] },
+        } }
+      }
+      return undefined
+    })
+    render(<TutorProgressCard apiBase="/api/tutor" lid="l1" />)
+    const line = await screen.findByTestId('progress-placed')
+    expect(line.textContent).toContain('Placed out of 2 skills (grade 5 math, grade 5 reading)')
+    expect(screen.queryByTestId('progress-placed-list')).toBeNull()
+    expect(screen.getAllByTestId('progress-skill')).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: /placed out of/i }))
+    expect(screen.getByTestId('progress-placed-list').textContent).toContain('I can read words like cat!')
   })
 })
