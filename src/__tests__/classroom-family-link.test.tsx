@@ -52,6 +52,14 @@ const TERMS = {
   comes_home: ['Skills the teacher assigns show up in the quests at home.'],
   control: 'You can stop sharing at any time.',
 }
+const WORK = {
+  link_id: 'fln_1', alias: 'Athena',
+  work: [
+    { assignment_id: 'asn_1', title: 'Letter sounds week', skills: [{ skill_id: 'read.phx.letter_sounds', title: 'I know letter sounds!' }], opened_at: '2026-10-01T14:05:00+00:00', done_at: null, home: { sent_skills: 1, finished_skills: 0, tries: 3, days: 1 } },
+    { assignment_id: 'asn_2', title: null, skills: [{ skill_id: 'read.phx.cvc', title: 'I can read words like cat!' }], opened_at: null, done_at: null, home: { sent_skills: 1, finished_skills: 0, tries: 0, days: 0 } },
+  ],
+  review: { source: 'ai', label: 'observation', observations: [{ text: 'Class practice (I know letter sounds!): 3 attempts at home on 1 day, 0 of 1 skills finished. Something to try: a few minutes of this together as a game.', cites: ['att:1'] }] },
+}
 const CLASS = { class_id: 'cls_1', name: 'Room 4', subject: 'Reading', grade_level: 'K-2' }
 const LINK = { link_id: 'fln_1', learner_id: 'lrn_a', alias: 'Athena', class: CLASS, linked_at: '2026-10-01T14:00:00+00:00', shares: TERMS.shared.map((s) => s.key) }
 const SUMMARY = {
@@ -169,6 +177,7 @@ describe.each(['dark', 'light'] as const)('guardian panel in %s', (mode) => {
     const calls = installFetch((url, init) => {
       if (url === '/api/classroom/family/links' && (!init?.method || init.method === 'GET')) return ok({ links, terms: TERMS })
       if (url === '/api/classroom/family/links/fln_1/shared') return ok(SUMMARY)
+      if (url === '/api/classroom/family/links/fln_1/work') return ok(WORK)
       if (url === '/api/classroom/family/links/fln_1' && init?.method === 'DELETE') { links = []; return ok({ unlinked: true }) }
       return undefined
     })
@@ -191,6 +200,15 @@ describe.each(['dark', 'light'] as const)('guardian panel in %s', (mode) => {
     expect(screen.getByTestId('family-assigned').textContent).toBe('1 of 3 finished')
     expect(screen.getByTestId('family-feel').textContent).toBe('easy 2 · ok 1 · hard 1')
     expect(screen.getByTestId('family-shared-source').textContent).toMatch(/an observation, not a grade/)
+
+    // The class work, practised at home, with the review the model only picked.
+    await act(async () => { fireEvent.click(screen.getByTestId('family-work-look')) })
+    const items = (await screen.findAllByTestId('family-work-item')).map((n) => n.textContent)
+    expect(items).toEqual(['Letter sounds weekStarted · 3 tries at home on 1 day', 'I can read words like cat!Not started yet'])
+    const review = screen.getByTestId('family-review').textContent || ''
+    expect(review).toMatch(/picked by AI/)
+    expect(review).toMatch(/Something to try: a few minutes of this together as a game\./)
+    expect(review).toMatch(/never a grade/)
 
     await act(async () => { fireEvent.click(screen.getByTestId('family-stop')) })
     expect(calls.some((c) => c.init?.method === 'DELETE')).toBe(false) // asked first

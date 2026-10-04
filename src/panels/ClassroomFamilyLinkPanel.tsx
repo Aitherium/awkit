@@ -7,7 +7,8 @@
  *   joined, what each class sees, "Stop sharing", and the join flow as an
  *   in-window sheet: the teacher's code -> the class it opens, the child, and
  *   what is shared in plain words -> done. /family/links, /family/preview,
- *   /family/redeem, /family/links/{id}/shared, DELETE /family/links/{id}; the
+ *   /family/redeem, /family/links/{id}/shared, /family/links/{id}/work (class work
+ *   and its review), DELETE /family/links/{id}; the
  *   child list is the tutor's own GET /family/learners.
  * - ClassroomFamilySeatsPanel (the TEACHER, in a class): issue a one-time family
  *   code for an open seat, see the seats families linked and the summary each
@@ -63,6 +64,18 @@ export interface FamilySummary {
   assigned_work: { assigned: number; opened: number; done: number }
   feel: { easy: number; ok: number; hard: number; hard_flags: number; window_days: number }
 }
+export interface FamilyWorkItem {
+  assignment_id: string
+  title?: string | null
+  has_lesson?: boolean
+  skills: { skill_id: string; title: string }[]
+  due_at?: string | null
+  opened_at?: string | null
+  done_at?: string | null
+  home: { sent_skills: number; finished_skills: number; tries: number; days: number }
+}
+export interface FamilyReview { source: 'ai' | 'template'; label: string; observations: { text: string; cites: string[] }[] }
+export interface FamilyWork { link_id: string; alias?: string | null; work: FamilyWorkItem[]; review: FamilyReview }
 export interface FamilySeat { member_id: string; alias?: string | null; linked_at?: string; summary_at?: string | null }
 export interface FamilyOpenCode { code_id: string; label?: string | null; expires_at?: string }
 interface Learner { lid: string; alias: string; guardian_role?: string }
@@ -217,6 +230,40 @@ export function SharedSummary({ summary }: { summary: FamilySummary }) {
             ? `home could not be reached · showing the summary from ${day(summary.summary_at)}`
             : 'no summary yet'}
       </span>
+    </div>
+  )
+}
+
+export function workState(w: FamilyWorkItem): string {
+  if (w.done_at) return 'Finished'
+  if (w.opened_at) return 'Started'
+  return 'Not started yet'
+}
+
+export function ClassWork({ work }: { work: FamilyWork }) {
+  return (
+    <div data-testid="family-work" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {work.work.length === 0 ? (
+        <p style={{ ...help, margin: 0 }}>The class has not assigned anything yet.</p>
+      ) : (
+        <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {work.work.map((w) => (
+            <li key={w.assignment_id} data-testid="family-work-item" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <span style={{ color: C.ink }}>{w.title || w.skills.map((s) => s.title).join(', ') || 'Class work'}</span>
+              <span style={{ ...mono }}>
+                {`${workState(w)}${w.home.tries ? ` · ${w.home.tries} tries at home on ${w.home.days} ${w.home.days === 1 ? 'day' : 'days'}` : ''}${w.due_at ? ` · due ${day(w.due_at)}` : ''}`}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }} data-testid="family-review">
+        <span style={{ ...mono, letterSpacing: '.08em' }}>
+          {work.review.source === 'ai' ? 'Review · picked by AI from the numbers above' : 'Review'}
+        </span>
+        {work.review.observations.map((o, i) => <p key={i} style={{ ...help, margin: 0 }}>{o.text}</p>)}
+        <span style={{ ...mono }}>Observations from practice, never a grade.</span>
+      </div>
     </div>
   )
 }
@@ -420,6 +467,7 @@ function LinkCard({ link, apiBase, extraHeaders, onStopped }: {
   onStopped: () => void
 }) {
   const [shared, setShared] = useState<FamilySummary | 'loading' | 'offline' | null>(null)
+  const [work, setWork] = useState<FamilyWork | 'loading' | 'offline' | null>(null)
   const [asking, setAsking] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -428,6 +476,12 @@ function LinkCard({ link, apiBase, extraHeaders, onStopped }: {
     if (shared && shared !== 'offline') { setShared(null); return }
     setShared('loading')
     try { setShared(await classroomFetch<FamilySummary>(apiBase, `/family/links/${cseg(link.link_id)}/shared`, { extraHeaders })) } catch { setShared('offline') }
+  }
+
+  const lookWork = async () => {
+    if (work && work !== 'offline') { setWork(null); return }
+    setWork('loading')
+    try { setWork(await classroomFetch<FamilyWork>(apiBase, `/family/links/${cseg(link.link_id)}/work`, { extraHeaders })) } catch { setWork('offline') }
   }
 
   const stop = async () => {
@@ -454,6 +508,9 @@ function LinkCard({ link, apiBase, extraHeaders, onStopped }: {
       {shared === 'loading' && <Skel w="100%" h={96} r={12} />}
       {shared === 'offline' && <Offline what="What the class sees" onRetry={look} />}
       {shared && shared !== 'loading' && shared !== 'offline' && <SharedSummary summary={shared} />}
+      {work === 'loading' && <Skel w="100%" h={72} r={12} />}
+      {work === 'offline' && <Offline what="Class work" onRetry={lookWork} />}
+      {work && work !== 'loading' && work !== 'offline' && <ClassWork work={work} />}
 
       {asking ? (
         <div style={{ ...cs.amberNote, display: 'flex', flexDirection: 'column', gap: 12 }} role="alertdialog" aria-label="Stop sharing" data-testid="family-stop-confirm">
@@ -468,6 +525,9 @@ function LinkCard({ link, apiBase, extraHeaders, onStopped }: {
         <div style={{ display: 'flex', gap: 22, flexWrap: 'wrap' }}>
           <button type="button" className="al-quiet al-focus" style={{ ...quiet, color: C.accent }} onClick={look} data-testid="family-look" aria-expanded={!!shared && shared !== 'offline'}>
             {shared && shared !== 'offline' && shared !== 'loading' ? 'Hide' : 'See what the class sees'}
+          </button>
+          <button type="button" className="al-quiet al-focus" style={{ ...quiet, color: C.accent }} onClick={lookWork} data-testid="family-work-look" aria-expanded={!!work && work !== 'offline'}>
+            {work && work !== 'offline' && work !== 'loading' ? 'Hide class work' : 'Class work'}
           </button>
           <button type="button" className="al-quiet al-focus" style={quiet} onClick={() => setAsking(true)} data-testid="family-stop">Stop sharing</button>
         </div>
