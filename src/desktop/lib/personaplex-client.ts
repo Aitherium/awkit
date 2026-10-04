@@ -23,6 +23,12 @@ export type PersonaPlexVoice =
   | 'VARF0' | 'VARF1' | 'VARF2' | 'VARF3' | 'VARF4'  // Variety Female
   | 'VARM0' | 'VARM1' | 'VARM2' | 'VARM3' | 'VARM4'  // Variety Male
 
+/** A workspace custom voice (Genesis /voice-builds/voices), id `custom:<name>`. */
+export type CustomVoiceId = `custom:${string}`
+
+/** What the voice picker stores: a PersonaPlex preset or a custom voice. */
+export type SelectedVoice = PersonaPlexVoice | CustomVoiceId
+
 export type VoiceMode = 'ptt' | 'vad' | 'continuous'  // Push-to-talk, Voice Activity Detection, Continuous
 
 export interface PersonaConfig {
@@ -32,7 +38,7 @@ export interface PersonaConfig {
 }
 
 export interface VoiceSettings {
-  voice: PersonaPlexVoice
+  voice: SelectedVoice
   mode: VoiceMode
   inputDeviceId: string | null
   outputDeviceId: string | null
