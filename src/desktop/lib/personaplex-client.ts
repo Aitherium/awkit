@@ -26,8 +26,11 @@ export type PersonaPlexVoice =
 /** A workspace custom voice (Genesis /voice-builds/voices), id `custom:<name>`. */
 export type CustomVoiceId = `custom:${string}`
 
-/** What the voice picker stores: a PersonaPlex preset or a custom voice. */
-export type SelectedVoice = PersonaPlexVoice | CustomVoiceId
+/** The Aither voice synthesised on-device (awkit/webml/tts), id `local:aither`. */
+export type LocalVoiceId = 'local:aither'
+
+/** What the voice picker stores: a PersonaPlex preset, a custom voice, or the on-device Aither voice. */
+export type SelectedVoice = PersonaPlexVoice | CustomVoiceId | LocalVoiceId
 
 export type VoiceMode = 'ptt' | 'vad' | 'continuous'  // Push-to-talk, Voice Activity Detection, Continuous
 

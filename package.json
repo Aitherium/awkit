@@ -209,6 +209,10 @@
       "types": "./src/webml/device-class.ts",
       "import": "./src/webml/device-class.ts"
     },
+    "./webml/tts": {
+      "types": "./src/webml/tts/index.ts",
+      "import": "./src/webml/tts/index.ts"
+    },
     "./sync": {
       "types": "./src/sync/index.ts",
       "import": "./src/sync/index.ts"
@@ -321,6 +325,10 @@
       "./webml/device-class": {
         "types": "./dist/webml/device-class.d.ts",
         "import": "./dist/webml/device-class.js"
+      },
+      "./webml/tts": {
+        "types": "./dist/webml/tts/index.d.ts",
+        "import": "./dist/webml/tts/index.js"
       },
       "./sync": {
         "types": "./dist/sync/index.d.ts",
