@@ -234,7 +234,11 @@ export function createLearnVoice(apiBase: string, getHeaders: () => Record<strin
         } else {
           const ctype = r.headers?.get('content-type') || ''
           if (!r.ok || !ctype.startsWith('audio/')) throw new Error(`say ${r.status}`)
-          const el = streamAudio(r, (blob) => { rememberBlob(text, blob) })
+          // A workspace (custom:) voice answers whole audio/wav, which an audio/mpeg
+          // SourceBuffer cannot take: only MP3 goes to MediaSource.
+          const el = ctype.startsWith('audio/mpeg')
+            ? streamAudio(r, (blob) => { rememberBlob(text, blob) })
+            : null
           if (el) return el
           const src = rememberBlob(text, await r.blob())
           if (!src) throw new Error('no blob url')

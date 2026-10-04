@@ -178,6 +178,29 @@ describe('createLearnVoice', () => {
     expect(fetchMock.mock.calls.map((c) => c[0])).toEqual(['/api/tutor/me/say/stream', '/api/tutor/me/say', '/api/tutor/me/say'])
   })
 
+  it('plays a workspace voice (audio/wav) from a blob, never through MediaSource', async () => {
+    let sourceBuffers = 0
+    const MS = class {
+      static isTypeSupported() { return true }
+      addEventListener() { /* never opens in this test */ }
+      addSourceBuffer() { sourceBuffers++ }
+    }
+    ;(window as unknown as { MediaSource?: unknown }).MediaSource = MS
+    ;(URL as unknown as { createObjectURL: unknown }).createObjectURL =
+      (o: unknown) => (o instanceof MS ? 'blob:mediasource' : `blob:${++blobN}`)
+    try {
+      fetchMock.mockImplementation(async () => ({ ...reply({ status: 200, ctype: 'audio/wav' }), body: {} }))
+      const speak = createLearnVoice('/api/tutor')
+      speak('Tap the cat.')
+      await flush()
+      expect(played).toEqual(['blob:1'])
+      expect(sourceBuffers).toBe(0)
+      expect(spoken).toEqual([])
+    } finally {
+      delete (window as unknown as { MediaSource?: unknown }).MediaSource
+    }
+  })
+
   it('drops a slow reply for a line the child has moved past', async () => {
     let release: (v: unknown) => void = () => {}
     fetchMock
