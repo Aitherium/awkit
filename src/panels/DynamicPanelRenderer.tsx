@@ -26,6 +26,8 @@ import { isPanelUsable, type PanelState } from './panel-state'
 
 import ExperimentsPanel from './ExperimentsPanel'
 import TrainingJobsPanel from './TrainingJobsPanel'
+import FineTunePanel from './FineTunePanel'
+import McpEndpointsPanel from './McpEndpointsPanel'
 import NanoBrainPanel from './NanoBrainPanel'
 import AutonomyRoadmapPanel from './AutonomyRoadmapPanel'
 import SpritePanel from './SpritePanel'
@@ -119,6 +121,7 @@ import ClientsPanel from './ClientsPanel'
 import AgentBuilderWizard from './AgentBuilderWizard'
 import PackCatalog from './PackCatalog'
 import MyPacksPanel from './MyPacksPanel'
+import CreatorPanel from './CreatorPanel'
 import FleetDashboard from './FleetDashboard'
 import GridPanel from './GridPanel'
 import ErasePanel from './ErasePanel'
@@ -316,6 +319,7 @@ export const PANEL_COMPONENTS: Record<string, PanelEntry> = {
   'agent-builder':       { component: AgentBuilderWizard },
   'pack-catalog':        { component: PackCatalog },
   'my-packs':            { component: MyPacksPanel },
+  'creator':             { component: CreatorPanel },
   'fleet-dashboard':     { component: FleetDashboard },
   'grid':                { component: GridPanel },
   'erase':               { component: ErasePanel },
@@ -349,6 +353,8 @@ export const PANEL_COMPONENTS: Record<string, PanelEntry> = {
   'nanobrain':           { component: NanoBrainPanel },
   'experiments':         { component: ExperimentsPanel },
   'training-jobs':       { component: TrainingJobsPanel },
+  'fine-tune':           { component: FineTunePanel },
+  'mcp-endpoints':       { component: McpEndpointsPanel },
   'autonomy-roadmap':    { component: AutonomyRoadmapPanel },
   'aither-sprite':       { component: SpritePanel },
   'approvals-inbox':     { component: ApprovalsInboxPanel },

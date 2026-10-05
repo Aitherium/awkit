@@ -29,6 +29,12 @@ interface Ticket {
   updated_at: string
   labels: string[]
   comments?: Comment[]
+  /** Triage state Genesis records on the ticket (all optional). */
+  intent?: string
+  owner_agent?: string
+  sla_due_at?: string
+  /** Engineering issue the ticket was escalated to. */
+  linked_issue?: string
 }
 
 interface Comment {
@@ -323,11 +329,22 @@ export default function SupportPanel({ apiBase = '', showChat = true, appName, r
       wsRef.current = ws
       ws.onopen = () => {
         setChatConnected(true)
+        // '#support' is a placeholder: the backend proxy (comms_router) rewrites
+        // it to this company's private #<workspace>-support channel, resolved
+        // from the session, and drops the frame when it cannot. It never reaches
+        // the global #support room.
         ws.send(JSON.stringify({ type: 'join', channel: '#support' }))
       }
       ws.onmessage = (evt) => {
         try {
           const msg = JSON.parse(evt.data)
+          if (msg.type === 'error' && msg.message) {
+            setChatMessages(prev => [...prev.slice(-100), {
+              id: String(Date.now()), author: 'system', content: String(msg.message),
+              timestamp: new Date().toISOString(), isAgent: false,
+            }])
+            return
+          }
           if (msg.type === 'message' || msg.type === 'chat') {
             setChatMessages(prev => [...prev.slice(-100), {
               id: msg.id || String(Date.now()),
@@ -390,6 +407,16 @@ export default function SupportPanel({ apiBase = '', showChat = true, appName, r
               <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
                 Created: {new Date(selectedTicket.created_at).toLocaleString()}
               </div>
+              {(selectedTicket.owner_agent || selectedTicket.intent || selectedTicket.sla_due_at || selectedTicket.linked_issue) && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
+                  {selectedTicket.owner_agent && <span>Handled by: {selectedTicket.owner_agent}</span>}
+                  {selectedTicket.intent && <span>Triage: {selectedTicket.intent}</span>}
+                  {selectedTicket.sla_due_at && <span>Reply due: {new Date(selectedTicket.sla_due_at).toLocaleString()}</span>}
+                  {selectedTicket.linked_issue && (/^https?:\/\//.test(selectedTicket.linked_issue)
+                    ? <a href={selectedTicket.linked_issue} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary, #5EC9CC)' }}>Tracked by engineering</a>
+                    : <span>Tracked by engineering: {selectedTicket.linked_issue}</span>)}
+                </div>
+              )}
             </div>
 
             {/* Comments */}
@@ -515,7 +542,7 @@ export default function SupportPanel({ apiBase = '', showChat = true, appName, r
       {tab === 'chat' && showChat && (
         <div style={S.chat}>
           <div style={{ padding: '0.5rem 0.75rem', background: 'var(--bg-elevated)', fontSize: '0.8rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontWeight: 600 }}>#support</span>
+            <span style={{ fontWeight: 600 }}>Company support (private to your workspace)</span>
             <span style={{ color: chatConnected ? 'var(--accent-green, #22c55e)' : 'var(--accent-coral, #ef4444)', fontSize: '0.75rem' }}>
               {chatConnected ? 'Connected' : 'Connecting...'}
             </span>

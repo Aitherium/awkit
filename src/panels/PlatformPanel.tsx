@@ -21,16 +21,37 @@ interface PlatformStatus {
   app_id?: string
 }
 
+interface ReleaseEntry {
+  version: string
+  channel?: string
+  changelog?: string
+  released_at?: string
+  breaking_changes?: boolean
+}
+
+interface WhatsNew {
+  slug?: string
+  current_version?: string | null
+  /** The deployment's release channel; versions are already filtered to it. */
+  channel?: string
+  latest?: string | null
+  versions: ReleaseEntry[]
+  available?: boolean | null
+}
+
 interface PlatformPanelProps {
   apiBase?: string
+  /** Base of the platform-events router (signed release/member webhooks). */
+  eventsBase?: string
   /** Agent the reindex task is dispatched to; omitted, the host backend picks its own. */
   agent?: string
   /** Shown as App ID; defaults to the status payload's app_id. */
   appId?: string
 }
 
-export default function PlatformPanel({ apiBase = '/api/platform', agent, appId }: PlatformPanelProps = {}) {
+export default function PlatformPanel({ apiBase = '/api/platform', eventsBase = '/api/platform-events', agent, appId }: PlatformPanelProps = {}) {
   const [status, setStatus] = useState<PlatformStatus | null>(null)
+  const [whatsNew, setWhatsNew] = useState<WhatsNew | null>(null)
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [syncResult, setSyncResult] = useState<string | null>(null)
@@ -44,6 +65,15 @@ export default function PlatformPanel({ apiBase = '/api/platform', agent, appId 
   }, [])
 
   useEffect(() => { fetchStatus() }, [fetchStatus])
+
+  useEffect(() => {
+    let cancelled = false
+    fetch(`${eventsBase}/whats-new`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (!cancelled) setWhatsNew(d ? { ...d, versions: d.versions ?? [] } : { versions: [], available: false }) })
+      .catch(() => { if (!cancelled) setWhatsNew({ versions: [], available: false }) })
+    return () => { cancelled = true }
+  }, [eventsBase])
 
   const syncStrata = async () => {
     setSyncing(true); setSyncResult(null)
@@ -156,6 +186,42 @@ export default function PlatformPanel({ apiBase = '/api/platform', agent, appId 
       <div style={{ background: 'var(--bg-surface)', padding: '1.25rem', borderRadius: 'var(--radius)',
         border: '1px solid var(--glass-border)', marginBottom: '1.5rem' }}>
         <PortalFiles />
+      </div>
+
+      <div style={{ background: 'var(--bg-surface)', padding: '1.25rem', borderRadius: 'var(--radius)',
+        border: '1px solid var(--glass-border)', marginBottom: '1.5rem' }}>
+        <h3 style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '0.75rem' }}>Version and what&apos;s new</h3>
+        {whatsNew === null ? (
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Loading release notes...</p>
+        ) : (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr', gap: '0.4rem', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
+              <span style={{ color: 'var(--text-muted)' }}>Running:</span>
+              <span style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{whatsNew.current_version || 'unknown'}</span>
+              <span style={{ color: 'var(--text-muted)' }}>Latest:</span>
+              <span style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{whatsNew.latest ?? '-'}</span>
+            </div>
+            {whatsNew.available === false && whatsNew.versions.length === 0 ? (
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Release information is unavailable right now.</p>
+            ) : (
+              <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: '0.6rem' }}>
+                {whatsNew.versions.slice(0, 5).map(v => (
+                  <li key={v.version} style={{ padding: '0.6rem 0.75rem', background: 'var(--bg-elevated)',
+                    borderRadius: 'var(--radius)', border: '1px solid var(--glass-border)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      <strong style={{ fontSize: '0.85rem' }}>{v.version}</strong>
+                      {v.channel && <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{v.channel}</span>}
+                      {v.breaking_changes && <span style={{ fontSize: '0.7rem', color: 'var(--accent-coral)' }}>breaking changes</span>}
+                      {v.released_at && <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginLeft: 'auto' }}>
+                        {new Date(v.released_at).toLocaleDateString()}</span>}
+                    </div>
+                    {v.changelog && <p style={{ fontSize: '0.8rem', marginTop: '0.3rem', whiteSpace: 'pre-wrap' }}>{v.changelog}</p>}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        )}
       </div>
 
       <div style={{ background: 'var(--bg-surface)', padding: '1.25rem', borderRadius: 'var(--radius)',

@@ -45,6 +45,8 @@ interface Ticket {
   priority?: string
   created_at?: string
   comment_count?: number
+  /** Engineering issue the ticket was escalated to (Genesis linked_issue). */
+  linked_issue?: string
 }
 
 interface ChatMsg {
@@ -133,11 +135,21 @@ export default function SupportWidget({
       ws.onopen = () => {
         everConnectedRef.current = true
         setConnected(true)
+        // '#support' is a placeholder: the backend proxy (comms_router) rewrites
+        // it to this company's private #<workspace>-support channel, resolved
+        // from the session, and drops the frame when it cannot. It never reaches
+        // the global #support room.
         ws.send(JSON.stringify({ type: 'join', channel: '#support' }))
       }
       ws.onmessage = (e) => {
         try {
           const m = JSON.parse(e.data)
+          if (m.type === 'error' && m.message) {
+            setChatMsgs(prev => [...prev.slice(-50), {
+              id: String(Date.now()), author: 'system', content: String(m.message), isAgent: false,
+            }])
+            return
+          }
           if (m.type === 'message' || m.type === 'chat') {
             setChatMsgs(prev => [...prev.slice(-50), {
               id: m.id || String(Date.now()),
@@ -333,7 +345,7 @@ export default function SupportWidget({
   return (
     <div style={panelStyle}>
       <div style={headerStyle}>
-        <span>{view === 'menu' ? 'How can we help?' : view === 'chat' ? '#support' : view === 'bug' ? 'Bug Report' : view === 'feature' ? 'Feature Request' : view === 'tickets' ? 'My Tickets' : 'Thank you!'}</span>
+        <span>{view === 'menu' ? 'How can we help?' : view === 'chat' ? 'Company support' : view === 'bug' ? 'Bug Report' : view === 'feature' ? 'Feature Request' : view === 'tickets' ? 'My Tickets' : 'Thank you!'}</span>
         <button onClick={() => setView('closed')} style={{ background: 'none', border: 'none', color: 'var(--text-muted, #888)', cursor: 'pointer', fontSize: '1.2rem' }}>x</button>
       </div>
 
@@ -448,6 +460,12 @@ export default function SupportWidget({
                         {t.created_at ? new Date(t.created_at).toLocaleDateString() : ''}
                         {typeof t.comment_count === 'number' ? ` · ${t.comment_count} comment${t.comment_count === 1 ? '' : 's'}` : ''}
                       </div>
+                      {t.linked_issue && /^https?:\/\//.test(t.linked_issue) && (
+                        <a href={t.linked_issue} target="_blank" rel="noopener noreferrer"
+                          style={{ fontSize: '0.68rem', color: 'var(--accent-primary, #5EC9CC)' }}>
+                          Tracked by engineering
+                        </a>
+                      )}
                     </div>
                   ))}
                 </div>

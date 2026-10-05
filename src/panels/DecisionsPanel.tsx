@@ -70,7 +70,7 @@ export const DecisionsPanel: React.FC = () => {
   ) => {
     setAnswering(true);
     try {
-      const response = await fetch(`/api/v1/decisions/${decisionId}/answer`, {
+      const response = await fetch(`${getApiBase()}/api/v1/decisions/${decisionId}/answer`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ choice, note, via: "portal" }),
@@ -90,7 +90,7 @@ export const DecisionsPanel: React.FC = () => {
 
   const handleCancel = async (decisionId: string) => {
     try {
-      const response = await fetch(`/api/v1/decisions/${decisionId}/cancel`, {
+      const response = await fetch(`${getApiBase()}/api/v1/decisions/${decisionId}/cancel`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ note: "Cancelled via portal" }),

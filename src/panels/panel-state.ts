@@ -174,6 +174,8 @@ export const PANEL_STATE_MAP: Record<string, PanelState> = {
   'terminal': 'usable',
   'themis-legal': 'usable',
   'training-jobs': 'usable',
+  'fine-tune': 'usable',
+  'mcp-endpoints': 'usable',
   'tunnel': 'usable',
   'volunteer-compute': 'usable',
   'webhooks': 'usable',
