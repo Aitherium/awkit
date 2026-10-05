@@ -14,6 +14,8 @@ export interface PackCatalogProps {
   onPurchase?: (pack: PackCardPack) => void
   compact?: boolean
   maxHeight?: string
+  /** Show Install on licensed packs (tenant catalog). Off in pick-only flows. */
+  allowInstall?: boolean
 }
 
 export default function PackCatalog({
@@ -27,12 +29,16 @@ export default function PackCatalog({
   onPurchase,
   compact = false,
   maxHeight,
+  allowInstall = !selectable,
 }: PackCatalogProps) {
   const [packs, setPacks] = useState<PackCardPack[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [selected, setSelected] = useState<Set<string>>(new Set(externalSelected || []))
+  const [error, setError] = useState<string | null>(null)
+  const [installing, setInstalling] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
 
   useEffect(() => {
     if (externalSelected) setSelected(new Set(externalSelected))
@@ -50,15 +56,40 @@ export default function PackCatalog({
       if (res.ok) {
         const data = await res.json()
         setPacks(data.packs || [])
+        setError(null)
+      } else {
+        // Never show a stale or invented shelf: an upstream failure is stated.
+        setPacks([])
+        setError(res.status === 401 ? 'Sign in to browse packs.' : 'The pack catalog is unavailable right now.')
       }
     } catch {
-      // silent
+      setPacks([])
+      setError('The pack catalog is unavailable right now.')
     } finally {
       setLoading(false)
     }
   }, [apiBase, type, search, categoryFilter])
 
   useEffect(() => { fetchPacks() }, [fetchPacks])
+
+  const handleInstall = useCallback(async (pack: PackCardPack) => {
+    setInstalling(pack.id)
+    setNotice(null)
+    try {
+      const res = await fetch(`${apiBase}/api/marketplace/packs/${encodeURIComponent(pack.id)}/install`, { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (res.ok) {
+        setNotice(`${pack.name} installed for your workspace.`)
+        await fetchPacks()
+      } else {
+        setNotice(data.error || `Install failed (${res.status}).`)
+      }
+    } catch {
+      setNotice('Install failed: the platform is unreachable.')
+    } finally {
+      setInstalling(null)
+    }
+  }, [apiBase, fetchPacks])
 
   const categories = useMemo(() => {
     const cats = new Set(packs.map(p => p.category).filter(Boolean))
@@ -110,10 +141,24 @@ export default function PackCatalog({
         </select>
       </div>
 
+      {notice && (
+        <div role="status" style={{
+          marginBottom: 10, padding: '8px 12px', fontSize: 12,
+          background: 'var(--bg-surface, #16162a)', border: '1px solid var(--glass-border, #2a2a4a)',
+          borderRadius: 'var(--radius, 8px)', color: 'var(--text-primary, #e0e0e0)',
+        }}>
+          {notice}
+        </div>
+      )}
+
       {/* Results */}
       {loading ? (
         <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted, #888)' }}>
           Loading packs...
+        </div>
+      ) : error ? (
+        <div role="alert" style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted, #888)' }}>
+          {error}
         </div>
       ) : packs.length === 0 ? (
         <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted, #888)' }}>
@@ -135,6 +180,8 @@ export default function PackCatalog({
               owned={owned.includes(pack.id)}
               onSelect={selectable ? handleSelect : undefined}
               onPurchase={onPurchase}
+              onInstall={allowInstall ? handleInstall : undefined}
+              installing={installing === pack.id}
               compact={compact}
             />
           ))}

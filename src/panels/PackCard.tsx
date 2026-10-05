@@ -17,6 +17,10 @@ export interface PackCardPack {
   download_count: number
   tags: string[]
   status: string
+  /** Tenant state from /api/marketplace/packs (absent in other catalogs). */
+  licensed?: boolean
+  installed?: boolean
+  tenant_restricted?: boolean
 }
 
 export interface PackCardProps {
@@ -25,6 +29,9 @@ export interface PackCardProps {
   owned?: boolean
   onSelect?: (pack: PackCardPack) => void
   onPurchase?: (pack: PackCardPack) => void
+  /** When set, a licensed pack shows Install and an installed one shows Installed. */
+  onInstall?: (pack: PackCardPack) => void
+  installing?: boolean
   compact?: boolean
 }
 
@@ -57,7 +64,7 @@ function StarRating({ rating }: { rating: number }) {
 }
 
 export default function PackCard({
-  pack, selected, owned, onSelect, onPurchase, compact,
+  pack, selected, owned, onSelect, onPurchase, onInstall, installing, compact,
 }: PackCardProps) {
   const tc = typeColor(pack.type)
   const isFree = !pack.pricing_onetime && !pack.pricing_monthly
@@ -135,14 +142,40 @@ export default function PackCard({
 
       {/* Footer: rating + price/action */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: compact ? 4 : 0 }}>
-        <StarRating rating={pack.rating} />
+        {pack.rating > 0 ? <StarRating rating={pack.rating} /> : <span />}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           {pack.download_count > 0 && (
             <span style={{ fontSize: 10, color: '#666' }}>
               {pack.download_count > 999 ? `${(pack.download_count / 1000).toFixed(1)}k` : pack.download_count} downloads
             </span>
           )}
-          {owned ? (
+          {onInstall && pack.installed ? (
+            <span style={{
+              fontSize: 11, padding: '3px 10px', borderRadius: 12,
+              background: '#1a3a1a', color: '#4ade80',
+            }}>
+              Installed
+            </span>
+          ) : onInstall && pack.licensed ? (
+            <button
+              onClick={e => { e.stopPropagation(); if (!installing) onInstall(pack) }}
+              disabled={installing}
+              style={{
+                fontSize: 11, padding: '3px 10px', borderRadius: 12, border: 'none',
+                background: 'var(--bg-active, #1a2a4a)', color: 'var(--accent, #5EC9CC)',
+                cursor: installing ? 'wait' : 'pointer', fontWeight: 600,
+              }}
+            >
+              {installing ? 'Installing...' : 'Install'}
+            </button>
+          ) : onInstall && !onPurchase ? (
+            <span style={{
+              fontSize: 11, padding: '3px 10px', borderRadius: 12,
+              background: '#3a2a1a', color: '#fbbf24',
+            }}>
+              {isFree ? 'Not available' : `${formatPrice(pack)} \u00b7 license required`}
+            </span>
+          ) : owned ? (
             <span style={{
               fontSize: 11, padding: '3px 10px', borderRadius: 12,
               background: '#1a3a1a', color: '#4ade80',
