@@ -24,6 +24,7 @@ import AcademyMirrorCard from './AcademyMirrorCard'
 import FamilySpaceCard from './FamilySpaceCard'
 import FamilyMessagesSection from './FamilyMessagesSection'
 import TutorFocusCard from './TutorFocusCard'
+import TutorLevelCard from './TutorLevelCard'
 import TutorProgressCard from './TutorProgressCard'
 import LearnerGuardCard from './LearnerGuardCard'
 import LearnVoiceCard from './LearnVoiceCard'
@@ -221,7 +222,7 @@ interface PairCode { alias: string; pair_code: string; expires_at?: string | num
 
 type View = { kind: 'none' } | { kind: 'report'; lid: string } | { kind: 'transcript'; lid: string }
   | { kind: 'settings'; lid: string } | { kind: 'assign'; lid: string } | { kind: 'messages'; lid: string }
-  | { kind: 'focus'; lid: string } | { kind: 'progress'; lid: string }
+  | { kind: 'focus'; lid: string } | { kind: 'progress'; lid: string } | { kind: 'level'; lid: string }
 
 type LoadState = 'loading' | 'ready' | 'error' | 'forbidden'
 type Glance = Report | 'offline'
@@ -712,6 +713,7 @@ export default function FamilyTutorConsolePanel({ apiBase, extraHeaders = {} }: 
                         {linkBtn('Progress', () => setView({ kind: 'progress', lid: l.lid }))}
                         {linkBtn('Weekly report', () => openReport(l.lid))}
                         {linkBtn('Weekly focus', () => setView({ kind: 'focus', lid: l.lid }))}
+                        {linkBtn('Level', () => setView({ kind: 'level', lid: l.lid }))}
                         {linkBtn('Messages', () => setView({ kind: 'messages', lid: l.lid }))}
                         <button type="button" aria-expanded={more} onClick={() => setMoreFor(more ? null : l.lid)}
                           className="al-quiet al-focus" style={{ ...quiet, color: C.faint }}>
@@ -1061,6 +1063,10 @@ export default function FamilyTutorConsolePanel({ apiBase, extraHeaders = {} }: 
           )}
           {view.kind === 'progress' && (
             <TutorProgressCard key={view.lid} apiBase={apiBase} lid={view.lid} alias={current?.alias}
+              extraHeaders={extraHeaders} onNote={setNote} />
+          )}
+          {view.kind === 'level' && (
+            <TutorLevelCard key={view.lid} apiBase={apiBase} lid={view.lid} alias={current?.alias}
               extraHeaders={extraHeaders} onNote={setNote} />
           )}
           {view.kind === 'focus' && (
