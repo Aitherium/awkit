@@ -5,7 +5,7 @@
  * /me/guide/answer, /me/train, /me/challenge and /me/charms. The server owns
  * every rule; this card only shows state and sends the owner's choices.
  */
-import { useCallback, useEffect, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
 
 interface GuideOffer { act: string; stat?: string; foe?: string }
 
@@ -53,7 +53,11 @@ function describe(result: Record<string, unknown> | undefined, name: string): st
   return null
 }
 
-export default function SpriteGuideCard({ apiBase, extraHeaders = {}, name, onChange }: SpriteGuideCardProps) {
+export default function SpriteGuideCard({ apiBase, extraHeaders: extraHeadersProp, name, onChange }: SpriteGuideCardProps) {
+  // A fresh headers object per render made `load` a new function per render, and the
+  // load effect re-fired after every setView: a /me/guide request loop. Key on content.
+  const headersKey = JSON.stringify(extraHeadersProp ?? {})
+  const extraHeaders = useMemo<Record<string, string>>(() => JSON.parse(headersKey), [headersKey])
   const [view, setView] = useState<GuideView | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)

@@ -14,7 +14,7 @@
  * (demo-verified 2026-07-08: silent 2s clicks read as "broken").
  */
 
-import { useState, useEffect, useCallback, useRef, ReactNode } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, ReactNode } from 'react'
 import SpriteGuideCard from './SpriteGuideCard'
 
 interface SpriteStatus {
@@ -105,8 +105,17 @@ const KNOWLEDGE_KINDS = [
   { kind: 'lore',  icon: '📜', label: 'Lore' },
 ]
 
-export default function SpritePanel({ apiBase = '/api/sprite', extraHeaders = {} }: SpritePanelProps) {
+export default function SpritePanel({ apiBase = '/api/sprite', extraHeaders: extraHeadersProp }: SpritePanelProps) {
+  // Callers (and the old `= {}` default) hand a NEW object every render. Every fetch
+  // callback depends on it, so an unstable identity re-ran the polling effect on each
+  // render and every fetch's setState triggered the next one: ~25 requests/s per
+  // endpoint, measured live 2026-10-05. Key it on content so it changes only when the
+  // headers do.
+  const headersKey = JSON.stringify(extraHeadersProp ?? {})
+  const extraHeaders = useMemo<Record<string, string>>(() => JSON.parse(headersKey), [headersKey])
   const [sprite, setSprite] = useState<SpriteStatus | null>(null)
+  const spriteRef = useRef<SpriteStatus | null>(null)
+  spriteRef.current = sprite
   const [appearance, setAppearance] = useState<Appearance | null>(null)
   const [needsHatch, setNeedsHatch] = useState(false)
   // Sprite requires an authenticated user. Without this, a 401 fell through the
@@ -339,6 +348,12 @@ export default function SpritePanel({ apiBase = '/api/sprite', extraHeaders = {}
     } catch { /* whisper unavailable */ }
   }, [apiBase, extraHeaders, sprite, bubble, bubbleTimerRef])
 
+  // The timers read the latest sprite and whisper handler through refs. Depending on
+  // `sprite` here re-ran this effect on every status fetch (fetchStatus sets sprite), so
+  // the "initial" fetch fired again immediately: a request loop, not a 60 s poll.
+  const whisperRef = useRef(handleFetchWhisper)
+  whisperRef.current = handleFetchWhisper
+
   useEffect(() => {
     fetchStatus(); fetchAppearance()
     const statusTimer = setInterval(() => { if (!document.hidden) fetchStatus() }, 60_000)
@@ -346,8 +361,9 @@ export default function SpritePanel({ apiBase = '/api/sprite', extraHeaders = {}
     // Whisper polling every 90s
     if (typeof document !== 'undefined') {
       whisperTimerRef.current = setInterval(() => {
-        if (!document.hidden && sprite && !sprite.dormant) {
-          handleFetchWhisper()
+        const current = spriteRef.current
+        if (!document.hidden && current && !current.dormant) {
+          whisperRef.current()
         }
       }, 90_000)
     }
@@ -358,7 +374,7 @@ export default function SpritePanel({ apiBase = '/api/sprite', extraHeaders = {}
       if (typewriterTimerRef.current) clearInterval(typewriterTimerRef.current)
       if (bubbleTimerRef.current) clearTimeout(bubbleTimerRef.current)
     }
-  }, [fetchStatus, fetchAppearance, handleFetchWhisper, sprite])
+  }, [fetchStatus, fetchAppearance])
 
   // Blink flipbook: open-eyes ↔ blink still on a human-ish cadence.
   useEffect(() => {
