@@ -72,6 +72,7 @@ import StudioPanel from './StudioPanel'
 import IrisPanel from './IrisPanel'
 import ProvisionPanel from './ProvisionPanel'
 import AwprovePanel from './AwprovePanel'
+import MyScopesPanel from './MyScopesPanel'
 import GeneratePanel from './GeneratePanel'
 import SocialPanel from './SocialPanel'
 import IntegrationsPanel from './IntegrationsPanel'
@@ -257,6 +258,7 @@ export const PANEL_COMPONENTS: Record<string, PanelEntry> = {
   // Declared in registry.ts (apiPrefix auto-wires apiBase) but never keyed
   // here, so it rendered 'no panel wired up' (RB010, 2026-09-27).
   'awprove':             { component: AwprovePanel },
+  'my-scopes':           { component: MyScopesPanel },
   'generate':            { component: GeneratePanel },
   'sound-library':       { component: SoundLibraryPanel },
   'social':              { component: SocialPanel },

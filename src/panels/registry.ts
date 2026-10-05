@@ -355,6 +355,18 @@ export const PANEL_REGISTRY: PanelMeta[] = [
     domain: 'development',
   },
   {
+    id: 'my-scopes',
+    name: 'My Scopes',
+    description:
+      'Your organization, personal scope, family households and friends enclaves in one ' +
+      'place, with the consent links between them -- grant and revoke what crosses',
+    category: 'utility',
+    icon: 'shield',
+    apiPrefix: '/api/bridge/genesis/api/scopes',
+    requiresBackend: ['scopes.py'],
+    domain: 'identity',
+  },
+  {
     id: 'kv-handoff',
     name: 'kv-handoff — Cross-Model KV Cache Handoff',
     description: 'Which fleet model pairs can hand each other a KV cache (the bigger model skips prefill), and PASS/REFUSED for a mapper pack against its measured acceptance floors — read-only',
