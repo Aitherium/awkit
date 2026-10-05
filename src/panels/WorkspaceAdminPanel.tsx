@@ -20,6 +20,20 @@ interface AuditEntry { action_type: string; agent_id: string; timestamp: number;
 
 type Section = 'usage' | 'users' | 'identity' | 'integrations' | 'keys' | 'audit' | 'branding' | 'channels'
 
+/**
+ * Does this host SERVE the route that answered? A tab or block whose backend is
+ * absent is hidden instead of rendering an error on every open (measured on the
+ * Customer tenant 2026-10-05: /api/relay/v1/*, /api/admin/oidc and /api/admin/saml-idp
+ * are Veil routes no tenant app serves). 404/405 = absent; a 200 that is not JSON
+ * is an SPA catch-all handing back index.html, also absent. 401/403/5xx mean the
+ * route exists and is refusing or failing -- that is shown, never hidden.
+ */
+function routeServed(r: Response): boolean {
+  if (r.status === 404 || r.status === 405) return false
+  if (r.ok && !(r.headers.get('content-type') || '').includes('json')) return false
+  return true
+}
+
 export default function WorkspaceAdminPanel({ apiBase = '/api/platform' }: Props) {
   const [section, setSection] = useState<Section>('usage')
   const [usage, setUsage] = useState<UsageData | null>(null)
@@ -44,6 +58,9 @@ export default function WorkspaceAdminPanel({ apiBase = '/api/platform' }: Props
   const [idpCredentials, setIdpCredentials] = useState('')
   // IdP management (AitherIdentity as IdP for external services)
   const [idpTab, setIdpTab] = useState<'saml' | 'oidc'>('saml')
+  // null = not probed yet; false = this host does not serve the route (hidden)
+  const [idpAvailable, setIdpAvailable] = useState<boolean | null>(null)
+  const [channelsAvailable, setChannelsAvailable] = useState<boolean | null>(null)
   const [samlSPs, setSamlSPs] = useState<{ sp_id: string; entity_id: string; name?: string; acs_url?: string }[]>([])
   const [oidcClients, setOidcClients] = useState<{ client_id: string; name?: string; redirect_uris?: string[] }[]>([])
   const [idpMetadataUrl, setIdpMetadataUrl] = useState('')
@@ -98,10 +115,14 @@ export default function WorkspaceAdminPanel({ apiBase = '/api/platform' }: Props
       const r = await fetch(`${getApiBase()}/api/auth/ldap/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
       setLdapStatus(r.status === 501 ? 'not_configured' : 'configured')
     } catch { setLdapStatus('unknown') }
-    // Fetch IdP status (SAML SPs + OIDC clients)
+    // Fetch IdP status (SAML SPs + OIDC clients). The "SSO for your apps" block
+    // renders only if this host serves at least one of the two.
+    let samlServed = false
+    let oidcServed = false
     try {
       const r = await fetch(`${getApiBase()}/api/admin/saml-idp`)
-      if (r.ok) {
+      samlServed = routeServed(r)
+      if (r.ok && samlServed) {
         const d = await r.json()
         setSamlSPs(d.service_providers || d.sps || [])
         setIdpHasKeypair(!!d.has_keypair || !!d.certificate)
@@ -110,12 +131,27 @@ export default function WorkspaceAdminPanel({ apiBase = '/api/platform' }: Props
     } catch {}
     try {
       const r = await fetch(`${getApiBase()}/api/admin/oidc`)
-      if (r.ok) {
+      oidcServed = routeServed(r)
+      if (r.ok && oidcServed) {
         const d = await r.json()
         setOidcClients(d.clients || [])
       }
     } catch {}
+    setIdpAvailable(samlServed || oidcServed)
   }, [apiBase])
+
+  // The Channels tab is ChannelManagementPanel on /api/relay/v1; probe it once.
+  useEffect(() => {
+    let cancelled = false
+    fetch(`${getApiBase()}/api/relay/v1/channels`)
+      .then(r => { if (!cancelled) setChannelsAvailable(routeServed(r)) })
+      .catch(() => { if (!cancelled) setChannelsAvailable(false) })
+    return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => {
+    if (section === 'channels' && channelsAvailable === false) setSection('usage')
+  }, [section, channelsAvailable])
 
   const fetchDirectory = useCallback(async () => {
     try {
@@ -210,7 +246,8 @@ export default function WorkspaceAdminPanel({ apiBase = '/api/platform' }: Props
   const sections: { id: Section; label: string }[] = [
     { id: 'usage', label: 'Usage' },
     { id: 'users', label: 'Users & Roles' },
-    { id: 'channels', label: 'Channels' },
+    // Only once the probe says this host serves /api/relay/v1 (see routeServed).
+    ...(channelsAvailable ? [{ id: 'channels' as Section, label: 'Channels' }] : []),
     { id: 'identity', label: 'Identity & Directory' },
     { id: 'integrations', label: 'Integrations' },
     { id: 'keys', label: 'API Keys' },
@@ -305,7 +342,7 @@ export default function WorkspaceAdminPanel({ apiBase = '/api/platform' }: Props
       )}
 
       {/* Channels */}
-      {section === 'channels' && (
+      {section === 'channels' && channelsAvailable && (
         <ChannelManagementPanel apiBase="/api/relay/v1" />
       )}
 
@@ -373,8 +410,10 @@ export default function WorkspaceAdminPanel({ apiBase = '/api/platform' }: Props
             </div>
           </div>
 
-          {/* IdP Management — AitherIdentity as IdP for external services */}
-          <div style={{ padding: '1.25rem', background: 'var(--bg-surface, #1a1a1a)', borderRadius: 'var(--radius, 6px)', border: '1px solid var(--glass-border, #333)' }}>
+          {/* IdP Management — AitherIdentity as IdP for external services.
+              Hidden where this host serves neither /api/admin/saml-idp nor
+              /api/admin/oidc (tenant apps): every action in it would 404. */}
+          {idpAvailable && <div style={{ padding: '1.25rem', background: 'var(--bg-surface, #1a1a1a)', borderRadius: 'var(--radius, 6px)', border: '1px solid var(--glass-border, #333)' }}>
             <h3 style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '0.5rem' }}>SSO for Your Apps</h3>
             <p style={{ fontSize: '0.75rem', color: 'var(--text-muted, #888)', marginBottom: '1rem' }}>
               Register your external services so your team can SSO into them via this workspace.
@@ -557,7 +596,7 @@ export default function WorkspaceAdminPanel({ apiBase = '/api/platform' }: Props
                 {oidcRegStatus && !oidcRegResult && <p style={{ fontSize: '0.72rem', color: oidcRegStatus.includes('fail') || oidcRegStatus.includes('required') ? 'var(--accent-coral, #f87171)' : 'var(--accent-green, #4ade80)', marginTop: '0.5rem' }}>{oidcRegStatus}</p>}
               </div>
             )}
-          </div>
+          </div>}
 
           {/* Directory Import */}
           <div style={{ padding: '1.25rem', background: 'var(--bg-surface, #1a1a1a)', borderRadius: 'var(--radius, 6px)', border: '1px solid var(--glass-border, #333)' }}>

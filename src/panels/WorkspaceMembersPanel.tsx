@@ -404,8 +404,11 @@ export default function WorkspaceMembersPanel() {
         )}
       </div>
 
-      {/* Invite Guest Section */}
-      {isAdmin && (
+      {/* Invite Guest Section. A guest must be scoped to at least one channel, so
+          with no channel list (a host that serves no /api/relay/v1/channels, e.g. a
+          tenant app) the form could never be submitted; it is hidden there rather
+          than offered as a dead end. */}
+      {isAdmin && channels.length > 0 && (
         <div>
           <div style={{ marginBottom: '1rem' }}>
             <button

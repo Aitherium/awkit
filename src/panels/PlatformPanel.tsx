@@ -49,8 +49,34 @@ interface PlatformPanelProps {
   appId?: string
 }
 
+/** One metered quantity as the platform reports it. Nothing here is defaulted. */
+interface UsageRow { key: string; used: number; limit?: number }
+
+/**
+ * Read whatever usage the platform returned into rows, without inventing any of
+ * it: a row needs a numeric `used`; `limit` is shown only when the platform sent
+ * one. (The backend that feeds this once answered an outage with made-up limits,
+ * 1,000,000 tokens and 200 dispatches; it now answers 503, and so must we.)
+ */
+function usageRows(data: unknown): UsageRow[] {
+  if (!data || typeof data !== 'object') return []
+  const rows: UsageRow[] = []
+  for (const [key, v] of Object.entries(data as Record<string, unknown>)) {
+    if (!v || typeof v !== 'object') continue
+    const used = (v as Record<string, unknown>).used
+    const limit = (v as Record<string, unknown>).limit
+    if (typeof used !== 'number') continue
+    rows.push({ key, used, ...(typeof limit === 'number' ? { limit } : {}) })
+  }
+  return rows
+}
+
 export default function PlatformPanel({ apiBase = '/api/platform', eventsBase = '/api/platform-events', agent, appId }: PlatformPanelProps = {}) {
   const [status, setStatus] = useState<PlatformStatus | null>(null)
+  // 'unavailable' = the status probe itself did not answer; we say so rather than
+  // render an empty grid that reads as "no services".
+  const [statusState, setStatusState] = useState<'loading' | 'ok' | 'unavailable'>('loading')
+  const [usage, setUsage] = useState<UsageRow[] | 'unavailable' | null>(null)
   const [whatsNew, setWhatsNew] = useState<WhatsNew | null>(null)
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
@@ -59,12 +85,26 @@ export default function PlatformPanel({ apiBase = '/api/platform', eventsBase = 
   const fetchStatus = useCallback(async () => {
     try {
       const r = await fetch(`${apiBase}/status`)
-      if (r.ok) setStatus(await r.json())
-    } catch { /* ignore */ }
+      if (r.ok) { setStatus(await r.json()); setStatusState('ok') }
+      else setStatusState('unavailable')
+    } catch { setStatusState('unavailable') }
     finally { setLoading(false) }
-  }, [])
+  }, [apiBase])
 
   useEffect(() => { fetchStatus() }, [fetchStatus])
+
+  useEffect(() => {
+    let cancelled = false
+    fetch(`${apiBase}/workspace/usage`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => {
+        if (cancelled) return
+        const rows = usageRows(d)
+        setUsage(rows.length ? rows : 'unavailable')
+      })
+      .catch(() => { if (!cancelled) setUsage('unavailable') })
+    return () => { cancelled = true }
+  }, [apiBase])
 
   useEffect(() => {
     let cancelled = false
@@ -129,7 +169,28 @@ export default function PlatformPanel({ apiBase = '/api/platform', eventsBase = 
 
   return (
     <div style={{ padding: '1.5rem', maxWidth: 900 }}>
-      <h2 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '1.5rem' }}>Platform Integration</h2>
+      <h2 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '1.5rem' }}>Your Platform</h2>
+
+      {statusState === 'unavailable' && (
+        <div role="status" style={{ padding: '1rem', marginBottom: '1.5rem', background: 'var(--bg-surface)',
+          borderRadius: 'var(--radius)', border: '1px solid oklch(0.30 0.10 25 / 0.3)' }}>
+          <strong style={{ fontSize: '0.9rem' }}>Platform status is unavailable</strong>
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.3rem' }}>
+            This app could not get an answer from its platform probe, so the state of the connected
+            services is unknown. Nothing below is a guess: sections that need the platform say so.
+          </p>
+        </div>
+      )}
+      {statusState === 'ok' && status?.genesis?.status !== 'ok' && (
+        <div role="status" style={{ padding: '1rem', marginBottom: '1.5rem', background: 'var(--bg-surface)',
+          borderRadius: 'var(--radius)', border: '1px solid oklch(0.30 0.10 25 / 0.3)' }}>
+          <strong style={{ fontSize: '0.9rem' }}>The Aitherium platform is not answering</strong>
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.3rem' }}>
+            Genesis is unreachable from this app right now. Usage, release notes and agent actions
+            are unavailable until it answers.
+          </p>
+        </div>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.75rem', marginBottom: '2rem' }}>
         {services.map(svc => {
@@ -149,6 +210,29 @@ export default function PlatformPanel({ apiBase = '/api/platform', eventsBase = 
             </div>
           )
         })}
+      </div>
+
+      <div style={{ background: 'var(--bg-surface)', padding: '1.25rem', borderRadius: 'var(--radius)',
+        border: '1px solid var(--glass-border)', marginBottom: '1.5rem' }}>
+        <h3 style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '0.75rem' }}>Usage</h3>
+        {usage === null ? (
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Loading usage...</p>
+        ) : usage === 'unavailable' ? (
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+            Usage is unavailable right now: the platform did not report it.
+          </p>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: '0.4rem', fontSize: '0.85rem' }}>
+            {usage.map(u => (
+              <div key={u.key} style={{ display: 'contents' }}>
+                <span style={{ color: 'var(--text-muted)' }}>{u.key.replace(/_/g, ' ')}</span>
+                <span style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>
+                  {u.used.toLocaleString()}{u.limit !== undefined ? ` of ${u.limit.toLocaleString()}` : ''}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div style={{ background: 'var(--bg-surface)', padding: '1.25rem', borderRadius: 'var(--radius)',

@@ -60,8 +60,9 @@ export interface PersistentLLMConfig {
 }
 
 /** Display + wiring for the providers the persistent route names. `key_field` is the
- *  PUT field that carries the provider's key (kimi rides the custom OpenAI-compat key,
- *  mirroring the host's own mapping); absent means the provider takes no tenant key. */
+ *  PUT field that carries the provider's key (kimi and xai have their OWN key fields:
+ *  a custom endpoint's key must never reach Moonshot or xAI); absent means the provider
+ *  takes no tenant key. The host stores every key in the platform vault. */
 const PERSISTENT_CATALOG: Record<string, {
   name: string
   type: ProviderDef['type']
@@ -73,7 +74,8 @@ const PERSISTENT_CATALOG: Record<string, {
   aitheros: { name: 'AitherOS fleet', type: 'local', description: 'The workspace fleet scheduler' },
   bonsai: { name: 'Bonsai', type: 'local', description: 'On-device model' },
   deepseek: { name: 'DeepSeek', type: 'cloud', description: 'DeepSeek API', key_field: 'deepseek_api_key' },
-  kimi: { name: 'Kimi / Moonshot', type: 'cloud', description: 'OpenAI-compatible Moonshot API', key_field: 'custom_llm_api_key', url_field: 'llm_base_url' },
+  kimi: { name: 'Kimi / Moonshot', type: 'cloud', description: 'OpenAI-compatible Moonshot API', key_field: 'kimi_api_key', url_field: 'llm_base_url' },
+  xai: { name: 'xAI (Grok)', type: 'cloud', description: 'OpenAI-compatible xAI API', key_field: 'xai_api_key', url_field: 'llm_base_url' },
   openai: { name: 'OpenAI', type: 'cloud', description: 'OpenAI API', key_field: 'openai_api_key' },
   anthropic: { name: 'Anthropic', type: 'cloud', description: 'Anthropic API', key_field: 'anthropic_api_key' },
   ollama: { name: 'Ollama', type: 'local', description: 'Local Ollama server', url_field: 'llm_base_url' },
