@@ -38,14 +38,32 @@ function detailOf(body: unknown, fallback: string): string {
 export async function classroomFetch<T>(
   apiBase: string,
   path: string,
-  init?: RequestInit & { extraHeaders?: Record<string, string> },
+  init?: RequestInit & { extraHeaders?: Record<string, string>; timeoutMs?: number },
 ): Promise<T> {
-  const { extraHeaders, ...rest } = init || {}
-  const res = await fetch(`${apiBase}${path}`, {
-    credentials: 'same-origin',
-    ...rest,
-    headers: { 'Content-Type': 'application/json', ...(extraHeaders || {}), ...((rest.headers as Record<string, string>) || {}) },
-  })
+  // Every panel's skeleton is honest only if a request can SETTLE. Measured
+  // 2026-10-06: during a multi-GB local image pull the edge left classroom
+  // requests pending for minutes; the panels (correctly) render "offline" on
+  // failure but a request that never settles is not a failure yet, so the
+  // skeleton sat forever. The timeout turns "never answered" into a verdict.
+  const { extraHeaders, timeoutMs = 25000, signal, ...rest } = init || {}
+  const ctl = new AbortController()
+  const timer = setTimeout(() => ctl.abort(), timeoutMs)
+  let res: Response
+  try {
+    res = await fetch(`${apiBase}${path}`, {
+      credentials: 'same-origin',
+      ...rest,
+      signal: signal ?? ctl.signal,
+      headers: { 'Content-Type': 'application/json', ...(extraHeaders || {}), ...((rest.headers as Record<string, string>) || {}) },
+    })
+  } catch (e) {
+    if ((e as Error)?.name === 'AbortError') {
+      throw new ClassroomHttpError(0, `no answer in ${Math.round(timeoutMs / 1000)}s — the fleet did not reach back. Retry.`)
+    }
+    throw e
+  } finally {
+    clearTimeout(timer)
+  }
   if (res.status === 204) return undefined as T
   let body: unknown = null
   try {
