@@ -263,7 +263,7 @@ export function StartMenu({
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 20, scale: 0.96 }}
         transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
-        className="fixed bottom-14 left-2 w-[540px] max-h-[75vh] bg-zinc-950/90 backdrop-blur-2xl border border-white/[0.08] rounded-2xl shadow-2xl shadow-black/60 z-[250] overflow-hidden flex flex-col"
+        className="fixed bottom-14 left-2 w-[min(540px,calc(100vw-1rem))] max-h-[75vh] bg-zinc-950/90 backdrop-blur-2xl border border-white/[0.08] rounded-2xl shadow-2xl shadow-black/60 z-[250] overflow-hidden flex flex-col"
       >
         {/* Search — spotlight style */}
         <div className="p-3 border-b border-white/[0.05]">
@@ -340,7 +340,7 @@ export function StartMenu({
             {/* gap-2, not gap-1: at 4px the labels of one row sat against the icons of
                 the next and the whole grid read as one cramped mass (owner report,
                 2026-08-13). 8px gutters let each tile breathe without losing a column. */}
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
               {filteredApps.map(app => {
                 const Icon = app.icon
                 return (
