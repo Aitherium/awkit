@@ -185,34 +185,6 @@
       "types": "./src/webml/index.ts",
       "import": "./src/webml/index.ts"
     },
-    "./webml/worker-core": {
-      "types": "./src/webml/worker-core.ts",
-      "import": "./src/webml/worker-core.ts"
-    },
-    "./webml/bonsai-models": {
-      "types": "./src/webml/bonsai-models.ts",
-      "import": "./src/webml/bonsai-models.ts"
-    },
-    "./webml/code-embed": {
-      "types": "./src/webml/code-embed.ts",
-      "import": "./src/webml/code-embed.ts"
-    },
-    "./webml/bonsai-worker-core": {
-      "types": "./src/webml/bonsai-worker-core.ts",
-      "import": "./src/webml/bonsai-worker-core.ts"
-    },
-    "./webml/bonsai/wasp": {
-      "types": "./src/webml/bonsai/wasp/index.ts",
-      "import": "./src/webml/bonsai/wasp/index.ts"
-    },
-    "./webml/device-class": {
-      "types": "./src/webml/device-class.ts",
-      "import": "./src/webml/device-class.ts"
-    },
-    "./webml/tts": {
-      "types": "./src/webml/tts/index.ts",
-      "import": "./src/webml/tts/index.ts"
-    },
     "./sync": {
       "types": "./src/sync/index.ts",
       "import": "./src/sync/index.ts"
@@ -301,34 +273,6 @@
       "./webml": {
         "types": "./dist/webml/index.d.ts",
         "import": "./dist/webml/index.js"
-      },
-      "./webml/worker-core": {
-        "types": "./dist/webml/worker-core.d.ts",
-        "import": "./dist/webml/worker-core.js"
-      },
-      "./webml/bonsai-models": {
-        "types": "./dist/webml/bonsai-models.d.ts",
-        "import": "./dist/webml/bonsai-models.js"
-      },
-      "./webml/code-embed": {
-        "types": "./dist/webml/code-embed.d.ts",
-        "import": "./dist/webml/code-embed.js"
-      },
-      "./webml/bonsai-worker-core": {
-        "types": "./dist/webml/bonsai-worker-core.d.ts",
-        "import": "./dist/webml/bonsai-worker-core.js"
-      },
-      "./webml/bonsai/wasp": {
-        "types": "./dist/webml/bonsai/wasp/index.d.ts",
-        "import": "./dist/webml/bonsai/wasp/index.js"
-      },
-      "./webml/device-class": {
-        "types": "./dist/webml/device-class.d.ts",
-        "import": "./dist/webml/device-class.js"
-      },
-      "./webml/tts": {
-        "types": "./dist/webml/tts/index.d.ts",
-        "import": "./dist/webml/tts/index.js"
       },
       "./sync": {
         "types": "./dist/sync/index.d.ts",
@@ -476,9 +420,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json && node copy-assets.mjs && npm run build:worker && npm run build:embed-worker",
-    "pack:dist": "npm run build && npm pack",
-    "build:worker": "esbuild src/webml/bonsai-worker-entry.ts --bundle --format=esm --minify --outfile=dist/webml/bonsai-worker.js",
-    "build:embed-worker": "esbuild src/webml/session-memory/embed.worker.ts --bundle --format=esm --minify --outfile=dist/webml/session-memory/embed.worker.js"
+    "pack:dist": "npm run build && npm pack"
   },
   "dependencies": {
     "@aitherium/bead-space": "^0.1.0",
