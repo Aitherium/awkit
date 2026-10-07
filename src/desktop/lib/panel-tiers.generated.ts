@@ -13,7 +13,7 @@ export const PANEL_MIN_TIER: Readonly<Record<string, string>> = {
   "canvas": "developer",
   "commerce": "business",
   "comms": "starter",
-  "company-room": "pro",
+  "company-room": "team",
   "content-studio": "team",
   "executive-briefing": "team",
   "generate": "team",
@@ -36,5 +36,5 @@ export const PANEL_MIN_TIER: Readonly<Record<string, string>> = {
   "workspace-admin": "team",
   "workspace-intelligence": "team",
   "writer": "team",
-  "ws-room": "pro",
+  "ws-room": "team",
 }
