@@ -10,7 +10,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 let mockRole = 'admin'
 jest.mock('../../hooks/useAuth', () => ({ useAuth: () => ({ user: { role: mockRole } }) }))
 
-import ConnectorsPanel, { explainConnectorError } from '../ConnectorsPanel'
+import ConnectorsPanel, { connectorConfigBody, explainConnectorError } from '../ConnectorsPanel'
 
 const REDIRECT = 'https://tenant-api.example/api/auth/m365/callback'
 
@@ -47,7 +47,44 @@ describe('ConnectorsPanel', () => {
     await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true))
     const put = calls.find((c) => c.method === 'PUT')!
     expect(put.url).toMatch(/\/api\/connectors\/m365\/config$/)
-    expect(JSON.parse(put.body!)).toEqual({ client_id: 'cid', client_secret: 'shh', tenant_id: 'contoso' })
+    expect(JSON.parse(put.body!)).toEqual({ client_id: 'cid', client_secret: 'shh', tenant_id: 'contoso', cli_tokens: '' })
+  })
+
+  it('sends the Gmail and CLI hand-off switches for Google', async () => {
+    const calls = mockFetch(null)
+    render(<ConnectorsPanel />)
+    await screen.findAllByDisplayValue(REDIRECT)
+    // Gmail is Google-only; the CLI switch exists for both providers.
+    expect(screen.queryByLabelText('m365 include gmail')).toBeNull()
+    expect(screen.getByLabelText('m365 cli tokens')).toBeTruthy()
+    expect(screen.getByText(/Include Gmail \(read-only, Google restricted scope/)).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('google client id'), { target: { value: 'gid' } })
+    fireEvent.change(screen.getByLabelText('google client secret'), { target: { value: 'gs' } })
+    // a switch in the form must not wipe a secret the admin just typed
+    fireEvent.click(screen.getByLabelText('google include gmail'))
+    fireEvent.click(screen.getByLabelText('google cli tokens'))
+    fireEvent.click(screen.getAllByText('Save')[1])
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT' && c.url.includes('/google/'))).toBe(true))
+    const put = calls.find((c) => c.method === 'PUT' && c.url.includes('/google/'))!
+    expect(JSON.parse(put.body!)).toEqual({ client_id: 'gid', client_secret: 'gs', gmail: '1', cli_tokens: '1' })
+  })
+
+  it('a switch in the saved view saves at once and keeps the stored secret', async () => {
+    const calls = mockFetch({ client_id: 'cid', has_secret: true, configured: true, gmail: '', cli_tokens: '' })
+    render(<ConnectorsPanel />)
+    await screen.findAllByText(/secret stored/)
+    const cli = (await screen.findByLabelText('google cli tokens')) as HTMLInputElement
+    expect(cli.checked).toBe(false)
+    fireEvent.click(cli)
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT' && c.url.includes('/google/'))).toBe(true))
+    const put = calls.find((c) => c.method === 'PUT' && c.url.includes('/google/'))!
+    expect(JSON.parse(put.body!)).toEqual({ client_id: 'cid', client_secret: '', gmail: '', cli_tokens: '1' })
+  })
+
+  it('builds per-provider bodies', () => {
+    const form = { client_id: 'c', client_secret: '', tenant_id: 't', gmail: true, cli_tokens: false }
+    expect(connectorConfigBody('m365', form)).toEqual({ client_id: 'c', client_secret: '', tenant_id: 't', cli_tokens: '' })
+    expect(connectorConfigBody('google', form)).toEqual({ client_id: 'c', client_secret: '', gmail: '1', cli_tokens: '' })
   })
 
   it('never fills a stored secret back into the form', async () => {
@@ -67,6 +104,7 @@ describe('ConnectorsPanel', () => {
     await screen.findAllByText(/Ask a workspace admin/)
     expect(screen.queryByLabelText('m365 client id')).toBeNull()
     expect(calls.some((c) => c.url.includes('/api/connectors/'))).toBe(false)
+    expect(screen.queryByLabelText('google cli tokens')).toBeNull()
   })
 
   it('explains refusals in words', () => {

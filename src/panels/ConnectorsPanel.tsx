@@ -12,13 +12,20 @@
  *
  * Members only see status and Connect: the admin gate here is UX, the backend
  * re-checks it.
+ *
+ * Two admin switches per workspace (stored as "1" / ""):
+ * - `gmail` (Google only): adds Google's restricted gmail.readonly scope; members
+ *   re-consent on their next Connect.
+ * - `cli_tokens`: lets each member fetch THEIR OWN token for their CLI/agents
+ *   (`GET /api/connectors/{provider}/token`, used by awsuite, awdk, awsh). Off by default.
  */
 
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { getApiBase } from '../lib/apiBase'
 
-type Provider = 'm365' | 'google'
+export type ConnectorProvider = 'm365' | 'google'
+type Provider = ConnectorProvider
 
 interface Config {
   redirect_uri?: string
@@ -26,6 +33,32 @@ interface Config {
   tenant_id?: string
   has_secret?: boolean
   configured?: boolean
+  /** Google only: "1" = restricted gmail.readonly scope requested. */
+  gmail?: string
+  /** "1" = members may fetch their own token for their CLI/agents. */
+  cli_tokens?: string
+}
+
+export interface ConnectorForm {
+  client_id: string
+  client_secret: string
+  tenant_id: string
+  gmail: boolean
+  cli_tokens: boolean
+}
+
+const EMPTY_FORM: ConnectorForm = { client_id: '', client_secret: '', tenant_id: '', gmail: false, cli_tokens: false }
+
+/** The PUT body for a provider. Exported for tests. */
+export function connectorConfigBody(provider: ConnectorProvider, form: ConnectorForm): Record<string, string> {
+  const base: Record<string, string> = {
+    client_id: form.client_id,
+    client_secret: form.client_secret,
+  }
+  if (provider === 'm365') base.tenant_id = form.tenant_id
+  if (provider === 'google') base.gmail = form.gmail ? '1' : ''
+  base.cli_tokens = form.cli_tokens ? '1' : ''
+  return base
 }
 
 interface Status { configured?: boolean; connected?: boolean }
@@ -48,7 +81,7 @@ const META: Record<Provider, { title: string; reads: string; steps: string[] }> 
     steps: [
       'Google Cloud console > APIs & Services: enable the Google Calendar API and Google Drive API.',
       'OAuth consent screen: User type "Internal" (no Google review needed for your own domain).',
-      'Scopes: calendar.readonly, drive.readonly.',
+      'Scopes: calendar.readonly, drive.readonly (and gmail.readonly if you include Gmail below).',
       'Credentials > Create OAuth client ID > Web application. Authorized redirect URI: paste the URI below.',
       'Paste the client ID and client secret here.',
     ],
@@ -94,7 +127,7 @@ function ConnectorCard({ provider, isAdmin }: { provider: Provider; isAdmin: boo
   const meta = META[provider]
   const [status, setStatus] = useState<Status>({})
   const [cfg, setCfg] = useState<Config | null>(null)
-  const [form, setForm] = useState({ client_id: '', client_secret: '', tenant_id: '' })
+  const [form, setForm] = useState<ConnectorForm>(EMPTY_FORM)
   const [editing, setEditing] = useState(false)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
@@ -106,20 +139,48 @@ function ConnectorCard({ provider, isAdmin }: { provider: Provider; isAdmin: boo
     const c = await api(`/api/connectors/${provider}/config`).catch(() => null)
     if (c?.ok) {
       setCfg(c.body)
-      setForm({ client_id: c.body.client_id || '', client_secret: '', tenant_id: c.body.tenant_id || '' })
+      setForm({
+        client_id: c.body.client_id || '', client_secret: '', tenant_id: c.body.tenant_id || '',
+        gmail: c.body.gmail === '1', cli_tokens: c.body.cli_tokens === '1',
+      })
     }
   }, [provider, isAdmin])
 
   useEffect(() => { void load() }, [load])
 
-  const save = async () => {
+  const save = async (next: ConnectorForm = form) => {
     setBusy(true); setMsg('')
-    const body = provider === 'm365' ? form : { client_id: form.client_id, client_secret: form.client_secret }
+    const body = connectorConfigBody(provider, next)
     const r = await api(`/api/connectors/${provider}/config`, { method: 'PUT', body: JSON.stringify(body) })
     setBusy(false)
     if (!r.ok) { setMsg(explainConnectorError(r.status, r.body)); return }
     setEditing(false); setMsg('Saved.'); void load()
   }
+
+  /** In the saved view a switch saves at once (blank secret = keep the stored one). */
+  const toggle = (key: 'gmail' | 'cli_tokens', on: boolean) => {
+    const immediate = !!cfg?.configured && !editing
+    const next = { ...form, [key]: on, ...(immediate ? { client_secret: '' } : {}) }
+    setForm(next)
+    if (immediate) void save(next)
+  }
+
+  const switches = (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', fontSize: '0.72rem' }}>
+      {provider === 'google' && (
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+          <input type="checkbox" aria-label="google include gmail" checked={form.gmail}
+            disabled={busy} onChange={(e) => toggle('gmail', e.target.checked)} />
+          Include Gmail (read-only, Google restricted scope — needs re-consent)
+        </label>
+      )}
+      <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+        <input type="checkbox" aria-label={`${provider} cli tokens`} checked={form.cli_tokens}
+          disabled={busy} onChange={(e) => toggle('cli_tokens', e.target.checked)} />
+        Allow members to use this connection from their CLI/agents (awsuite, awdk, awsh)
+      </label>
+    </div>
+  )
 
   const remove = async () => {
     setBusy(true); setMsg('')
@@ -151,13 +212,16 @@ function ConnectorCard({ provider, isAdmin }: { provider: Provider; isAdmin: boo
       </div>
 
       {isAdmin && cfg && (cfg.configured && !editing ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', fontSize: '0.72rem', color: 'var(--text-muted, #888)' }}>
-          <span style={{ flex: 1 }}>
-            Your app: <code>{cfg.client_id}</code>{cfg.tenant_id ? <> in tenant <code>{cfg.tenant_id}</code></> : null}
-            {cfg.has_secret ? ', secret stored' : ', no secret'}
-          </span>
-          <button style={btn(false)} onClick={() => setEditing(true)}>Edit</button>
-          <button style={btn(false)} disabled={busy} onClick={remove}>Remove</button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', fontSize: '0.72rem', color: 'var(--text-muted, #888)' }}>
+            <span style={{ flex: 1 }}>
+              Your app: <code>{cfg.client_id}</code>{cfg.tenant_id ? <> in tenant <code>{cfg.tenant_id}</code></> : null}
+              {cfg.has_secret ? ', secret stored' : ', no secret'}
+            </span>
+            <button style={btn(false)} onClick={() => setEditing(true)}>Edit</button>
+            <button style={btn(false)} disabled={busy} onClick={remove}>Remove</button>
+          </div>
+          {switches}
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
@@ -182,8 +246,9 @@ function ConnectorCard({ provider, isAdmin }: { provider: Provider; isAdmin: boo
               value={form.client_secret} placeholder={cfg.has_secret ? 'Stored. Leave blank to keep it.' : ''}
               onChange={(e) => setForm({ ...form, client_secret: e.target.value })} />
           </label>
+          {switches}
           <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <button style={btn(true)} disabled={busy || !form.client_id.trim()} onClick={save}>Save</button>
+            <button style={btn(true)} disabled={busy || !form.client_id.trim()} onClick={() => { void save() }}>Save</button>
             {editing && <button style={btn(false)} onClick={() => setEditing(false)}>Cancel</button>}
           </div>
         </div>
