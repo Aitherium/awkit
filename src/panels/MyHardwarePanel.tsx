@@ -52,13 +52,20 @@ interface PackageInfo {
   name: string
   version: string
   install?: string | null
+  /** Windows PowerShell 5.1 spelling, where the POSIX one fails there. */
+  install_windows?: string | null
   url?: string | null
   description: string
 }
 
 interface Downloads {
   packages: PackageInfo[]
-  bonsai?: { name: string; install?: string | null; description: string }
+  bonsai?: {
+    name: string
+    install?: string | null
+    install_windows?: string | null
+    description: string
+  }
 }
 
 /** The self-host appliance release surface (served by the tenant backend's
@@ -91,6 +98,22 @@ function detectOS(): string {
   if (ua.includes('mac')) return 'macos'
   if (ua.includes('linux')) return 'linux'
   return 'unknown'
+}
+
+/** The command for THIS visitor's shell: Windows gets the PowerShell spelling
+ *  (`curl -fsSL`, `&&` and `bash` all fail in Windows PowerShell 5.1). */
+function installFor(
+  os: string, p: { install?: string | null; install_windows?: string | null },
+): string | null {
+  if (os === 'windows' && p.install_windows) return p.install_windows
+  return p.install ?? null
+}
+
+/** Windows has no bash: the tenant repo ships join-iso.ps1 beside join-iso.sh. */
+function joinIsoCmd(os: string, tag: string): string {
+  return os === 'windows'
+    ? `powershell -ExecutionPolicy Bypass -File deliverables/iso/join-iso.ps1 -Tag ${tag}`
+    : `bash deliverables/iso/join-iso.sh --tag ${tag}`
 }
 
 function statusColor(status: string): string {
@@ -320,10 +343,10 @@ export default function MyHardwarePanel({
           <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.3rem 0 0.5rem' }}>
             {p.description}
           </p>
-          {p.install ? (
+          {installFor(os, p) ? (
             <div style={cmdRow}>
-              <code style={cmdCode}>{p.install}</code>
-              <button style={cmdCopy} onClick={() => copy(p.install!, p.id)}>
+              <code style={cmdCode}>{installFor(os, p)}</code>
+              <button style={cmdCopy} onClick={() => copy(installFor(os, p)!, p.id)}>
                 {copied === p.id ? 'Copied' : 'Copy'}
               </button>
             </div>
@@ -343,8 +366,9 @@ export default function MyHardwarePanel({
             {downloads.bonsai.description}
           </p>
           <div style={cmdRow}>
-            <code style={cmdCode}>{downloads.bonsai.install}</code>
-            <button style={cmdCopy} onClick={() => copy(downloads.bonsai!.install!, 'bonsai')}>
+            <code style={cmdCode}>{installFor(os, downloads.bonsai)}</code>
+            <button style={cmdCopy}
+              onClick={() => copy(installFor(os, downloads.bonsai!)!, 'bonsai')}>
               {copied === 'bonsai' ? 'Copied' : 'Copy'}
             </button>
           </div>
@@ -384,9 +408,9 @@ export default function MyHardwarePanel({
             )}
           </p>
           <div style={cmdRow}>
-            <code style={cmdCode}>bash deliverables/iso/join-iso.sh --tag {appliance.tenant.release_tag}</code>
+            <code style={cmdCode}>{joinIsoCmd(os, appliance.tenant.release_tag)}</code>
             <button style={cmdCopy} onClick={() => copy(
-              `bash deliverables/iso/join-iso.sh --tag ${appliance.tenant.release_tag}`, 'appliance-join')}>
+              joinIsoCmd(os, appliance.tenant.release_tag), 'appliance-join')}>
               {copied === 'appliance-join' ? 'Copied' : 'Copy'}
             </button>
           </div>
