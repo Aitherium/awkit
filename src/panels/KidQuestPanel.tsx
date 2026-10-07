@@ -26,6 +26,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import FamilySpaceCard from './FamilySpaceCard'
 import { createLearnVoice, type LearnSpeak } from './learnVoice'
+import { QUIET_RULE, fetchVoiceRule, readChildMuted, spriteMaySpeak, type SpriteVoiceRule } from './spriteVoice'
 import { C, EASE, FONT_MONO, FONT_UI, LEARN_CSS, LearnModeSwitch, learnVars, useLearnMode } from './learnTheme'
 import { KidSpriteCard, spriteEmoji, type KidSprite } from './LearnerSprite'
 
@@ -452,6 +453,12 @@ export default function KidQuestPanel({ apiBase, extraHeaders = {}, homeExtra, h
   const [typed, setTyped] = useState('')
   const [progress, setProgress] = useState({ done: 0, total: 0 })
   const [spriteEvent, setSpriteEvent] = useState<SpriteEvent | null>(null)
+  // The Sprite's own line ("I learned...") is read aloud only when the guardian's lock, the
+  // chat-off switch and the child's mute allow it (spriteVoice; quiet until the server says).
+  const voiceRule = useRef<SpriteVoiceRule>(QUIET_RULE)
+  const spriteSay = (ev: SpriteEvent | null | undefined): string =>
+    ev && ev.say && spriteMaySpeak(voiceRule.current, readChildMuted()) ? ev.say : ''
+  const withSprite = (line: string, sprite: string) => [line, sprite].filter(Boolean).join('. ')
   // The open lesson (null for a plain quest) and the segment on screen.
   const [lesson, setLesson] = useState<LessonInfo | null>(null)
   const [segment, setSegment] = useState<string | null>(null)
@@ -493,6 +500,7 @@ export default function KidQuestPanel({ apiBase, extraHeaders = {}, homeExtra, h
       if (r.ok && r.data) {
         setMe(r.data as MeView)
         setScreen({ kind: 'home' })
+        fetchVoiceRule(apiBase, headersRef.current).then((rule) => { voiceRule.current = rule }).catch(() => {})
         // Encouragement only (what was learned, today's goal); never a score.
         call('/me/progress').then((p) => { if (p.ok && p.data) setKidProgress(p.data as KidProgress) }).catch(() => {})
         return
@@ -611,7 +619,7 @@ export default function KidQuestPanel({ apiBase, extraHeaders = {}, homeExtra, h
     }
   }
 
-  const finish = async () => {
+  const finish = async (spriteLine = '') => {
     let say = SAVED_LINE
     if (questId) {
       try {
@@ -626,7 +634,7 @@ export default function KidQuestPanel({ apiBase, extraHeaders = {}, homeExtra, h
     setLesson(null)
     setSegment(null)
     setScreen({ kind: 'saved', say })
-    speakRef.current(say)
+    speakRef.current(withSprite(say, spriteLine))
   }
 
   const answer = async (value: string, idk = false) => {
@@ -645,7 +653,8 @@ export default function KidQuestPanel({ apiBase, extraHeaders = {}, homeExtra, h
       const out = r.data as AnswerOutcome
       bumpProgress(out.progress)
       if (out.sprite_event) setSpriteEvent(out.sprite_event)
-      if (out.done) { await finish(); return }
+      const spriteLine = spriteSay(out.sprite_event)
+      if (out.done) { await finish(spriteLine); return }
       setPendingNext(out.next_item ?? null)
       pendingSegment.current = out.segment ?? null
       // Warm the next prompt's audio while the child hears this feedback.
@@ -656,13 +665,13 @@ export default function KidQuestPanel({ apiBase, extraHeaders = {}, homeExtra, h
         const steps = Array.isArray(out.hint_steps) ? out.hint_steps.filter((s) => typeof s === 'string') : []
         const say = out.say || LOOK_LINE
         setScreen({ kind: 'look', say, steps, thenBreak: Boolean(out.break) })
-        speakRef.current([say, ...steps].join('. '))
+        speakRef.current(withSprite([say, ...steps].join('. '), spriteLine))
         return
       }
-      if (out.break) { setScreen({ kind: 'break', afterLook: false }); speakRef.current('Wiggle break!'); return }
+      if (out.break) { setScreen({ kind: 'break', afterLook: false }); speakRef.current(withSprite('Wiggle break!', spriteLine)); return }
       const say = out.say || 'Yay!'
       setScreen({ kind: 'yay', say })
-      speakRef.current(say)
+      speakRef.current(withSprite(say, spriteLine))
     } catch {
       setScreen({ kind: 'oops', say: 'Let’s try that again.' })
     } finally {
@@ -972,7 +981,7 @@ export default function KidQuestPanel({ apiBase, extraHeaders = {}, homeExtra, h
       {inQuest && (
         <button type="button" className="al-quiet al-focus"
           style={{ ...BIG, alignSelf: 'center', fontSize: 20, background: 'transparent', borderColor: 'transparent', color: C.dim }}
-          onClick={finish}>
+          onClick={() => { void finish() }}>
           All done for now
         </button>
       )}

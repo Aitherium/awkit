@@ -288,6 +288,7 @@ describe('KidQuestPanel', () => {
       }
       if (url.endsWith('/me/space')) return { status: 404, body: {} } // FamilySpaceCard probe
       if (url.endsWith('/me/progress')) return { status: 404, body: {} } // home encouragement card
+      if (url.endsWith('/me/sprite-body')) return { status: 404, body: {} } // Sprite voice rule probe
       n += 1
       // The server reporting a smaller "done" later must not step a stone back.
       const done = n === 1 ? 1 : 0

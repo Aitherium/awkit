@@ -94,7 +94,10 @@ export function splitForSpeech(text: string, max = MAX_LINE): string[] {
   return out
 }
 
-function deviceSpeak(text: string): void {
+/** What is speaking now: an audio element (its level can be read), the device voice, or nothing. */
+export type SpeakingSource = HTMLAudioElement | 'device' | null
+
+function deviceSpeak(text: string, onSpeaking?: (src: SpeakingSource) => void): void {
   const w = window as unknown as {
     speechSynthesis?: SpeechSynthesis
     SpeechSynthesisUtterance?: typeof SpeechSynthesisUtterance
@@ -109,6 +112,11 @@ function deviceSpeak(text: string): void {
     const voice = pickBestVoice(synth.getVoices?.() ?? [], offline)
     if (voice) { u.voice = voice; u.lang = voice.lang }
     u.rate = RATE
+    if (onSpeaking) {
+      u.onstart = () => onSpeaking('device')
+      u.onend = () => onSpeaking(null)
+      u.onerror = () => onSpeaking(null)
+    }
     synth.speak(u)
   } catch { /* speech is a nicety, never a blocker */ }
 }
@@ -148,11 +156,22 @@ function streamAudio(res: Response, onComplete: (blob: Blob) => void): HTMLAudio
   return el
 }
 
+export interface LearnVoiceOptions {
+  /** Told when a line starts (its audio element, or 'device') and when speech stops (null),
+   *  so a body on screen can move its mouth. Never required for speech to work. */
+  onSpeaking?: (src: SpeakingSource) => void
+}
+
 /**
  * A speak() bound to one tutor proxy. `getHeaders` is read at call time so the host's
  * bearer can change without rebuilding the voice.
  */
-export function createLearnVoice(apiBase: string, getHeaders: () => Record<string, string> = () => ({})): LearnSpeak {
+export function createLearnVoice(
+  apiBase: string,
+  getHeaders: () => Record<string, string> = () => ({}),
+  options: LearnVoiceOptions = {},
+): LearnSpeak {
+  const tell = (src: SpeakingSource) => { try { options.onSpeaking?.(src) } catch { /* a nicety */ } }
   const cache = new Map<string, string>()
   const inflight = new Map<string, Promise<string | null>>()
   let serverDownUntil = 0
@@ -258,8 +277,9 @@ export function createLearnVoice(apiBase: string, getHeaders: () => Record<strin
   /** Resolves true when the line finished (or was stopped), false when it could not play. */
   const playToEnd = (el: HTMLAudioElement): Promise<boolean> => new Promise((resolve) => {
     let settled = false
-    const done = (ok: boolean) => { if (!settled) { settled = true; endCurrent = null; resolve(ok) } }
+    const done = (ok: boolean) => { if (!settled) { settled = true; endCurrent = null; tell(null); resolve(ok) } }
     playing = el
+    tell(el)
     endCurrent = () => done(true)
     el.addEventListener?.('ended', () => done(true), { once: true })
     el.addEventListener?.('error', () => done(false), { once: true })
@@ -282,10 +302,10 @@ export function createLearnVoice(apiBase: string, getHeaders: () => Record<strin
       const got = await next
       if (mine !== seq) return
       if (got === 'refused') continue
-      if (got === 'down') { deviceSpeak(lines.slice(i).join(' ')); return }
+      if (got === 'down') { deviceSpeak(lines.slice(i).join(' '), tell); return }
       const ok = await playToEnd(got)
       if (mine !== seq) return
-      if (!ok) { deviceSpeak(lines.slice(i).join(' ')); return }
+      if (!ok) { deviceSpeak(lines.slice(i).join(' '), tell); return }
     }
   }
 
