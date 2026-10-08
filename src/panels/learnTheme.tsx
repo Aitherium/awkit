@@ -227,16 +227,19 @@ export const LEARN_CSS = `
 .al-sheet{animation:al-sheet .36s ${EASE} both}
 .al-fade{animation:al-fade .24s ${EASE} both}
 .al-skel{animation:al-pulse 1.4s ease-in-out infinite}
-.al-glow{animation:al-glow 3.6s ease-in-out infinite}
+.al-glow{position:relative}
+/* The glow breathes by fading a STATIC shadow layer (compositor only). Animating box-shadow
+   itself re-rastered the 64px blur every frame: "tile memory limits exceeded" on a Pixel 8. */
+.al-glow::after{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;box-shadow:0 0 64px var(--al-accent-glow,rgba(94,201,204,.35));opacity:0;will-change:opacity;animation:al-glow 3.6s ease-in-out infinite}
 .al-grow{animation:al-grow .6s ${EASE} both}
 @keyframes al-in{from{opacity:0;transform:translateY(8px)}}
 @keyframes al-sheet{from{opacity:0;transform:translateY(24px)}}
 @keyframes al-fade{from{opacity:0}}
 @keyframes al-pulse{50%{opacity:.45}}
-@keyframes al-glow{50%{box-shadow:0 0 64px var(--al-accent-glow,rgba(94,201,204,.35))}}
+@keyframes al-glow{50%{opacity:1}}
 @keyframes al-grow{from{transform:scale(.86)}}
 @media (prefers-reduced-motion:reduce){
-  .al-in,.al-sheet,.al-fade,.al-skel,.al-glow,.al-grow{animation:none!important}
+  .al-in,.al-sheet,.al-fade,.al-skel,.al-glow,.al-glow::after,.al-grow{animation:none!important}
   .al-primary,.al-tile,.al-field,.al-quiet{transition:none!important}
 }
 `

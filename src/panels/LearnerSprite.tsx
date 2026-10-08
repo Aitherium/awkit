@@ -35,19 +35,20 @@ export function spriteEmoji(sprite?: KidSprite | null): string {
 }
 
 /** The kid's sprite on the home screen: the hero. Name, level and the latest thing
- *  it learned, in a soft accent glow. Renders nothing without a sprite. */
-export function KidSpriteCard({ sprite }: { sprite?: KidSprite | null }) {
+ *  it learned, in a soft accent glow. Renders nothing without a sprite. `face={false}`
+ *  leaves the emoji out where the page draws the Sprite's body itself (My Sprite). */
+export function KidSpriteCard({ sprite, face = true }: { sprite?: KidSprite | null; face?: boolean }) {
   if (!sprite || !sprite.name) return null
   const level = Math.max(1, Number(sprite.level ?? 1))
   return (
     <div data-testid="kid-sprite-card" style={{
       display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, width: '100%', textAlign: 'center',
     }}>
-      <div aria-hidden className="al-glow" style={{
+      {face ? <div aria-hidden className="al-glow" style={{
         width: 148, height: 148, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
         fontSize: 76, lineHeight: 1, background: C.accentWash, border: `1px solid ${C.hairline}`,
         boxShadow: `0 0 48px ${C.accentGlow}`,
-      }}>{spriteEmoji(sprite)}</div>
+      }}>{spriteEmoji(sprite)}</div> : null}
       <div style={{ fontSize: 26, fontWeight: 500, letterSpacing: '-0.02em', color: C.ink }}>{sprite.name}</div>
       <div data-testid="kid-sprite-level" style={{
         fontFamily: FONT_MONO, fontSize: 14, letterSpacing: '.18em', textTransform: 'lowercase', color: C.dim,

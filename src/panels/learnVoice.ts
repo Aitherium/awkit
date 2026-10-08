@@ -18,6 +18,8 @@
  * failure ends in silence or the device voice, never an error on screen.
  */
 
+import { speakable } from './speakable'
+
 export type LearnSpeak = ((text: string | undefined) => void) & {
   prefetch?: (text: string | undefined) => void
 }
@@ -310,14 +312,18 @@ export function createLearnVoice(
   }
 
   const speak: LearnSpeak = (raw) => {
-    const text = (raw ?? '').replace(/\s+/g, ' ').trim()
+    // Stage directions, emoji and markdown are never read aloud (speakable).
+    const text = speakable(raw)
     if (!text || typeof window === 'undefined') return
+    // The exact line handed to the voice: the Android app forwards this tag to logcat
+    // (MainActivity's console filter), which is how "no *blinks*" is checked on a phone.
+    try { console.info(`[aither-speak] ${text}`) } catch { /* no console */ }
     const mine = ++seq
     stop()
     void run(splitForSpeech(text), mine)
   }
   speak.prefetch = (raw) => {
-    const text = (raw ?? '').replace(/\s+/g, ' ').trim()
+    const text = speakable(raw)
     if (!text || typeof window === 'undefined') return
     for (const line of splitForSpeech(text).slice(0, 2)) void warm(line)
   }
