@@ -151,6 +151,10 @@
       "types": "./src/hooks/index.ts",
       "import": "./src/hooks/index.ts"
     },
+    "./drawing": {
+      "types": "./src/drawing/index.ts",
+      "import": "./src/drawing/index.ts"
+    },
     "./lib": {
       "types": "./src/lib/index.ts",
       "import": "./src/lib/index.ts"
@@ -243,6 +247,10 @@
       "./hooks": {
         "types": "./dist/hooks/index.d.ts",
         "import": "./dist/hooks/index.js"
+      },
+      "./drawing": {
+        "types": "./dist/drawing/index.d.ts",
+        "import": "./dist/drawing/index.js"
       },
       "./lib": {
         "types": "./dist/lib/index.d.ts",
