@@ -344,6 +344,8 @@ export default function FamilyTutorConsolePanel({ apiBase, extraHeaders = {} }: 
   const [note, setNote] = useState<string | null>(null)
   const [pair, setPair] = useState<PairCode | null>(null)
   const [view, setView] = useState<View>({ kind: 'none' })
+  // A learner just deleted: only their receipt stays on screen, not their other cards.
+  const [erasedLid, setErasedLid] = useState<string | null>(null)
   const [report, setReport] = useState<Report | null>(null)
   const [events, setEvents] = useState<TranscriptEvent[]>([])
   const [moreFor, setMoreFor] = useState<string | null>(null)
@@ -999,7 +1001,7 @@ export default function FamilyTutorConsolePanel({ apiBase, extraHeaders = {} }: 
             </section>
           )}
 
-          {view.kind === 'settings' && (
+          {view.kind === 'settings' && view.lid !== erasedLid && (
             <form onSubmit={saveSettings} data-testid="settings-view" style={S.formCol}>
               <SheetHeading label="settings" title={`Settings${current ? ` for ${current.alias}` : ''}`} />
               <div style={S.row}>
@@ -1032,16 +1034,17 @@ export default function FamilyTutorConsolePanel({ apiBase, extraHeaders = {} }: 
               <div><button type="submit" className="al-primary al-focus" style={primary}>Save settings</button></div>
             </form>
           )}
-          {view.kind === 'settings' && (
+          {view.kind === 'settings' && view.lid !== erasedLid && (
             <LearnVoiceCard key={`voice-${view.lid}`} call={call} apiBase={apiBase}
               getHeaders={() => headersRef.current} lid={view.lid} alias={current?.alias} onNote={setNote} />
           )}
           {view.kind === 'settings' && (
             <LearnerGuardCard key={`guard-${view.lid}`} call={call} lid={view.lid} alias={current?.alias}
               canRemove={current?.guardian_role !== 'co'}
-              onNote={setNote} onRemoved={() => { closeView(); load() }} />
+              onNote={setNote} onErased={() => setErasedLid(view.lid)}
+              onRemoved={() => { setErasedLid(null); closeView(); load() }} />
           )}
-          {view.kind === 'settings' && current?.guardian_role !== 'co' && (
+          {view.kind === 'settings' && view.lid !== erasedLid && current?.guardian_role !== 'co' && (
             <CoGuardiansCard key={`co-${view.lid}`} call={call} lid={view.lid} alias={current?.alias} onNote={setNote} />
           )}
 

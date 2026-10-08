@@ -17,8 +17,8 @@ import { AgentToggleButton } from './agent-sidebar'
 import { AgentSidebar } from './agent-sidebar'
 import { detectSnapZone, getSnapGeometry, type SnapZone } from './window-snap-preview'
 
-/** Below this width a floating window cannot work: there is nowhere to float to. */
-export const MOBILE_MAX_WIDTH = 768
+import { MOBILE_MAX_WIDTH, TASKBAR_PX } from './window-fit'
+export { MOBILE_MAX_WIDTH }
 
 /**
  * Is this a phone-sized viewport?
@@ -120,10 +120,19 @@ export function DesktopWindow({
   const isMobile = useIsMobileViewport()
   const fullBleed = isMaximized || isMobile
 
-  const actualPos = fullBleed ? { x: 0, y: 0 } : position
-  const actualSize = fullBleed
-    ? { width: typeof window !== 'undefined' ? window.innerWidth : 1920, height: typeof window !== 'undefined' ? window.innerHeight - 48 : 1032 }
-    : size
+  // Full-bleed is CSS insets, not a pixel snapshot of innerWidth/innerHeight taken at
+  // render: a phone rotating (or a Fold folding) inside the same breakpoint never
+  // re-rendered, so the window kept its portrait size in landscape. The top inset keeps
+  // the title bar out from under a notch; the bottom stops at the taskbar (which sits
+  // at bottom: 0 itself, so the two stay flush).
+  const frameStyle: React.CSSProperties = fullBleed
+    ? {
+        left: 0,
+        right: 0,
+        top: 'env(safe-area-inset-top, 0px)',
+        bottom: TASKBAR_PX,
+      }
+    : { left: position.x, top: position.y, width: size.width, height: size.height }
 
   // Drag handlers
   const handleDragStart = (e: React.PointerEvent) => {
@@ -273,17 +282,14 @@ export function DesktopWindow({
           : 'ring-1 ring-white/5'
         }`}
       style={{
-        left: actualPos.x,
-        top: actualPos.y,
-        width: actualSize.width,
-        height: actualSize.height,
+        ...frameStyle,
         zIndex,
       }}
       onPointerDown={onFocus}
     >
       {/* Title Bar — glass effect */}
       <div
-        className={`flex items-center justify-between h-10 px-3 select-none shrink-0 backdrop-blur-xl
+        className={`flex items-center justify-between ${isMobile ? 'h-11' : 'h-10'} px-3 select-none shrink-0 backdrop-blur-xl
           ${isFocused
             ? 'bg-gradient-to-b from-zinc-700/80 to-zinc-800/90 border-b border-white/[0.06]'
             : 'bg-zinc-800/70 border-b border-white/[0.03]'
@@ -292,38 +298,72 @@ export function DesktopWindow({
         onPointerDown={handleDragStart}
         onDoubleClick={handleDoubleClickTitle}
       >
-        {/* Left: traffic-light buttons */}
+        {/* Left: window controls.
+            A phone gets ONE compact close: the window is already full-bleed, so
+            minimize/maximize do nothing there. Owner, 2026-10-07: "the red/yellow/green
+            icons are so big and stupid looking" -- globals.css gives every touch-screen
+            <button> a 44px min-height/width, which blew the 12px dots up into 44px
+            colored circles. So the color lives on an inner <span> that stays 12px; the
+            <button> is a transparent hit area that may grow on touch. */}
+        {isMobile ? (
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); onClose() }}
+            className="-ml-2 mr-1 flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-md text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-100 transition-colors"
+            title="Close"
+            aria-label="Close window"
+            data-window-control="close"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        ) : (
         <div className="flex items-center gap-1.5 mr-3 flex-shrink-0">
           <button
+            type="button"
             onClick={(e) => { e.stopPropagation(); onClose() }}
-            className="w-3 h-3 rounded-full bg-red-500/80 hover:bg-red-500 transition-colors ring-1 ring-red-600/40 flex items-center justify-center group"
+            className="flex items-center justify-center group"
             title="Close"
+            aria-label="Close window"
+            data-window-control="close"
           >
-            <X className="w-2 h-2 text-red-900 opacity-0 group-hover:opacity-100 transition-opacity" />
+            <span className="w-3 h-3 rounded-full bg-red-500/80 group-hover:bg-red-500 transition-colors ring-1 ring-red-600/40 flex items-center justify-center">
+              <X className="w-2 h-2 text-red-900 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </span>
           </button>
           <button
+            type="button"
             onClick={(e) => { e.stopPropagation(); onMinimize() }}
-            className="w-3 h-3 rounded-full bg-yellow-500/80 hover:bg-yellow-500 transition-colors ring-1 ring-yellow-600/40 flex items-center justify-center group"
+            className="flex items-center justify-center group"
             title="Minimize"
+            aria-label="Minimize window"
+            data-window-control="minimize"
           >
-            <Minus className="w-2 h-2 text-yellow-900 opacity-0 group-hover:opacity-100 transition-opacity" />
+            <span className="w-3 h-3 rounded-full bg-yellow-500/80 group-hover:bg-yellow-500 transition-colors ring-1 ring-yellow-600/40 flex items-center justify-center">
+              <Minus className="w-2 h-2 text-yellow-900 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </span>
           </button>
           <button
+            type="button"
             onClick={(e) => {
               e.stopPropagation()
               if (isMaximized) onRestore()
               else onMaximize()
             }}
-            className="w-3 h-3 rounded-full bg-green-500/80 hover:bg-green-500 transition-colors ring-1 ring-green-600/40 flex items-center justify-center group"
+            className="flex items-center justify-center group"
             title={isMaximized ? 'Restore' : 'Maximize'}
+            aria-label={isMaximized ? 'Restore window' : 'Maximize window'}
+            data-window-control="maximize"
           >
-            {isMaximized
-              ? <Minimize2 className="w-2 h-2 text-green-900 opacity-0 group-hover:opacity-100 transition-opacity" />
-              : <Maximize2 className="w-2 h-2 text-green-900 opacity-0 group-hover:opacity-100 transition-opacity" />
-            }
+            <span className="w-3 h-3 rounded-full bg-green-500/80 group-hover:bg-green-500 transition-colors ring-1 ring-green-600/40 flex items-center justify-center">
+              {isMaximized
+                ? <Minimize2 className="w-2 h-2 text-green-900 opacity-0 group-hover:opacity-100 transition-opacity" />
+                : <Maximize2 className="w-2 h-2 text-green-900 opacity-0 group-hover:opacity-100 transition-opacity" />
+              }
+            </span>
           </button>
         </div>
-
+        )}
         {/* Center: title */}
         <div className="flex items-center gap-2 min-w-0 flex-1 justify-center">
           {icon && <div className="flex-shrink-0 opacity-80">{icon}</div>}

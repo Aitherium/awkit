@@ -293,6 +293,9 @@ describe('FamilyTutorConsolePanel redesign', () => {
 describe('FamilyTutorConsolePanel co-guardians', () => {
   async function openSettings(role: 'primary' | 'co') {
     const calls = installFetch((url, init) => {
+      if (url.endsWith('/erase') && init?.method === 'POST') {
+        return { status: 200, body: { lid: 'l-x', erased: true, account: 'erased', removed: { learner: 1, chats: 2 } } }
+      }
       if (url.endsWith('/family/learners') && (!init?.method || init.method === 'GET')) {
         return { status: 200, body: [{ ...LEARNERS[0], guardian_role: role }] }
       }
@@ -314,6 +317,16 @@ describe('FamilyTutorConsolePanel co-guardians', () => {
     await openSettings('primary')
     expect(await screen.findByTestId('co-guardians')).toBeInTheDocument()
     expect(screen.getByTestId('remove-learner')).toBeInTheDocument()
+  })
+
+  it('after a permanent delete only the receipt stays: no settings, voice or co-guardian cards', async () => {
+    await openSettings('primary')
+    expect(await screen.findByTestId('co-guardians')).toBeInTheDocument()
+    fireEvent.change(screen.getByTestId('erase-confirm'), { target: { value: 'X' } })
+    await act(async () => { fireEvent.click(screen.getByTestId('erase-learner-btn')) })
+    expect(await screen.findByTestId('erase-receipt')).toBeInTheDocument()
+    expect(screen.queryByTestId('co-guardians')).toBeNull()
+    expect(screen.queryByTestId('settings-view')).toBeNull()
   })
 
   it('a co-guardian gets neither the share section nor Remove', async () => {

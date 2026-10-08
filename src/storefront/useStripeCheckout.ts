@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from 'react'
 import { useCart } from './CartProvider'
+import { openCheckout, PLAY_NO_PURCHASE } from '../lib/playShell'
 
 interface UseStripeCheckoutOptions {
   apiBase?: string
@@ -36,8 +37,10 @@ export function useStripeCheckout({ apiBase = '/api' }: UseStripeCheckoutOptions
 
       const { url } = await resp.json()
       if (url) {
+        // Through openCheckout: refused in the Google Play app, and the cart is
+        // kept, since nothing was bought.
+        if (!openCheckout(url)) throw new Error(PLAY_NO_PURCHASE)
         clearCart()
-        window.location.href = url
       } else {
         throw new Error('No checkout URL returned')
       }

@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import { openCheckout, PLAY_NO_PURCHASE, usePlayShell } from '../lib/playShell'
 
 interface PackEntry {
   id: string
@@ -56,6 +57,8 @@ export default function PacksPanel({ apiBase = '' }: PacksPanelProps) {
   const [tierFilter, setTierFilter] = useState<TierFilter>('all')
   const [installing, setInstalling] = useState<string | null>(null)
   const [deploying, setDeploying] = useState<string | null>(null)
+  const [notice, setNotice] = useState('')
+  const inPlay = usePlayShell() // no pack to buy in the Google Play app
 
   const fetchPacks = useCallback(async () => {
     setLoading(true)
@@ -161,7 +164,7 @@ export default function PacksPanel({ apiBase = '' }: PacksPanelProps) {
       })
       if (res.ok) {
         const { checkout_url } = await res.json()
-        if (checkout_url) window.location.href = checkout_url
+        if (checkout_url && !openCheckout(checkout_url)) setNotice(PLAY_NO_PURCHASE)
       }
     } catch { /* silent */ }
   }, [apiBase])
@@ -181,6 +184,10 @@ export default function PacksPanel({ apiBase = '' }: PacksPanelProps) {
         <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>Extension Packs</h2>
         <span style={{ color: '#888', fontSize: 13 }}>{filtered.length} of {packs.length} packs</span>
       </div>
+
+      {notice && (
+        <p style={{ margin: '0 0 12px', fontSize: 12, color: '#888' }} role="status">{notice}</p>
+      )}
 
       {/* Stats row */}
       <div style={{
@@ -297,7 +304,9 @@ export default function PacksPanel({ apiBase = '' }: PacksPanelProps) {
               )}
 
               <div style={{ display: 'flex', gap: 6 }}>
-                {!pack.licensed && !isFree ? (
+                {!pack.licensed && !isFree && inPlay ? (
+                  <span style={{ fontSize: 11, color: '#888' }} data-play-no-purchase>{PLAY_NO_PURCHASE}</span>
+                ) : !pack.licensed && !isFree ? (
                   <button
                     onClick={() => handlePurchase(pack.id)}
                     style={{

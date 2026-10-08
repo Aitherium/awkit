@@ -10,7 +10,11 @@
  * - Delete permanently: POST {apiBase}/family/learners/{lid}/erase with
  *   {"confirm": <the child's name>}. Deletes the child's profile, account, devices,
  *   sprite, Space and every record, history included (COPPA / Play Families).
- *   Guardian of record only, like Remove.
+ *   Guardian of record only, like Remove. On success the card turns into a receipt of
+ *   what was deleted (the route's `removed` counts) until the guardian taps Done;
+ *   onErased tells the host so it can hide the deleted child's other cards meanwhile.
+ *   The receipt says only what is true: an AI-answer report the child sent leaves a
+ *   copy with the safety team, so it says so.
  */
 import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
 import { C, FONT_UI } from './learnTheme'
@@ -24,11 +28,45 @@ export interface LearnerGuardCardProps {
   alias?: string
   onNote?: (message: string) => void
   onRemoved?: () => void
+  /** The child was deleted and the receipt is showing (onRemoved follows on Done). */
+  onErased?: () => void
   /** False for a co-guardian: only the guardian of record can remove a child. */
   canRemove?: boolean
 }
 
 interface Parental { chat_disabled?: boolean; pin_set?: boolean }
+
+/** POST .../erase answers {lid, erased, account, removed: {<store>: count}}. */
+export interface EraseResult { account?: string; removed?: Record<string, number> }
+
+// Counts with a receipt line of their own; every other count is a learning record
+// (skills, quests, transcript, rewards, inbox ...). Plumbing counts are not shown.
+const NAMED = new Set(['devices', 'chats', 'memories', 'reports', 'sprite', 'space', 'roster', 'class_links'])
+const PLUMBING = new Set(['learner', 'identity_sessions', 'device_codes', 'device_sessions', 'academy', 'claim_failures'])
+
+const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.floor(v) : 0)
+const count = (k: number, one: string, many: string) => `${k} ${k === 1 ? one : many}`
+
+/** The guardian's receipt: one plain line per kind of thing that was deleted. */
+export function eraseReceipt(result: EraseResult | null | undefined): string[] {
+  const removed = result?.removed || {}
+  const lines: string[] = []
+  if (result?.account === 'erased') lines.push('Their Aither account, signed out everywhere')
+  else if (result?.account === 'not_a_child_account') lines.push('Their own account was kept: they created it themselves')
+  if (num(removed.devices)) lines.push(count(num(removed.devices), 'device', 'devices'))
+  if (num(removed.chats)) lines.push(count(num(removed.chats), 'chat', 'chats'))
+  if (num(removed.memories)) lines.push(count(num(removed.memories), 'saved memory', 'saved memories'))
+  if (num(removed.reports)) lines.push(count(num(removed.reports), 'report they sent to support', 'reports they sent to support'))
+  if (num(removed.sprite)) lines.push('Their sprite')
+  if (num(removed.space)) lines.push('Their family Space')
+  if (num(removed.roster)) lines.push('Their place on your workspace')
+  if (num(removed.class_links)) lines.push(count(num(removed.class_links), 'class link', 'class links'))
+  const records = Object.entries(removed)
+    .filter(([k]) => !NAMED.has(k) && !PLUMBING.has(k))
+    .reduce((sum, [, v]) => sum + num(v), 0)
+  lines.push(records ? `${count(records, 'learning record', 'learning records')}, reports included` : 'Their profile')
+  return lines
+}
 
 const S: Record<string, CSSProperties> = {
   card: { display: 'flex', flexDirection: 'column', gap: 14, fontFamily: FONT_UI, color: C.ink },
@@ -36,7 +74,7 @@ const S: Record<string, CSSProperties> = {
   danger: { ...quiet, color: C.ink, border: `1px solid ${C.hairlineStrong}` },
 }
 
-export default function LearnerGuardCard({ call, lid, alias, onNote, onRemoved, canRemove = true }: LearnerGuardCardProps) {
+export default function LearnerGuardCard({ call, lid, alias, onNote, onRemoved, onErased, canRemove = true }: LearnerGuardCardProps) {
   const name = alias || 'this child'
   const base = `/family/learners/${encodeURIComponent(lid)}`
   const [parental, setParental] = useState<Parental | null>(null)
@@ -45,6 +83,7 @@ export default function LearnerGuardCard({ call, lid, alias, onNote, onRemoved, 
   const [busy, setBusy] = useState(false)
   const [confirm, setConfirm] = useState('')
   const [eraseName, setEraseName] = useState('')
+  const [receipt, setReceipt] = useState<string[] | null>(null)
   const eraseOk = !!alias && eraseName.trim().toLowerCase() === alias.trim().toLowerCase()
 
   useEffect(() => {
@@ -87,9 +126,35 @@ export default function LearnerGuardCard({ call, lid, alias, onNote, onRemoved, 
     setBusy(true)
     const r = await call(`${base}/erase`, 'POST', { confirm: eraseName.trim() }).catch(() => null)
     setBusy(false)
-    if (r?.ok) { onNote?.(`${name} and all of their records were deleted.`); onRemoved?.() }
+    if (r?.ok) {
+      onNote?.(`${name} and all of their records were deleted.`)
+      setReceipt(eraseReceipt(r.data as EraseResult))
+      onErased?.()
+    }
     else if (r?.status === 400) onNote?.(`Type ${name} exactly as shown to confirm.`)
     else onNote?.('Could not delete. Nothing was lost; try again in a moment.')
+  }
+
+  if (receipt) {
+    return (
+      <section style={S.card} data-testid="erase-receipt">
+        <SheetHeading label="deleted" title={`${name} was deleted`} />
+        <p style={{ ...help, margin: 0 }}>What was deleted:</p>
+        <ul style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {receipt.map((line) => <li key={line} style={help}>{line}</li>)}
+        </ul>
+        <p style={{ ...help, margin: 0 }} data-testid="erase-receipt-kept">
+          We keep a note that a deletion happened and when, with no name. If {name} reported an
+          AI answer, a copy of that report stays with our safety team so the answer can be fixed.
+        </p>
+        <div>
+          <button type="button" className="al-primary al-focus" style={primary} onClick={() => onRemoved?.()}
+            data-testid="erase-receipt-done">
+            Done
+          </button>
+        </div>
+      </section>
+    )
   }
 
   return (

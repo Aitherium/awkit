@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState } from 'react'
+import { openCheckout, PLAY_NO_PURCHASE, usePlayShell } from '../lib/playShell'
 
 export interface LineItem {
   name: string
@@ -33,6 +34,7 @@ export default function CheckoutSummary({
 }: CheckoutSummaryProps) {
   const [processing, setProcessing] = useState(false)
   const [error, setError] = useState('')
+  const inPlay = usePlayShell()
 
   const oneTimeTotal = items
     .filter(i => i.type === 'one-time')
@@ -76,8 +78,8 @@ export default function CheckoutSummary({
 
         const data = await res.json()
         if (data.checkout_url) {
-          // Redirect to Stripe
-          window.location.href = data.checkout_url
+          // Redirect to Stripe (never inside the Google Play app)
+          if (!openCheckout(data.checkout_url)) throw new Error(PLAY_NO_PURCHASE)
           return
         }
         // Demo mode — auto-fulfilled
@@ -181,6 +183,12 @@ export default function CheckoutSummary({
             Back
           </button>
         )}
+        {inPlay && paidItems.length > 0 ? (
+          // Nothing to buy in the Google Play app: no checkout button at all.
+          <span style={{ fontSize: 12, color: 'var(--text-muted, #888)' }} data-play-no-purchase>
+            {PLAY_NO_PURCHASE}
+          </span>
+        ) : (
         <button
           onClick={handleCheckout}
           disabled={processing}
@@ -197,6 +205,7 @@ export default function CheckoutSummary({
               ? `Checkout — $${(oneTimeTotal + monthlyTotal).toFixed(2)}`
               : 'Continue (Free)'}
         </button>
+        )}
       </div>
     </div>
   )

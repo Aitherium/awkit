@@ -36,6 +36,7 @@ import { AppCatalogProvider, useAppCatalog, type AppCatalogScope } from '../../c
 import { DesktopAgentProvider, useDesktopAgent } from '../../contexts/desktop-agent-context'
 import { DesktopCanvas } from './desktop-canvas'
 import { Taskbar } from './taskbar'
+import { viewportClass } from './window-fit'
 import { StartMenu } from './start-menu'
 import { DashboardOverview } from './dashboard-overview'
 import { publishUserActivity } from '../../hooks/useUserActivity'
@@ -392,19 +393,37 @@ function DesktopShellInner({ widgetImportMap, SettingsDialog: SettingsDialogProp
   const persistDesktopSession = useCallback((nextWindows: typeof windows) => {
     if (typeof window === 'undefined') return
 
+    // On a phone every window is full screen (window-fit.ts). Saving THAT geometry
+    // would hand the next desktop visit a stack of 412px-wide windows, so a phone
+    // records which apps are open but keeps the last desktop geometry (or the app's
+    // default) for each.
+    const onPhone = viewportClass(window.innerWidth) === 'phone'
+    let previous: Record<string, PersistedDesktopWindow> = {}
+    if (onPhone) {
+      try {
+        const saved = JSON.parse(window.localStorage.getItem(DESKTOP_SESSION_STORAGE_KEY) || '[]') as PersistedDesktopWindow[]
+        previous = Object.fromEntries(saved.map(w => [w.id, w]))
+      } catch { /* unreadable session: fall back to defaults below */ }
+    }
+
     const serializableWindows: PersistedDesktopWindow[] = nextWindows
       .filter(win => win.type === 'widget')
-      .map(win => ({
-        id: win.id,
-        type: 'widget',
-        position: win.position,
-        size: win.size,
-        isMinimized: win.isMinimized,
-        isMaximized: win.isMaximized,
-      }))
+      .map(win => {
+        const kept = onPhone
+          ? previous[win.id] ?? { position: { x: 72, y: 72 }, size: resolveWidget(win.id)?.defaultSize ?? win.size }
+          : win
+        return {
+          id: win.id,
+          type: 'widget',
+          position: kept.position,
+          size: kept.size,
+          isMinimized: win.isMinimized,
+          isMaximized: win.isMaximized,
+        }
+      })
 
     window.localStorage.setItem(DESKTOP_SESSION_STORAGE_KEY, JSON.stringify(serializableWindows))
-  }, [])
+  }, [resolveWidget])
 
   // Dynamically loaded widget components cache
   const [loadedWidgets, setLoadedWidgets] = useState<Record<string, React.ComponentType<any>>>({})

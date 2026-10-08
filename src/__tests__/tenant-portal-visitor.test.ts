@@ -18,8 +18,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { isMixedContentBlocked } from '../panels/LLMProviderConfig'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { MOBILE_MAX_WIDTH } from '../desktop/components/desktop/window-fit'
 
 // ── 1. The signed-out room ─────────────────────────────────────────────────
 // A 401 is not a dropped link. The room hook must classify it separately from
@@ -103,18 +102,8 @@ describe('LLM provider connection test', () => {
 // Measured on a real iPhone viewport: a 900px window at x=215 hung off a 390px
 // screen, and drag/resize are mouse-only, so a touch user could not recover it.
 describe('mobile window geometry', () => {
-  // Read the breakpoint out of desktop-core's SOURCE rather than hardcoding it.
-  // A copy here would silently disagree the day someone changes the shell, and a
-  // test that pins the wrong number is worse than none. Importing the component
-  // is not an option: it pulls framer-motion and lucide into a unit test.
-  const shell = resolve(
-    __dirname, '../desktop/components/desktop/desktop-window.tsx',
-  )
-  const src = readFileSync(shell, 'utf8')
-  const m = src.match(/MOBILE_MAX_WIDTH\s*=\s*(\d+)/)
-  if (!m) throw new Error(`MOBILE_MAX_WIDTH not found in ${shell} — the shell moved`)
-  const MOBILE_MAX_WIDTH = Number(m[1])
-
+  // The breakpoint now lives in window-fit.ts, which has no imports, so the test
+  // reads the real constant instead of scraping desktop-window.tsx's source.
   const fullBleed = (viewportWidth: number, isMaximized = false) =>
     isMaximized || viewportWidth <= MOBILE_MAX_WIDTH
 

@@ -9,8 +9,9 @@
  * as first-class OS windows.
  */
 
-import React, { createContext, useContext, useState, useCallback, useRef } from 'react'
+import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react'
 import type { SnapZone } from '../components/desktop/window-snap-preview'
+import { currentViewport, fitWindowGeometry, viewportClass } from '../components/desktop/window-fit'
 
 // ============================================================================
 // TYPES
@@ -102,8 +103,17 @@ export function WindowManagerProvider({ children }: { children: React.ReactNode 
       const newZ = zIndexCounter.current + 1
       zIndexCounter.current = newZ
 
+      // Every caller (open, session restore, starter seed, file editor) hands in
+      // desktop-authored geometry; fit it to the screen we are on. A persisted
+      // 1600px window must not replay onto a phone. See window-fit.ts.
+      const fitted = fitWindowGeometry(
+        { position: window.position, size: window.size },
+        currentViewport(),
+        { mode: 'open' },
+      )
       const newWindow: DesktopWindow = {
         ...window,
+        ...fitted,
         zIndex: newZ,
         isFocused: true,
       }
@@ -190,6 +200,45 @@ export function WindowManagerProvider({ children }: { children: React.ReactNode 
     setWindows(prev => prev.map(w =>
       w.id === id ? { ...w, size } : w
     ))
+  }, [])
+
+  // Rotation, a Fold opening/closing, a browser resize: re-fit every open window so
+  // none is left cut off. Crossing a class boundary (phone -> tablet on unfold) lays
+  // the window out fresh for the new class; within a class the user's geometry is
+  // kept and only pulled back into view.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    let lastClass = viewportClass(currentViewport().width)
+    let frame = 0
+    const refit = () => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => {
+        const vp = currentViewport()
+        const cls = viewportClass(vp.width)
+        const mode = cls === lastClass ? 'clamp' : 'open'
+        lastClass = cls
+        setWindows(prev => {
+          let changed = false
+          const next = prev.map(w => {
+            const fitted = fitWindowGeometry({ position: w.position, size: w.size }, vp, { mode })
+            if (
+              fitted.position.x === w.position.x && fitted.position.y === w.position.y &&
+              fitted.size.width === w.size.width && fitted.size.height === w.size.height
+            ) return w
+            changed = true
+            return { ...w, ...fitted }
+          })
+          return changed ? next : prev
+        })
+      })
+    }
+    window.addEventListener('resize', refit)
+    window.addEventListener('orientationchange', refit)
+    return () => {
+      cancelAnimationFrame(frame)
+      window.removeEventListener('resize', refit)
+      window.removeEventListener('orientationchange', refit)
+    }
   }, [])
 
   // ── Window Snapping ──────────────────────────────────────────────────

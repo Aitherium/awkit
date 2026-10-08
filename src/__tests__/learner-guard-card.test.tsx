@@ -4,7 +4,7 @@
  */
 import React from 'react'
 import { act, fireEvent, render, screen } from '@testing-library/react'
-import LearnerGuardCard from '../panels/LearnerGuardCard'
+import LearnerGuardCard, { eraseReceipt } from '../panels/LearnerGuardCard'
 
 type Reply = { status: number; ok: boolean; data: unknown }
 const reply = (status: number, data: unknown): Reply => ({ status, ok: status >= 200 && status < 300, data })
@@ -69,12 +69,19 @@ describe('LearnerGuardCard', () => {
   it('deletes permanently only after typing the child name', async () => {
     const { call, calls } = makeCall((path, method) => {
       if (path === `${P}/sprite/parental`) return reply(200, { chat_disabled: false, pin_set: false })
-      if (path === `${P}/erase` && method === 'POST') return reply(200, { lid: 'l-x', erased: true })
+      if (path === `${P}/erase` && method === 'POST') return reply(200, {
+        lid: 'l-x', erased: true, account: 'erased',
+        removed: { identity_sessions: 2, devices: 1, device_codes: 3, sprite: 4, space: 1, memories: 2,
+          chats: 1, reports: 1, roster: 1, academy: 1, class_links: 0, skills: 5, attempts: 30, transcript: 12,
+          learner: 1 },
+      })
       return reply(404, {})
     })
     const onRemoved = jest.fn()
+    const onErased = jest.fn()
     const notes: string[] = []
-    render(<LearnerGuardCard call={call} lid="l-x" alias="Mia" onRemoved={onRemoved} onNote={(m) => notes.push(m)} />)
+    render(<LearnerGuardCard call={call} lid="l-x" alias="Mia" onRemoved={onRemoved} onErased={onErased}
+      onNote={(m) => notes.push(m)} />)
     const btn = await screen.findByTestId('erase-learner-btn')
     expect(btn).toBeDisabled()
     fireEvent.change(screen.getByTestId('erase-confirm'), { target: { value: 'remove' } })
@@ -82,8 +89,29 @@ describe('LearnerGuardCard', () => {
     fireEvent.change(screen.getByTestId('erase-confirm'), { target: { value: ' mia ' } })
     await act(async () => { fireEvent.click(btn) })
     expect(calls.find((c) => c.path === `${P}/erase`)?.body).toEqual({ confirm: 'mia' })
-    expect(onRemoved).toHaveBeenCalled()
     expect(notes.pop()).toBe('Mia and all of their records were deleted.')
+    // The receipt stays until the guardian closes it; the host hears about it at once.
+    expect(onRemoved).not.toHaveBeenCalled()
+    expect(onErased).toHaveBeenCalledTimes(1)
+    const receipt = screen.getByTestId('erase-receipt')
+    expect(Array.from(receipt.querySelectorAll('li')).map((li) => li.textContent)).toEqual([
+      'Their Aither account, signed out everywhere', '1 device', '1 chat', '2 saved memories',
+      '1 report they sent to support', 'Their sprite', 'Their family Space', 'Their place on your workspace',
+      '47 learning records, reports included',
+    ])
+    // Only what is true: an AI-answer report leaves a copy with the safety team.
+    expect(screen.getByTestId('erase-receipt-kept').textContent).toMatch(/copy of that report stays/)
+    expect(screen.getByTestId('erase-receipt-kept').textContent).not.toMatch(/nothing Mia wrote/)
+    expect(screen.queryByTestId('erase-learner')).toBeNull()
+    fireEvent.click(screen.getByTestId('erase-receipt-done'))
+    expect(onRemoved).toHaveBeenCalled()
+  })
+
+  it('a receipt says when the child kept their own account', () => {
+    expect(eraseReceipt({ account: 'not_a_child_account', removed: { devices: 2, learner: 1 } })).toEqual([
+      'Their own account was kept: they created it themselves', '2 devices', 'Their profile',
+    ])
+    expect(eraseReceipt(null)).toEqual(['Their profile'])
   })
 
   it('offers no permanent delete to a co-guardian', async () => {
