@@ -4,10 +4,9 @@
  * Rung 1 is the voice plane (AitherVoice) through the tutor's own door,
  * POST `${apiBase}/me/say/stream`: a warm neural voice the guardian picked, streamed as
  * MP3 so playback starts on the first chunk (MediaSource where the browser has it, a
- * whole-line blob otherwise). Rung 2, only when the plane is down, is the device's BEST
- * voice: Edge's "Online (Natural)" voices, then Google's, then Apple's enhanced ones,
- * never the engine default (that was the robot). A line the server's minor gate refuses
- * (422) is not read at all, by either rung.
+ * whole-line blob otherwise). There is NO second rung (owner, 2026-10-08: "NO FALLBACKS"):
+ * when the plane is down the line is shown, not read in some other voice. A line the
+ * server's minor gate refuses (422) is not read at all.
  *
  * Speed: the first sentence goes alone so it comes back fastest; while it plays, the
  * rest is fetched. Every line is cached here (and by content hash on the server), and
@@ -15,7 +14,7 @@
  *
  * One line plays at a time; a newer line cancels the older one, and a slow server reply
  * for a line the child has already moved past is dropped. Speech stays a nicety: every
- * failure ends in silence or the device voice, never an error on screen.
+ * failure ends in silence, never another voice and never an error on screen.
  */
 
 import { speakable } from './speakable'
@@ -99,7 +98,9 @@ export function splitForSpeech(text: string, max = MAX_LINE): string[] {
 /** What is speaking now: an audio element (its level can be read), the device voice, or nothing. */
 export type SpeakingSource = HTMLAudioElement | 'device' | null
 
-function deviceSpeak(text: string, onSpeaking?: (src: SpeakingSource) => void): void {
+/** The device's best voice. NOT used for speaking any more ("NO FALLBACKS", 2026-10-08);
+ *  kept for the picker tests and any surface where a person explicitly picks a device voice. */
+export function deviceSpeak(text: string, onSpeaking?: (src: SpeakingSource) => void): void {
   const w = window as unknown as {
     speechSynthesis?: SpeechSynthesis
     SpeechSynthesisUtterance?: typeof SpeechSynthesisUtterance
@@ -304,10 +305,10 @@ export function createLearnVoice(
       const got = await next
       if (mine !== seq) return
       if (got === 'refused') continue
-      if (got === 'down') { deviceSpeak(lines.slice(i).join(' '), tell); return }
+      if (got === 'down') { tell(null); return } // never another voice
       const ok = await playToEnd(got)
       if (mine !== seq) return
-      if (!ok) { deviceSpeak(lines.slice(i).join(' '), tell); return }
+      if (!ok) { tell(null); return }
     }
   }
 

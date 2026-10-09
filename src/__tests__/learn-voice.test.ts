@@ -152,16 +152,16 @@ describe('createLearnVoice', () => {
     expect(spoken).toEqual([])
   })
 
-  it('falls back to the best device voice when the plane fails, then stops asking it', async () => {
+  it('never falls back to a device voice when the plane fails (stays silent), then stops asking it', async () => {
     fetchMock.mockImplementation(async () => reply({ status: 503, json: { detail: 'Voice unavailable' } }))
     const speak = createLearnVoice('/api/tutor')
     speak('Wiggle break!')
     await flush()
-    expect(spoken).toEqual([{ text: 'Wiggle break!', voice: 'Microsoft Jenny Online (Natural)' }])
+    expect(spoken).toEqual([])
     speak('Saved, all done!')
     await flush()
     expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(spoken[1]).toEqual({ text: 'Saved, all done!', voice: 'Microsoft Jenny Online (Natural)' })
+    expect(spoken).toEqual([])
     expect(played).toEqual([])
   })
 
