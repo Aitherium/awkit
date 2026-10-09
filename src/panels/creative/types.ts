@@ -252,6 +252,8 @@ export interface IrisPipelineResult {
   success?: boolean
   project_id?: string
   rounds?: IrisPipelineRound[]
+  /** What Iris /pipeline actually returns today: one entry per planned asset. */
+  results?: IrisPipelineRound[]
   assets?: IrisPipelineRound[]
   style_card?: Record<string, unknown>
   error?: string

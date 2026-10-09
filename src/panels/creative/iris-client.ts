@@ -121,9 +121,15 @@ export async function enhancePrompt(
   throw new PanelError('bad-response', 'Iris answered with no enhanced prompt.', 200, JSON.stringify(data).slice(0, 200))
 }
 
-/** The rounds a pipeline result carries, under either of the two field names. */
+/**
+ * The rounds a pipeline result carries. Iris `/pipeline` (stream:false) answers
+ * `results` - one per planned asset (service.py `_run_design_pipeline_json`); older
+ * shapes said `rounds` or `assets`. Reading only the old two made every real run
+ * render "0 step(s)".
+ */
 export function pipelineRounds(result: IrisPipelineResult): IrisPipelineResult['rounds'] {
   if (Array.isArray(result.rounds)) return result.rounds
+  if (Array.isArray(result.results)) return result.results
   if (Array.isArray(result.assets)) return result.assets
   return []
 }

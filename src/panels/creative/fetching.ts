@@ -86,9 +86,19 @@ export async function fetchJson<T>(url: string, req: JsonRequest = {}): Promise<
   const { method = 'GET', body, headers = {}, timeoutMs, signal } = req
 
   let effectiveSignal = signal
+  // The timeout must hold on EVERY host: where AbortSignal.timeout is missing, an
+  // AbortController + setTimeout does the same job. Skipping the timeout there (the old
+  // behaviour) meant a request the server never answered kept the panel spinning forever.
+  let fallbackTimer: ReturnType<typeof setTimeout> | null = null
   if (!effectiveSignal && typeof timeoutMs === 'number') {
     const AS = (globalThis as { AbortSignal?: { timeout?: (ms: number) => AbortSignal } }).AbortSignal
-    if (AS && typeof AS.timeout === 'function') effectiveSignal = AS.timeout(timeoutMs)
+    if (AS && typeof AS.timeout === 'function') {
+      effectiveSignal = AS.timeout(timeoutMs)
+    } else if (typeof AbortController !== 'undefined') {
+      const ctl = new AbortController()
+      fallbackTimer = setTimeout(() => ctl.abort(), timeoutMs)
+      effectiveSignal = ctl.signal
+    }
   }
 
   let res: Response
@@ -102,8 +112,14 @@ export async function fetchJson<T>(url: string, req: JsonRequest = {}): Promise<
       ...(effectiveSignal ? { signal: effectiveSignal } : {}),
     })
   } catch (e) {
+    if (fallbackTimer) clearTimeout(fallbackTimer)
+    if (effectiveSignal?.aborted && typeof timeoutMs === 'number') {
+      throw new PanelError('unavailable', 'The service did not answer in time.', 0,
+        `no answer after ${Math.round(timeoutMs / 1000)} s`)
+    }
     throw new PanelError('unavailable', 'The service did not answer.', 0, String(e))
   }
+  if (fallbackTimer) clearTimeout(fallbackTimer)
 
   if (!res.ok) {
     const detail = await readDetail(res)

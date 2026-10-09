@@ -91,6 +91,16 @@ export { default as ContentStudioPanel } from './ContentStudioPanel'
 export { default as SagaPlayPanel } from './SagaPlayPanel'
 export { default as StudioPanel } from './StudioPanel'
 export { default as IrisPanel } from './IrisPanel'
+// Iris pipeline runs that always end, honestly (capability preflight + terminal outcome).
+// Veil's Iris Design Studio imports these from 'awkit/panels' (an aliased entry).
+export {
+  inferCreativeKind, templateIdForKind, probeCreativeCapabilities, capabilityGap,
+  describePipelineHttpError, finishOutcome, assessPipelineResult, stepStatus, runPipelineStream,
+} from './creative/pipeline-run'
+export type {
+  CreativeKind, CreativeCapabilities, CapabilityGap, PipelineOutcome, PipelineState,
+  PipelineArtifactLite, PipelineStreamEvent,
+} from './creative/pipeline-run'
 // .PROVISION layer 5: the company.yaml editor
 export { default as ProvisionPanel } from './ProvisionPanel'
 export { default as CreateWorkspaceWizard } from './CreateWorkspaceWizard'

@@ -22,6 +22,12 @@
  * make and roughly how long it takes before any GPU is spent. A 403 from the
  * pipeline is a PLAN question and is shown as one; an unreachable Iris is a named
  * error, never a placeholder result.
+ *
+ * Capability preflight (2026-10-08): before planning, the panel asks the host which
+ * creative backends answer (`creative/pipeline-run.ts`). A video or image needs a GPU
+ * media backend; a browser running only an on-device model has none, so the panel
+ * says so and lists what it CAN do instead of drawing a pipeline that cannot finish.
+ * A run that ends with no artifact is shown as EMPTY with the reason, never as done.
  */
 
 import React, { useCallback, useState } from 'react'
@@ -31,6 +37,10 @@ import { describeError } from './creative/fetching'
 import {
   briefFrom, enhancePrompt, pipelineRounds, previewPipeline, runPipeline, scorePercent,
 } from './creative/iris-client'
+import {
+  assessPipelineResult, capabilityGap, inferCreativeKind, probeCreativeCapabilities,
+  type CapabilityGap, type PipelineOutcome,
+} from './creative/pipeline-run'
 import type { IrisEvaluation, IrisPipelineResult, IrisPlan } from './creative/types'
 
 export interface IrisPanelProps {
@@ -40,7 +50,7 @@ export interface IrisPanelProps {
 }
 
 type Tab = 'brief' | 'pipeline' | 'critique'
-type Busy = null | 'preview' | 'run' | 'enhance'
+type Busy = null | 'check' | 'preview' | 'run' | 'enhance'
 
 /** Iris names its suggestion list differently per route; read every spelling. */
 export function evaluationSuggestions(ev: IrisEvaluation | undefined): string[] {
@@ -62,13 +72,25 @@ export default function IrisPanel({ apiBase = '', className = '' }: IrisPanelPro
   const [critiqued, setCritiqued] = useState<string | null>(null)
   const [critiquePrompt, setCritiquePrompt] = useState('')
   const [evaluation, setEvaluation] = useState<IrisEvaluation | null>(null)
+  const [gap, setGap] = useState<CapabilityGap | null>(null)
+  const [outcome, setOutcome] = useState<PipelineOutcome | null>(null)
 
   const opts = { apiBase }
 
+  /** True when this deployment can make what the brief asks for; otherwise sets `gap`. */
+  const preflight = useCallback(async (): Promise<boolean> => {
+    const caps = await probeCreativeCapabilities({ apiBase })
+    const g = capabilityGap(inferCreativeKind(brief), caps)
+    setGap(g)
+    return g === null
+  }, [brief, apiBase])
+
   const onGeneratePipeline = useCallback(async () => {
     if (!brief.trim()) return
-    setBusy('preview'); setError(null); setResult(null)
+    setBusy('check'); setError(null); setResult(null); setOutcome(null); setGap(null)
     try {
+      if (!(await preflight())) return
+      setBusy('preview')
       setPlan(await previewPipeline(opts, briefFrom(brief, '', '')))
       setActiveTab('pipeline')
     } catch (err) {
@@ -77,20 +99,26 @@ export default function IrisPanel({ apiBase = '', className = '' }: IrisPanelPro
       setBusy(null)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [brief, apiBase])
+  }, [brief, apiBase, preflight])
 
   const onRunPipeline = useCallback(async () => {
     if (!brief.trim()) return
-    setBusy('run'); setError(null)
+    setBusy('check'); setError(null); setOutcome(null); setGap(null)
     try {
-      setResult(await runPipeline(opts, briefFrom(brief, '', '')))
+      if (!(await preflight())) { setActiveTab('brief'); return }
+      setBusy('run')
+      const r = await runPipeline(opts, briefFrom(brief, '', ''))
+      setResult(r)
+      const o = assessPipelineResult(r, inferCreativeKind(brief))
+      setOutcome(o)
+      if (o.state !== 'completed') setError(o.reason || 'Iris produced nothing.')
     } catch (err) {
       setError(describeError(err, 'the Iris pipeline'))
     } finally {
       setBusy(null)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [brief, apiBase])
+  }, [brief, apiBase, preflight])
 
   const onSharpen = useCallback(async () => {
     if (!brief.trim()) return
@@ -155,6 +183,27 @@ export default function IrisPanel({ apiBase = '', className = '' }: IrisPanelPro
             </div>
           )}
 
+          {gap && (
+            <div role="alert" data-testid="iris-capability-gap" className="text-xs text-amber-200 bg-amber-950/40 border border-amber-800/50 rounded px-3 py-2 space-y-2">
+              <p>{gap.reason}</p>
+              {gap.alternatives.length > 0 && (
+                <>
+                  <p className="text-amber-300">What works here instead:</p>
+                  <ul className="list-disc pl-4 space-y-0.5">
+                    {gap.alternatives.map((a, i) => <li key={i}>{a}</li>)}
+                  </ul>
+                </>
+              )}
+              <button
+                onClick={() => { void onGeneratePipeline() }}
+                disabled={busy !== null}
+                className="text-[#5EC9CC] hover:underline disabled:opacity-50"
+              >
+                Check again
+              </button>
+            </div>
+          )}
+
           {activeTab === 'brief' && (
             <div className="space-y-3">
               <p className="text-sm text-slate-400">
@@ -180,8 +229,8 @@ export default function IrisPanel({ apiBase = '', className = '' }: IrisPanelPro
                   disabled={!brief.trim() || busy !== null}
                   className="flex-1 px-3 py-2 bg-[#5EC9CC] hover:bg-[#7AD6D8] disabled:bg-slate-700 text-slate-100 text-sm font-medium rounded transition-colors"
                 >
-                  {busy === 'preview' ? spin : <Sparkles className="inline w-4 h-4 mr-2" />}
-                  Generate Pipeline
+                  {busy === 'preview' || busy === 'check' ? spin : <Sparkles className="inline w-4 h-4 mr-2" />}
+                  {busy === 'check' ? 'Checking what this device can make...' : 'Generate Pipeline'}
                 </button>
               </div>
             </div>
@@ -211,15 +260,17 @@ export default function IrisPanel({ apiBase = '', className = '' }: IrisPanelPro
                     disabled={busy !== null}
                     className="w-full px-3 py-2 bg-[#5EC9CC] hover:bg-[#7AD6D8] disabled:bg-slate-700 text-slate-100 text-sm font-medium rounded transition-colors"
                   >
-                    {busy === 'run' ? spin : <Play className="inline w-4 h-4 mr-2" />}
-                    Run pipeline
+                    {busy === 'run' || busy === 'check' ? spin : <Play className="inline w-4 h-4 mr-2" />}
+                    {busy === 'run' ? 'Running - Iris answers when the work is done (up to 15 min)' : 'Run pipeline'}
                   </button>
                 </>
               )}
               {result && (
                 <div className="space-y-1">
-                  <p className="text-sm text-slate-400">
-                    {result.error ? `Pipeline finished with an error: ${result.error}` : `Pipeline finished: ${rounds.length} step(s).`}
+                  <p className="text-sm text-slate-400" data-testid="iris-outcome">
+                    {outcome && outcome.state !== 'completed'
+                      ? `Pipeline ${outcome.state === 'empty' ? 'produced nothing' : 'failed'}: ${outcome.reason ?? ''}`
+                      : result.error ? `Pipeline finished with an error: ${result.error}` : `Pipeline finished: ${rounds.length} step(s).`}
                   </p>
                   {rounds.map((r, i) => (
                     <div key={i} className="text-xs text-slate-300 bg-slate-800/40 rounded px-2 py-1">
