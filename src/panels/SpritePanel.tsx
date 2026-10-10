@@ -16,6 +16,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef, ReactNode } from 'react'
 import SpriteGuideCard from './SpriteGuideCard'
+import SpriteCosmeticsCard from './SpriteCosmeticsCard'
 
 interface SpriteStatus {
   name: string
@@ -813,6 +814,9 @@ export default function SpritePanel({ apiBase = '/api/sprite', extraHeaders: ext
 
       {/* Spirit guide + training (SpriteGuide.py) */}
       <SpriteGuideCard apiBase={apiBase} extraHeaders={extraHeaders} name={sprite.name} onChange={fetchStatus} />
+
+      {/* Wardrobe — cosmetic catalog (SpriteCosmetics.py) */}
+      <SpriteCosmeticsCard apiBase={apiBase} extraHeaders={extraHeaders} name={sprite.name} />
 
       {/* The Mind — wiki-style knowledge base the owner curates */}
       {showMind && (
