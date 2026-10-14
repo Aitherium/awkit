@@ -38,6 +38,9 @@ export interface LearnTokenSet {
   /** Behind a child's own HTML page (FamilySpaceCard): white in both modes, so a page
    *  written with default black text stays readable whatever the Learn mode is. */
   pagePaper: string
+  /** The bridge the first adventure builds (KidQuestPanel BridgeStrip): a laid plank and its edge. */
+  plank: string
+  plankEdge: string
   scrim: string
   shadow: string
   skeleton: string
@@ -62,6 +65,8 @@ export const LEARN_TOKENS: Record<LearnMode, LearnTokenSet> = {
     qrField: '#000000',
     qrPaper: '#FFFFFF',
     pagePaper: '#FFFFFF',
+    plank: '#c98b4f',
+    plankEdge: '#7a4f2a',
     scrim: 'rgba(3,3,5,.62)',
     shadow: '0 40px 120px -24px rgba(0,0,0,.9)',
     skeleton: 'rgba(255,255,255,.06)',
@@ -85,6 +90,8 @@ export const LEARN_TOKENS: Record<LearnMode, LearnTokenSet> = {
     qrField: '#0E1116',
     qrPaper: '#FFFFFF',
     pagePaper: '#FFFFFF',
+    plank: '#b9783c',
+    plankEdge: '#6b4322',
     scrim: 'rgba(14,17,22,.32)',
     shadow: '0 24px 60px -24px rgba(14,17,22,.22)',
     skeleton: 'rgba(14,17,22,.06)',

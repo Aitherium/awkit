@@ -22,6 +22,12 @@
  * "watch me" card. Items arrive at the level the server's difficulty dial chose;
  * the child never sees a level. "I'm not sure" is always there: it gets the same
  * kind worked steps as a miss and tells the dial to ease off.
+ *
+ * First run: when /me says `intro.needed` (a guardian's fresh start, or a new learner),
+ * the child gets KidWorldIntro instead of the home list: seven voice-first taps from a
+ * glowing egg to their first adventure, which this panel then starts as a lesson. For an
+ * unplaced child the server makes that the placement check told as a story (a bridge that
+ * gains a plank with every answer, BridgeStrip) instead of the progress path.
  */
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import FamilySpaceCard from './FamilySpaceCard'
@@ -29,6 +35,7 @@ import { createLearnVoice, type LearnSpeak } from './learnVoice'
 import { QUIET_RULE, fetchVoiceRule, readChildMuted, spriteMaySpeak, type SpriteVoiceRule } from './spriteVoice'
 import { C, EASE, FONT_MONO, FONT_UI, LEARN_CSS, LearnModeSwitch, learnVars, useLearnMode } from './learnTheme'
 import { KidSpriteCard, spriteEmoji, type KidSprite } from './LearnerSprite'
+import KidWorldIntro from './KidWorldIntro'
 
 export interface KidQuestPanelProps {
   /** Base of the tutor proxy, e.g. '/api/tutor'. */
@@ -44,6 +51,9 @@ export interface KidQuestPanelProps {
   /** Called when the signed-in account is a grown-up (a guardian with learners), not a
    *  child. The host sends them to the parent console instead of a child screen. */
   onGuardian?: () => void
+  /** Told true while the first-run intro is on screen and false when it ends, so the host
+   *  can keep anything else (an install card) out of the child's first seven taps. */
+  onIntroChange?: (active: boolean) => void
 }
 
 type ChoiceValue = string | number
@@ -84,7 +94,13 @@ interface MeView {
   today_minutes_left?: number
   sprite?: KidSprite | null
   choices?: unknown
+  /** The first run (kids' suite S3): set by a guardian's fresh start or a new learner. */
+  /** lib/tutor/kid_intro.py view(): the step is the server's id ('egg' .. 'adventure'). */
+  intro?: { needed?: boolean; step?: string | null; version?: number; done_at?: string | null } | null
 }
+
+/** A placement run told as a story (lib.tutor.placement.bridge_story). */
+interface StoryFrame { scene?: string; say?: string; planks?: number; total?: number; done?: boolean }
 
 interface SpriteEvent { say?: string; title?: string; stage?: string; name?: string | null }
 
@@ -98,6 +114,7 @@ interface AnswerOutcome {
   progress?: { done?: number; total?: number }
   sprite_event?: SpriteEvent | null
   segment?: string | null
+  story?: StoryFrame | null
 }
 
 /** The worked "watch me" example for a lesson's new step (never graded). */
@@ -130,6 +147,8 @@ type Screen =
   | { kind: 'pair' }
   | { kind: 'grownup' }
   | { kind: 'home' }
+  // The magical first run (KidWorldIntro); its last tap starts the first adventure.
+  | { kind: 'intro' }
   | { kind: 'rest'; say: string }
   | { kind: 'item' }
   | { kind: 'yay'; say: string }
@@ -417,6 +436,28 @@ function Card({ children, testId, tone }: { children: ReactNode; testId?: string
   )
 }
 
+/** The placement run's story: a bridge that gains a plank with every answer, never a
+ *  score. Planks only ever grow (the same rule as the progress path). */
+function BridgeStrip({ planks, total }: { planks: number; total: number }) {
+  const n = Math.max(1, Math.min(24, Math.floor(total)))
+  const laid = Math.max(0, Math.min(n, Math.floor(planks)))
+  return (
+    <div data-testid="bridge-strip" data-planks={laid} aria-label={`${laid} planks on the bridge`}
+      style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: 3, padding: '4px 0 0' }}>
+      <span aria-hidden style={{ width: 14, height: 28, borderRadius: 4, background: C.hairlineStrong }} />
+      {Array.from({ length: n }, (_, i) => (
+        <span key={i} data-laid={i < laid ? 'yes' : 'no'} style={{
+          width: 16, height: 12, borderRadius: 3, boxSizing: 'border-box',
+          background: i < laid ? C.plank : 'transparent',
+          border: `2px ${i < laid ? `solid ${C.plankEdge}` : `dashed ${C.hairlineStrong}`}`,
+          transition: `background-color .3s ${EASE}`,
+        }} />
+      ))}
+      <span aria-hidden style={{ width: 14, height: 28, borderRadius: 4, background: C.hairlineStrong }} />
+    </div>
+  )
+}
+
 /** The child's Sprite as a glowing orb; `grow` plays the calm "it grew" beat. */
 function SpriteOrb({ sprite, size = 120, grow = false }: { sprite?: KidSprite | null; size?: number; grow?: boolean }) {
   return (
@@ -430,7 +471,7 @@ function SpriteOrb({ sprite, size = 120, grow = false }: { sprite?: KidSprite | 
   )
 }
 
-export default function KidQuestPanel({ apiBase, extraHeaders = {}, homeExtra, homeLead, onQuestEnd, onGuardian }: KidQuestPanelProps) {
+export default function KidQuestPanel({ apiBase, extraHeaders = {}, homeExtra, homeLead, onQuestEnd, onGuardian, onIntroChange }: KidQuestPanelProps) {
   const headersRef = useRef(extraHeaders)
   headersRef.current = extraHeaders
   // Read-aloud: the voice plane first, the device's best voice only as a fallback.
@@ -463,12 +504,16 @@ export default function KidQuestPanel({ apiBase, extraHeaders = {}, homeExtra, h
   const [lesson, setLesson] = useState<LessonInfo | null>(null)
   const [segment, setSegment] = useState<string | null>(null)
   const [kidProgress, setKidProgress] = useState<KidProgress | null>(null)
+  // A placement run told as a story (the bridge); null for every other quest.
+  const [story, setStory] = useState<StoryFrame | null>(null)
   const shownAt = useRef<number>(0)
   // The segment the server said the pending next item belongs to.
   const pendingSegment = useRef<string | null>(null)
   const { mode, pref, setPref } = useLearnMode()
   const onGuardianRef = useRef(onGuardian)
   onGuardianRef.current = onGuardian
+  const onIntroRef = useRef(onIntroChange)
+  onIntroRef.current = onIntroChange
 
   const call = useCallback(async (path: string, method = 'GET', body?: object) => {
     const init: RequestInit = {
@@ -498,9 +543,16 @@ export default function KidQuestPanel({ apiBase, extraHeaders = {}, homeExtra, h
         return
       }
       if (r.ok && r.data) {
-        setMe(r.data as MeView)
-        setScreen({ kind: 'home' })
+        const view = r.data as MeView
+        setMe(view)
         fetchVoiceRule(apiBase, headersRef.current).then((rule) => { voiceRule.current = rule }).catch(() => {})
+        if (view.intro && view.intro.needed) {
+          // A fresh start (or a brand-new learner): the magical first run, not the home list.
+          setScreen({ kind: 'intro' })
+          onIntroRef.current?.(true)
+          return
+        }
+        setScreen({ kind: 'home' })
         // Encouragement only (what was learned, today's goal); never a score.
         call('/me/progress').then((p) => { if (p.ok && p.data) setKidProgress(p.data as KidProgress) }).catch(() => {})
         return
@@ -513,13 +565,13 @@ export default function KidQuestPanel({ apiBase, extraHeaders = {}, homeExtra, h
 
   useEffect(() => { loadMe() }, [loadMe])
 
-  const showItem = useCallback((next: QuestItem, isRedo: boolean) => {
+  const showItem = useCallback((next: QuestItem, isRedo: boolean, lead?: string) => {
     setItem(next)
     setRedo(isRedo)
     setTyped('')
     setScreen({ kind: 'item' })
     shownAt.current = Date.now()
-    speakRef.current(next.tts_text ?? next.prompt_text)
+    speakRef.current([lead, next.tts_text ?? next.prompt_text].filter(Boolean).join(' '))
   }, [])
 
   const bumpProgress = (p?: { done?: number; total?: number }) => {
@@ -551,13 +603,15 @@ export default function KidQuestPanel({ apiBase, extraHeaders = {}, homeExtra, h
     setBusy(true)
     try {
       const r = await call('/me/quest/start', 'POST', { theme })
-      const d = (r.data || {}) as { quest_id?: string; items_total?: number; item?: QuestItem; say?: string }
+      const d = (r.data || {}) as { quest_id?: string; items_total?: number; item?: QuestItem; say?: string; story?: StoryFrame | null }
       if (r.status === 429) { setScreen({ kind: 'rest', say: d.say || 'That’s lots of learning today. Rest time!' }); return }
       if (r.ok && d.quest_id && d.item) {
         setQuestId(d.quest_id)
         setProgress({ done: 0, total: Number(d.items_total ?? 0) })
         setSpriteEvent(null)
-        showItem(d.item, false)
+        const tale = d.story && d.story.scene === 'bridge' ? d.story : null
+        setStory(tale)
+        showItem(d.item, false, tale?.say)
         return
       }
       setScreen({ kind: 'oops', say: 'Let’s try again in a little bit.' })
@@ -588,13 +642,15 @@ export default function KidQuestPanel({ apiBase, extraHeaders = {}, homeExtra, h
       const r = await call('/me/lesson/start', 'POST', { theme })
       const d = (r.data || {}) as {
         quest_id?: string; items_total?: number; item?: QuestItem; say?: string; lesson?: LessonInfo
-        progress?: { done?: number; total?: number }
+        progress?: { done?: number; total?: number }; story?: StoryFrame | null
       }
       if (r.status === 429) { setScreen({ kind: 'rest', say: d.say || 'That’s lots of learning today. Rest time!' }); return }
       if (r.ok && d.quest_id && d.item) {
         setQuestId(d.quest_id)
         setProgress({ done: Number(d.progress?.done ?? 0), total: Number(d.items_total ?? 0) })
         setSpriteEvent(null)
+        const tale = d.story && d.story.scene === 'bridge' ? d.story : null
+        setStory(tale)
         const info = d.lesson ?? null
         setLesson(info)
         setSegment(null)
@@ -608,7 +664,7 @@ export default function KidQuestPanel({ apiBase, extraHeaders = {}, homeExtra, h
           speakRef.current([line, teach?.tts_text].filter(Boolean).join('. '))
           return
         }
-        showItem(d.item, false)
+        showItem(d.item, false, tale?.say)
         return
       }
       setScreen({ kind: 'oops', say: 'Let’s try again in a little bit.' })
@@ -631,6 +687,7 @@ export default function KidQuestPanel({ apiBase, extraHeaders = {}, homeExtra, h
     }
     setQuestId(null)
     setItem(null)
+    setStory(null)
     setLesson(null)
     setSegment(null)
     setScreen({ kind: 'saved', say })
@@ -652,6 +709,10 @@ export default function KidQuestPanel({ apiBase, extraHeaders = {}, homeExtra, h
       if (!r.ok || !r.data) { setScreen({ kind: 'oops', say: 'Let’s try that again.' }); return }
       const out = r.data as AnswerOutcome
       bumpProgress(out.progress)
+      if (out.story && out.story.scene === 'bridge') {
+        const next = out.story
+        setStory((prev) => ({ ...next, planks: Math.max(Number(prev?.planks ?? 0), Number(next.planks ?? 0)) }))
+      }
       if (out.sprite_event) setSpriteEvent(out.sprite_event)
       const spriteLine = spriteSay(out.sprite_event)
       if (out.done) { await finish(spriteLine); return }
@@ -972,11 +1033,33 @@ export default function KidQuestPanel({ apiBase, extraHeaders = {}, homeExtra, h
       break
   }
 
+  if (screen.kind === 'intro') {
+    return (
+      <div data-testid="kid-quest-panel" data-learn-theme={mode}>
+        <KidWorldIntro
+          apiBase={apiBase}
+          extraHeaders={headersRef.current}
+          alias={me?.alias}
+          sprite={me?.sprite}
+          saved={me?.intro}
+          speak={speakRef.current}
+          onDone={({ theme }) => {
+            setMe((m) => (m ? { ...m, intro: { ...(m.intro || {}), needed: false } } : m))
+            onIntroRef.current?.(false)
+            void startLesson(theme)
+          }}
+        />
+      </div>
+    )
+  }
+
   const inQuest = questId !== null && ['item', 'yay', 'look', 'break', 'segment'].includes(screen.kind)
   return (
     <div style={shell} data-testid="kid-quest-panel" data-learn-theme={mode}>
       <style>{LEARN_CSS}</style>
-      {inQuest && <ProgressPath done={progress.done} total={progress.total} />}
+      {inQuest && story
+        ? <BridgeStrip planks={Number(story.planks ?? progress.done)} total={Number(story.total ?? progress.total)} />
+        : inQuest && <ProgressPath done={progress.done} total={progress.total} />}
       {body}
       {inQuest && (
         <button type="button" className="al-quiet al-focus"
