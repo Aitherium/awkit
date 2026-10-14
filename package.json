@@ -46,6 +46,10 @@
       "types": "./src/panels/KidQuestPanel.tsx",
       "import": "./src/panels/KidQuestPanel.tsx"
     },
+    "./panels/KidClassroom": {
+      "types": "./src/panels/KidClassroom.tsx",
+      "import": "./src/panels/KidClassroom.tsx"
+    },
     "./panels/FamilyTutorConsolePanel": {
       "types": "./src/panels/FamilyTutorConsolePanel.tsx",
       "import": "./src/panels/FamilyTutorConsolePanel.tsx"
@@ -313,6 +317,10 @@
       "./panels/KidQuestPanel": {
         "types": "./dist/panels/KidQuestPanel.d.ts",
         "import": "./dist/panels/KidQuestPanel.js"
+      },
+      "./panels/KidClassroom": {
+        "types": "./dist/panels/KidClassroom.d.ts",
+        "import": "./dist/panels/KidClassroom.js"
       },
       "./panels/FamilyTutorConsolePanel": {
         "types": "./dist/panels/FamilyTutorConsolePanel.d.ts",

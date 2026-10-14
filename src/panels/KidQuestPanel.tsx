@@ -35,6 +35,7 @@ import { createLearnVoice, type LearnSpeak } from './learnVoice'
 import { QUIET_RULE, fetchVoiceRule, readChildMuted, spriteMaySpeak, type SpriteVoiceRule } from './spriteVoice'
 import { C, EASE, FONT_MONO, FONT_UI, LEARN_CSS, LearnModeSwitch, learnVars, useLearnMode } from './learnTheme'
 import { KidSpriteCard, spriteEmoji, type KidSprite } from './LearnerSprite'
+import KidClassroom, { type RoomObjectId } from './KidClassroom'
 import KidWorldIntro from './KidWorldIntro'
 
 export interface KidQuestPanelProps {
@@ -51,6 +52,13 @@ export interface KidQuestPanelProps {
   /** Called when the signed-in account is a grown-up (a guardian with learners), not a
    *  child. The host sends them to the parent console instead of a child screen. */
   onGuardian?: () => void
+  /** The child's classroom (KidClassroom): what each room object opens. When given, home is
+   *  the room scene and homeLead/homeExtra are not drawn (the host puts them in the room).
+   *  The panel fills the Door (the lesson), the Nest (the Sprite), the Wall (my page) and
+   *  the Wardrobe's light/dark switch itself. */
+  room?: Partial<Record<RoomObjectId, ReactNode>>
+  /** Open this room object first (a deep link, /learn?room=<id>). Used on the first home only. */
+  initialRoom?: RoomObjectId | null
   /** Told true while the first-run intro is on screen and false when it ends, so the host
    *  can keep anything else (an install card) out of the child's first seven taps. */
   onIntroChange?: (active: boolean) => void
@@ -471,7 +479,9 @@ function SpriteOrb({ sprite, size = 120, grow = false }: { sprite?: KidSprite | 
   )
 }
 
-export default function KidQuestPanel({ apiBase, extraHeaders = {}, homeExtra, homeLead, onQuestEnd, onGuardian, onIntroChange }: KidQuestPanelProps) {
+export default function KidQuestPanel({ apiBase, extraHeaders = {}, homeExtra, homeLead, onQuestEnd, onGuardian, onIntroChange, room, initialRoom = null }: KidQuestPanelProps) {
+  // The deep-linked room object opens once; coming home from a quest lands in the room.
+  const firstRoom = useRef<RoomObjectId | null>(initialRoom)
   const headersRef = useRef(extraHeaders)
   headersRef.current = extraHeaders
   // Read-aloud: the voice plane first, the device's best voice only as a fallback.
@@ -831,6 +841,80 @@ export default function KidQuestPanel({ apiBase, extraHeaders = {}, homeExtra, h
       break
     case 'home': {
       const themes = themeList(me)
+      if (room) {
+        const opening = firstRoom.current
+        firstRoom.current = null
+        const sprite = me?.sprite && me.sprite.name ? <KidSpriteCard sprite={me.sprite} /> : <SpriteOrb sprite={me?.sprite} size={128} />
+        body = (
+          <KidClassroom
+            name={me?.alias ? me.alias.split(' ')[0] : undefined}
+            spriteName={me?.sprite?.name || undefined}
+            storageKey={me?.alias || 'me'}
+            minutesLeft={typeof me?.today_minutes_left === 'number' ? me.today_minutes_left : null}
+            learnedToday={Boolean(kidProgress?.today?.goal_met)}
+            initialObject={opening}
+            speak={(t) => speakRef.current(t)}
+            views={{
+              ...room,
+              nest: (
+                <>
+                  {sprite}
+                  {kidProgress?.learned && kidProgress.learned.length > 0 ? (
+                    <div data-testid="kid-progress" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
+                      {kidProgress.learned.slice(0, 6).map((t) => (
+                        <span key={t} style={{ fontSize: 17, padding: '6px 12px', borderRadius: 999, background: C.accentWash, border: `1px solid ${C.hairline}` }}>{t}</span>
+                      ))}
+                    </div>
+                  ) : null}
+                  {spriteCard}
+                  {room.nest}
+                </>
+              ),
+              door: (
+                <>
+                  <button type="button" data-testid="start-lesson" className="al-primary al-focus" disabled={busy}
+                    onClick={() => startLesson(themes[0])}
+                    style={{ ...PRIMARY, width: '100%', minHeight: 96, fontSize: 30, borderRadius: 28 }}>
+                    Start my adventure
+                  </button>
+                  <div style={{ color: C.dim, textAlign: 'center' }}>Or pick a world.</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 14, width: '100%' }}>
+                    {themes.map((t) => (
+                      <button key={t} type="button" className="al-tile al-focus" disabled={busy}
+                        onClick={() => start(t)} aria-label={`Start ${t}`}
+                        style={{
+                          ...BIG, minHeight: 150, borderRadius: 24, background: C.surface, borderColor: C.hairline,
+                          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10,
+                        }}>
+                        <span aria-hidden style={{ fontSize: 56, lineHeight: 1 }}>{THEME_EMOJI[t] ?? '⭐'}</span>
+                        <span aria-hidden style={{ ...LABEL, fontSize: 13 }}>{t}</span>
+                        <span style={{ color: C.accent, fontSize: 24, fontWeight: 600 }}>Start</span>
+                      </button>
+                    ))}
+                  </div>
+                  {room.door}
+                </>
+              ),
+              wall: (
+                <>
+                  <FamilySpaceCard mode="kid" apiBase={apiBase} extraHeaders={headersRef.current} />
+                  {room.wall}
+                </>
+              ),
+              wardrobe: (
+                <>
+                  {room.wardrobe}
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                    <span style={LABEL}>light or dark</span>
+                    <LearnModeSwitch pref={pref} onChange={setPref} big />
+                  </div>
+                </>
+              ),
+            }}
+          />
+        )
+        break
+      }
       body = (
         <div data-testid="home-screen" className="al-in" style={{ display: 'flex', flexDirection: 'column', gap: 22, alignItems: 'center', textAlign: 'center' }}>
           {me?.sprite && me.sprite.name ? <KidSpriteCard sprite={me.sprite} /> : <SpriteOrb sprite={me?.sprite} size={128} />}

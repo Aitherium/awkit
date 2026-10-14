@@ -10,6 +10,8 @@ export type { AcademyLessonsPanelProps } from './AcademyLessonsPanel'
 // Aither Learn (family tutor): the child's quest and the guardian's console.
 export { default as KidQuestPanel } from './KidQuestPanel'
 export type { KidQuestPanelProps } from './KidQuestPanel'
+export { default as KidClassroom, ROOM_OBJECT_IDS, ROOM_OBJECTS, todaysThree } from './KidClassroom'
+export type { KidClassroomProps, RoomObjectId } from './KidClassroom'
 export { default as KidWorldIntro } from './KidWorldIntro'
 export type { KidWorldIntroProps, IntroState, IntroPicks } from './KidWorldIntro'
 export { default as FamilyTutorConsolePanel } from './FamilyTutorConsolePanel'
