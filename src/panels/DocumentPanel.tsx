@@ -2,6 +2,127 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { getApiBase } from '../lib/apiBase'
+import { useConfig } from '../hooks/useConfig'
+
+/**
+ * Per-file and per-request ceiling. Uploads reach tenant backends through
+ * Cloudflare, which refuses request bodies over 100 MB on Free/Pro, so anything
+ * near that dies as an opaque network error. 90 MB leaves room for multipart
+ * overhead; batches are split so no single POST exceeds it either.
+ */
+export const MAX_UPLOAD_BYTES = 90 * 1024 * 1024
+
+export type UploadResultStatus = 'done' | 'warning' | 'error' | 'rejected' | 'skipped'
+
+export interface UploadResult {
+  filename: string
+  status: UploadResultStatus
+  detail: string
+}
+
+const fileExt = (name: string) => {
+  const i = name.lastIndexOf('.')
+  return i >= 0 ? name.slice(i).toLowerCase() : ''
+}
+
+const formatMb = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`
+
+/** Normalise the backend's accepted_types (".PDF", "pdf") to lowercase ".pdf". */
+export function normaliseAcceptedTypes(types: readonly string[] | undefined): string[] {
+  return Array.from(new Set((types || [])
+    .map(t => String(t).trim().toLowerCase())
+    .filter(Boolean)
+    .map(t => (t.startsWith('.') ? t : `.${t}`))))
+}
+
+/** What the panel offered before accepted_types was wired in; used whenever the
+ *  backend's list cannot be trusted as file extensions. */
+export const LEGACY_ACCEPTED_TYPES = ['.pdf', '.docx', '.doc', '.txt', '.xlsx', '.xls', '.md', '.csv', '.zip', '.png', '.jpg', '.jpeg', '.webp']
+const LEGACY_HINT = 'PDF, DOCX, TXT, XLSX, MD, CSV, images, or ZIP archives'
+
+/** useConfig's DEFAULT_CONFIG.accepted_types: what the hook reports when
+ *  /api/config/embed did not answer, so it says nothing about this backend. */
+const HOOK_DEFAULT_TYPES = ['.pdf', '.docx', '.doc', '.xlsx', '.txt']
+
+/**
+ * Real file extensions. The shared awkit-backend builds accepted_types from pack
+ * doc_types ids (".document", ".pricing", ".contract"), which are categories, not
+ * extensions; one such entry means the list is not an upload allowlist.
+ */
+const KNOWN_FILE_EXTS = new Set([
+  '.pdf', '.doc', '.docx', '.odt', '.rtf', '.txt', '.md', '.markdown', '.html', '.htm',
+  '.xls', '.xlsx', '.ods', '.csv', '.tsv', '.ppt', '.pptx', '.odp', '.json', '.xml',
+  '.yaml', '.yml', '.log', '.eml', '.msg', '.epub', '.zip',
+  '.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.tif', '.tiff', '.heic', '.svg',
+])
+
+/**
+ * Decide whether the backend's accepted_types is an allowlist the panel may
+ * enforce. Enforced only when the config actually loaded from the backend and
+ * every entry is a real file extension; otherwise the legacy list drives the
+ * picker and drag-and-drop is not filtered by type (the server still decides).
+ */
+export function resolveAcceptedTypes(types: readonly string[] | undefined, loaded = true): { types: string[]; enforced: boolean } {
+  const norm = normaliseAcceptedTypes(types)
+  const isHookDefault = norm.length === HOOK_DEFAULT_TYPES.length && norm.every((t, i) => t === HOOK_DEFAULT_TYPES[i])
+  const enforced = loaded && norm.length > 0 && !isHookDefault && norm.every(t => KNOWN_FILE_EXTS.has(t))
+  return enforced ? { types: norm, enforced } : { types: LEGACY_ACCEPTED_TYPES, enforced }
+}
+
+/**
+ * Client-side gate. Drag-and-drop ignores the input's `accept`, so without this a
+ * PSD or MP4 goes to the server and comes back as garbage or a tunnel error.
+ */
+export function partitionUploads(files: File[], accepted: string[], maxBytes = MAX_UPLOAD_BYTES) {
+  const ok: File[] = []
+  const rejected: UploadResult[] = []
+  const listed = accepted.map(t => t.slice(1).toUpperCase()).join(', ')
+  for (const f of files) {
+    const ext = fileExt(f.name)
+    if (accepted.length > 0 && !accepted.includes(ext)) {
+      rejected.push({
+        filename: f.name, status: 'rejected',
+        detail: `${ext ? ext.slice(1).toUpperCase() : 'This file type'} is not supported. Accepted: ${listed}`,
+      })
+    } else if (f.size > maxBytes) {
+      rejected.push({
+        filename: f.name, status: 'rejected',
+        detail: `File is ${formatMb(f.size)}; the upload limit is ${formatMb(maxBytes)}`,
+      })
+    } else {
+      ok.push(f)
+    }
+  }
+  return { ok, rejected }
+}
+
+/** Split files into groups whose combined size stays under the request cap. */
+export function splitBatches(files: File[], maxBytes = MAX_UPLOAD_BYTES): File[][] {
+  const groups: File[][] = []
+  let cur: File[] = []
+  let size = 0
+  for (const f of files) {
+    if (cur.length > 0 && size + f.size > maxBytes) {
+      groups.push(cur)
+      cur = []
+      size = 0
+    }
+    cur.push(f)
+    size += f.size
+  }
+  if (cur.length > 0) groups.push(cur)
+  return groups
+}
+
+const errorDetail = async (resp: Response, fallback: string) => {
+  const err = await resp.json().catch(() => ({} as Record<string, unknown>))
+  const detail = (err as { detail?: unknown }).detail
+  if (typeof detail === 'string' && detail) return detail
+  if (detail) return JSON.stringify(detail)
+  return `${fallback} (${resp.status})`
+}
+
+const ZERO_CHUNK_DETAIL = '0 chunks: no searchable text was extracted, so chat cannot use this file'
 
 interface Doc {
   id: string
@@ -55,21 +176,40 @@ export default function DocumentPanel() {
   const [loadingViewer, setLoadingViewer] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>('content')
   const [dragOver, setDragOver] = useState(false)
+  const [results, setResults] = useState<UploadResult[]>([])
+  const [listError, setListError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [viewerError, setViewerError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  // The accept list and hint come from the backend's /api/config/embed when it is
+  // a real extension allowlist (a pack that publishes it); other tenants keep the legacy list and
+  // only the size cap is checked on the client.
+  const config = useConfig()
+  const { types: accepted, enforced } = resolveAcceptedTypes(config.accepted_types, config.loaded)
+  const acceptedRef = useRef<string[]>([])
+  acceptedRef.current = enforced ? accepted : []
+  const acceptedLabel = enforced ? accepted.map(t => t.slice(1).toUpperCase()).join(', ') : LEGACY_HINT
+
+  const addResults = (more: UploadResult[]) => setResults(prev => [...prev, ...more])
 
   const openDoc = async (doc: Doc) => {
     if (viewDoc?.id === doc.id) { setViewDoc(null); return }
     setViewDoc(doc)
     setDocContent(null)
     setChunks([])
+    setViewerError(null)
     setLoadingViewer(true)
     setViewMode('content')
 
+    const base = getApiBase()
+    const get = async (path: string) => {
+      const r = await fetch(`${base}/api/documents/${doc.id}/${path}`)
+      if (!r.ok) throw new Error(await errorDetail(r, `Could not load ${path}`))
+      return r.json()
+    }
     // Fetch content and chunks in parallel
-    const [contentRes, chunksRes] = await Promise.allSettled([
-      fetch(`/api/documents/${doc.id}/content`).then(r => r.ok ? r.json() : null),
-      fetch(`/api/documents/${doc.id}/chunks`).then(r => r.ok ? r.json() : null),
-    ])
+    const [contentRes, chunksRes] = await Promise.allSettled([get('content'), get('chunks')])
 
     if (contentRes.status === 'fulfilled' && contentRes.value) {
       setDocContent(contentRes.value)
@@ -82,123 +222,142 @@ export default function DocumentPanel() {
     if (contentRes.status !== 'fulfilled' || !contentRes.value) {
       setViewMode('chunks')
     }
+    if (contentRes.status === 'rejected' && chunksRes.status === 'rejected') {
+      setViewerError(String((contentRes.reason as Error)?.message || contentRes.reason))
+    }
 
     setLoadingViewer(false)
   }
 
   const fetchDocs = () => {
     fetch(`${getApiBase()}/api/documents`)
-      .then(r => r.json())
-      .then(setDocs)
-      .catch(() => {})
+      .then(async r => {
+        if (!r.ok) throw new Error(await errorDetail(r, 'Could not load documents'))
+        return r.json()
+      })
+      .then(data => {
+        setDocs(Array.isArray(data) ? data : (data?.documents || []))
+        setListError(null)
+      })
+      .catch(e => setListError(`Could not load documents: ${e?.message || 'network error'}`))
   }
 
   useEffect(() => { fetchDocs() }, [])
 
-  const uploadSingleFile = async (file: File) => {
-    setUploading(true)
-    setUploadProgress(`Uploading ${file.name}...`)
+  /** Upload one file through /upload; always resolves to a result for that file. */
+  const uploadOne = async (file: File): Promise<UploadResult> => {
     const form = new FormData()
     form.append('file', file)
     form.append('auto_extract', 'true')
     try {
       const resp = await fetch(`${getApiBase()}/api/documents/upload`, { method: 'POST', body: form })
-      if (resp.ok) {
-        const data = await resp.json()
-        if (data.job_id) {
-          pollBatchJob(data.job_id)
-          return
-        }
-        setUploadProgress(`${file.name} — ${data.chunks_created ?? data.chunk_count ?? '?'} chunks ingested`)
-        fetchDocs()
-      } else {
-        const err = await resp.json().catch(() => ({}))
-        setUploadProgress(err.detail || `Failed to upload ${file.name} (${resp.status})`)
-      }
-    } catch { setUploadProgress('Upload error') }
-    finally { setUploading(false) }
-  }
-
-  const uploadBatch = async (fileList: File[]) => {
-    setUploading(true)
-    setUploadProgress(`Uploading ${fileList.length} files...`)
-    setBatchJob(null)
-
-    const form = new FormData()
-    fileList.forEach(f => form.append('files', f))
-    form.append('doc_type', 'other')
-
-    try {
-      const resp = await fetch(`${getApiBase()}/api/documents/batch`, { method: 'POST', body: form })
-      if (resp.status === 404) {
-        await uploadSequential(fileList)
-        return
-      }
       if (!resp.ok) {
-        const err = await resp.json().catch(() => ({}))
-        setUploadProgress(err.detail || `Batch upload failed (${resp.status})`)
-        setUploading(false)
-        return
+        return { filename: file.name, status: 'error', detail: await errorDetail(resp, 'Upload failed') }
       }
       const data = await resp.json()
-      if (data.status === 'all_duplicates') {
-        setUploadProgress(`All ${data.skipped_duplicates} files are duplicates — nothing to upload`)
-        setUploading(false)
-        return
-      }
       if (data.job_id) {
-        pollBatchJob(data.job_id)
+        const job = await waitForBatchJob(data.job_id)
+        return jobResults(job, [file])[0]
       }
-    } catch {
-      setUploadProgress('Batch upload error')
-      setUploading(false)
+      const n = data.chunks_created ?? data.chunk_count
+      if (n === 0) return { filename: file.name, status: 'warning', detail: ZERO_CHUNK_DETAIL }
+      return { filename: file.name, status: 'done', detail: `${n ?? '?'} chunks ingested` }
+    } catch (e) {
+      return { filename: file.name, status: 'error', detail: `Upload error: ${(e as Error)?.message || 'network error'}` }
     }
   }
 
   const uploadSequential = async (fileList: File[]) => {
-    let done = 0
-    let errors = 0
-    for (const file of fileList) {
-      setUploadProgress(`Uploading ${file.name} (${done + 1}/${fileList.length})...`)
-      const form = new FormData()
-      form.append('file', file)
-      form.append('auto_extract', 'true')
-      try {
-        const resp = await fetch(`${getApiBase()}/api/documents/upload`, { method: 'POST', body: form })
-        if (resp.ok) { done++ } else { errors++ }
-      } catch { errors++ }
+    for (let i = 0; i < fileList.length; i++) {
+      setUploadProgress(`Uploading ${fileList[i].name} (${i + 1}/${fileList.length})...`)
+      addResults([await uploadOne(fileList[i])])
     }
-    setUploadProgress(`Uploaded ${done} file${done !== 1 ? 's' : ''}${errors > 0 ? `, ${errors} failed` : ''}`)
-    setUploading(false)
-    fetchDocs()
   }
 
-  const pollBatchJob = (jobId: string) => {
+  /** Poll a batch job until it finishes; resolves with the final job (null on loss). */
+  const waitForBatchJob = (jobId: string) => new Promise<BatchJob | null>(resolve => {
+    let misses = 0
     const poll = async () => {
       try {
-        const resp = await fetch(`/api/documents/batch/${jobId}`)
-        if (!resp.ok) return
-        const data: BatchJob = await resp.json()
-        setBatchJob(data)
-        setUploadProgress(null)
-        if (data.status === 'completed' || data.status === 'failed') {
-          setUploading(false)
-          fetchDocs()
-          return
-        }
-      } catch { /* continue polling */ }
+        const resp = await fetch(`${getApiBase()}/api/documents/batch/${jobId}`)
+        if (resp.ok) {
+          const data: BatchJob = await resp.json()
+          setBatchJob(data)
+          setUploadProgress(null)
+          if (data.status === 'completed' || data.status === 'failed') { resolve(data); return }
+        } else if (++misses >= 5) { resolve(null); return }
+      } catch { if (++misses >= 5) { resolve(null); return } }
       setTimeout(poll, 1000)
     }
     poll()
+  })
+
+  const jobResults = (job: BatchJob | null, sent: File[]): UploadResult[] => {
+    if (!job) {
+      return sent.map(f => ({ filename: f.name, status: 'error' as const, detail: 'Lost track of the processing job; refresh to check' }))
+    }
+    const reported = new Set((job.files || []).map(f => f.filename))
+    // The batch endpoint drops duplicates before it creates the job, so they never
+    // appear in job.files; a ZIP is reported by its members, not its own name.
+    const unreported: UploadResult[] = sent
+      .filter(f => !reported.has(f.name) && fileExt(f.name) !== '.zip')
+      .map(f => ({ filename: f.name, status: 'skipped' as const, detail: 'Already uploaded (skipped as a duplicate)' }))
+    return [...unreported, ...(job.files || []).map(f => {
+      if (f.status === 'done') {
+        return f.chunks === 0
+          ? { filename: f.filename, status: 'warning' as const, detail: ZERO_CHUNK_DETAIL }
+          : { filename: f.filename, status: 'done' as const, detail: `${f.chunks} chunks ingested` }
+      }
+      if (f.status === 'skipped') return { filename: f.filename, status: 'skipped' as const, detail: f.error || 'Already uploaded' }
+      return { filename: f.filename, status: 'error' as const, detail: f.error || `Ended as ${f.status}` }
+    })]
   }
 
-  const handleFiles = useCallback((fileList: FileList | File[]) => {
+  const uploadGroup = async (group: File[]) => {
+    setUploadProgress(`Uploading ${group.length} file${group.length !== 1 ? 's' : ''}...`)
+    setBatchJob(null)
+    const form = new FormData()
+    group.forEach(f => form.append('files', f))
+    form.append('doc_type', 'other')
+    try {
+      const resp = await fetch(`${getApiBase()}/api/documents/batch`, { method: 'POST', body: form })
+      if (resp.status === 404) { await uploadSequential(group); return }
+      if (!resp.ok) {
+        const detail = await errorDetail(resp, 'Batch upload failed')
+        addResults(group.map(f => ({ filename: f.name, status: 'error' as const, detail })))
+        return
+      }
+      const data = await resp.json()
+      if (data.status === 'all_duplicates') {
+        addResults(group.map(f => ({ filename: f.name, status: 'skipped' as const, detail: 'Already uploaded' })))
+        return
+      }
+      if (data.job_id) addResults(jobResults(await waitForBatchJob(data.job_id), group))
+    } catch (e) {
+      const detail = `Batch upload error: ${(e as Error)?.message || 'network error'}`
+      addResults(group.map(f => ({ filename: f.name, status: 'error' as const, detail })))
+    }
+  }
+
+  const handleFiles = useCallback(async (fileList: FileList | File[]) => {
     const arr = Array.from(fileList)
     if (arr.length === 0) return
-    if (arr.length === 1 && !arr[0].name.toLowerCase().endsWith('.zip')) {
-      uploadSingleFile(arr[0])
-    } else {
-      uploadBatch(arr)
+    const { ok, rejected } = partitionUploads(arr, acceptedRef.current)
+    setResults(rejected)
+    setActionError(null)
+    if (ok.length === 0) return
+    setUploading(true)
+    try {
+      if (ok.length === 1 && fileExt(ok[0].name) !== '.zip') {
+        setUploadProgress(`Uploading ${ok[0].name}...`)
+        addResults([await uploadOne(ok[0])])
+      } else {
+        for (const group of splitBatches(ok)) await uploadGroup(group)
+      }
+    } finally {
+      setUploadProgress(null)
+      setUploading(false)
+      fetchDocs()
     }
   }, [])
 
@@ -209,18 +368,26 @@ export default function DocumentPanel() {
   }, [handleFiles])
 
   const deleteDoc = async (id: string) => {
+    setActionError(null)
     try {
-      await fetch(`/api/documents/${id}`, { method: 'DELETE' })
+      const resp = await fetch(`${getApiBase()}/api/documents/${id}`, { method: 'DELETE' })
+      if (!resp.ok) {
+        setActionError(`Delete failed: ${await errorDetail(resp, 'Delete failed')}`)
+        return
+      }
       fetchDocs()
       setConfirmDelete(null)
       if (viewDoc?.id === id) { setViewDoc(null); setDocContent(null); setChunks([]) }
-    } catch {}
+    } catch (e) {
+      setActionError(`Delete failed: ${(e as Error)?.message || 'network error'}`)
+    }
   }
 
   const statusColor = (status: string) => {
     switch (status) {
       case 'done': return 'var(--accent-green, #22c55e)'
-      case 'error': return 'var(--accent-coral, #ef4444)'
+      case 'warning': return 'var(--accent-amber, #f59e0b)'
+      case 'error': case 'rejected': return 'var(--accent-coral, #ef4444)'
       case 'skipped': return 'var(--text-muted, #888)'
       case 'pending': return 'var(--text-muted, #888)'
       default: return 'var(--accent-cyan, #06b6d4)'
@@ -259,6 +426,7 @@ export default function DocumentPanel() {
 
         {/* Drop zone */}
         <div
+          data-testid="document-dropzone"
           onDrop={handleDrop}
           onDragOver={e => { e.preventDefault(); setDragOver(true) }}
           onDragLeave={() => setDragOver(false)}
@@ -277,18 +445,53 @@ export default function DocumentPanel() {
             Drop files here or click to browse
           </p>
           <p style={{ color: 'var(--text-muted, #666)', fontSize: '0.65rem', marginTop: '0.2rem', margin: '0.2rem 0 0' }}>
-            PDF, DOCX, TXT, XLSX, MD, CSV, images, or ZIP archives
+            {acceptedLabel}, up to {formatMb(MAX_UPLOAD_BYTES)} per file
           </p>
         </div>
 
-        <input ref={fileRef} type="file" hidden multiple
-          accept=".pdf,.docx,.doc,.txt,.xlsx,.xls,.md,.csv,.zip,.png,.jpg,.jpeg,.webp"
+        <input ref={fileRef} type="file" hidden multiple data-testid="document-file-input"
+          accept={accepted.join(',')}
           onChange={e => { if (e.target.files) handleFiles(e.target.files); e.target.value = '' }} />
 
         {uploadProgress && (
           <div style={{ padding: '0.5rem 0.75rem', marginTop: '0.5rem', background: 'var(--bg-surface, #1a1a2e)',
             borderRadius: 'var(--radius, 8px)', border: '1px solid var(--glass-border, #333)', fontSize: '0.8rem' }}>
             {uploadProgress}
+          </div>
+        )}
+
+        {(listError || actionError) && (
+          <div role="alert" style={{ padding: '0.5rem 0.75rem', marginTop: '0.5rem', fontSize: '0.75rem',
+            borderRadius: 'var(--radius, 8px)', border: '1px solid var(--accent-coral, #ef4444)',
+            color: 'var(--accent-coral, #ef4444)' }}>
+            {actionError || listError}
+          </div>
+        )}
+
+        {/* Per-file upload results: every file gets a line with its own reason */}
+        {results.length > 0 && (
+          <div data-testid="upload-results" style={{ background: 'var(--bg-surface, #1a1a2e)', borderRadius: 'var(--radius, 8px)',
+            padding: '0.5rem 0.75rem', marginTop: '0.5rem', border: '1px solid var(--glass-border, #333)' }}>
+            {results.map((r, i) => (
+              <div key={`${r.filename}-${i}`} data-status={r.status} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem',
+                padding: '0.25rem 0', fontSize: '0.75rem',
+                borderTop: i > 0 ? '1px solid var(--glass-border, #333)' : undefined }}>
+                <span style={{ width: 6, height: 6, marginTop: '0.35rem', borderRadius: '50%', background: statusColor(r.status), flexShrink: 0 }} />
+                <span style={{ fontWeight: 500, flexShrink: 0, maxWidth: '45%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.filename}</span>
+                <span style={{ flex: 1, fontSize: '0.7rem',
+                  color: r.status === 'warning' ? 'var(--accent-amber, #f59e0b)'
+                    : r.status === 'error' || r.status === 'rejected' ? 'var(--accent-coral, #ef4444)'
+                    : 'var(--text-muted, #888)' }}>
+                  {r.detail}
+                </span>
+              </div>
+            ))}
+            {!uploading && (
+              <button onClick={() => setResults([])} style={{
+                marginTop: '0.4rem', padding: '0.2rem 0.6rem', background: 'var(--bg-elevated, #222)',
+                color: 'var(--text-secondary, #aaa)', borderRadius: 4, fontSize: '0.7rem', cursor: 'pointer',
+              }}>Dismiss</button>
+            )}
           </div>
         )}
 
@@ -452,6 +655,10 @@ export default function DocumentPanel() {
               {loadingViewer ? (
                 <div style={{ color: 'var(--text-muted, #888)', fontSize: '0.85rem', padding: '2rem', textAlign: 'center' }}>
                   Loading document...
+                </div>
+              ) : viewerError ? (
+                <div role="alert" style={{ color: 'var(--accent-coral, #ef4444)', fontSize: '0.85rem', padding: '2rem', textAlign: 'center' }}>
+                  {viewerError}
                 </div>
               ) : viewMode === 'content' ? (
                 displayText ? (

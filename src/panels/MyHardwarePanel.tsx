@@ -7,7 +7,14 @@
  * account, and brings up their agent on their own machine. This panel holds the
  * three steps together:
  *
- *   1. Download — the registry-VERIFIED package surface (no invented URLs).
+ *   0. Set up this PC — the tenant's one-click /setup-pc door, rendered FIRST.
+ *      Copy-paste commands failed a real customer four times; the door is the
+ *      path, the pip commands are the fallback (collapsed under "Advanced").
+ *      Where no door can be resolved (localhost, an appliance) the button is
+ *      absent and the commands are expanded instead — see resolveSetupUrl.
+ *   1. Download — the appliance (the boot-proven release leads; a booted:false
+ *      build is labelled preview), then the registry-VERIFIED package surface
+ *      (no invented URLs) inside a collapsed "Advanced" block.
  *   2. Enroll — mints a device owned by the signed-in user and returns the
  *      copy-paste commands (per OS), including the device secret shown ONCE.
  *   3. Your devices — live list (polled), each with its status and a Remove.
@@ -26,6 +33,9 @@ export interface MyHardwarePanelProps {
   onShowUniverse?: () => void
   /** The host product's name in the copy ("comes up with <name> running"). */
   productName?: string
+  /** The one-click setup door (absolute URL). Default: resolveSetupUrl() derives
+   *  it from the page's host; pass one to override, or '' to hide the button. */
+  setupUrl?: string
 }
 
 interface DeviceInfo {
@@ -85,6 +95,53 @@ interface ApplianceInfo {
   tenant: ApplianceRelease
   platform?: ApplianceRelease
   updated_at?: string
+}
+
+/** The release the card leads with: the first boot-proven one (tenant before
+ *  platform), else the tenant build — which then renders as a preview. The
+ *  other entry, if any, is listed beneath it. */
+export function pickApplianceReleases(
+  info: ApplianceInfo | null,
+): { lead: ApplianceRelease; other: ApplianceRelease | null } | null {
+  if (!info) return null
+  const all = [info.tenant, info.platform].filter(
+    (r): r is ApplianceRelease => Boolean(r?.release_tag),
+  )
+  if (all.length === 0) return null
+  const lead = all.find((r) => r.booted) ?? all[0]
+  return { lead, other: all.find((r) => r !== lead) ?? null }
+}
+
+/** Tenants whose published site carries /setup-pc, supplied at RUNTIME by the
+ *  host app (`globalThis.__AITHER_SETUP_DOOR_TENANTS__`, a string[] of host
+ *  labels). awkit ships to strangers, so it names no tenant itself. An
+ *  ALLOW-list: any host not listed gets no door. */
+export function setupDoorTenants(): ReadonlySet<string> {
+  const v = (globalThis as { __AITHER_SETUP_DOOR_TENANTS__?: unknown }).__AITHER_SETUP_DOOR_TENANTS__
+  return new Set(Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [])
+}
+
+/**
+ * The tenant's /setup-pc door for the host this panel is rendered on, or null.
+ *
+ * The door is a page on the tenant's published site (`<tenant>.aitherium.com`,
+ * emitted by emit_tenant_setup_page.py). The SAME panel also renders on the
+ * tenant's API host (`<tenant>-api.aitherium.com`), on localhost:8900 and on an
+ * appliance — whose SPA fallback answers /setup-pc/ with the portal itself, so
+ * a relative link would just reload the page. Only a host that names a tenant
+ * yields a door; everything else gets null and the command-line path instead.
+ */
+export function resolveSetupUrl(
+  explicit: string | undefined,
+  hostname: string = typeof window === 'undefined' ? '' : window.location.hostname,
+  tenants: ReadonlySet<string> = setupDoorTenants(),
+): string | null {
+  if (explicit !== undefined) return explicit || null
+  const m = /^([a-z0-9-]+)\.aitherium\.com$/i.exec(hostname)
+  if (!m) return null
+  const label = m[1].toLowerCase().replace(/-(api|beta)$/, '')
+  if (!tenants.has(label)) return null
+  return `https://${label}.aitherium.com/setup-pc/`
 }
 
 function fmtGB(bytes: number): string {
@@ -188,7 +245,9 @@ export default function MyHardwarePanel({
   apiBase = '/api',
   onShowUniverse,
   productName = 'your assistant',
+  setupUrl,
 }: MyHardwarePanelProps) {
+  const door = resolveSetupUrl(setupUrl)
   const [downloads, setDownloads] = useState<Downloads | null>(null)
   const [appliance, setAppliance] = useState<ApplianceInfo | null>(null)
   const [devices, setDevices] = useState<DeviceInfo[]>([])
@@ -204,6 +263,7 @@ export default function MyHardwarePanel({
   const [enrolled, setEnrolled] = useState<{ command: string; secret: string; device: DeviceInfo } | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
   const os = detectOS()
+  const releases = pickApplianceReleases(appliance)
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const copy = useCallback((text: string, key: string) => {
@@ -326,10 +386,95 @@ export default function MyHardwarePanel({
         Universe.
       </p>
 
+      {/* 0 — The one-click door (absent where no door resolves; the commands
+          below are then expanded, since they are the only path left) */}
+      {door && <div style={{ ...row, borderColor: 'var(--accent-primary)', display: 'flex', gap: '0.75rem',
+        alignItems: 'center', flexWrap: 'wrap' }}>
+        <span style={{ flex: '1 1 12rem', minWidth: 0, fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+          One download installs {productName} on this PC and enrolls it to your account.
+        </span>
+        <a href={door} data-testid="setup-pc-link"
+          style={{ ...btn, marginLeft: 'auto', flexShrink: 0, textDecoration: 'none' }}>
+          Set up this PC
+        </a>
+      </div>}
+
       {/* 1 — Download */}
-      <h3 style={{ fontSize: '0.85rem', fontWeight: 700, margin: '0 0 0.6rem', color: 'var(--text-muted)' }}>
+      <h3 style={{ fontSize: '0.85rem', fontWeight: 700, margin: '1.25rem 0 0.6rem', color: 'var(--text-muted)' }}>
         1 · Download
       </h3>
+      {/* 1a — Self-Hosted Appliance (the whole-product download). The boot-proven
+          release leads; a booted:false build is labelled preview and is never
+          the default (the signed-out card and this panel once pinned two ISOs). */}
+      {releases && (
+        <div data-testid="appliance-card" style={{ ...row, borderColor: 'var(--accent-primary)' }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem' }}>
+            <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>
+              Self-Hosted Appliance
+            </span>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+              {releases.lead.release_tag}
+            </span>
+            <span
+              data-testid="appliance-badge"
+              style={{
+                marginLeft: 'auto', fontSize: '0.7rem', padding: '0.1rem 0.45rem',
+                borderRadius: 999, fontWeight: 600,
+                background: releases.lead.booted
+                  ? 'var(--accent-primary)'
+                  : 'var(--surface-raised)',
+                color: releases.lead.booted ? '#fff' : 'var(--text-muted)',
+              }}
+            >
+              {releases.lead.booted ? '✓ boot-proven' : 'preview'}
+            </span>
+          </div>
+          <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.3rem 0 0.5rem' }}>
+            The whole product as an immutable OS — install it on a machine and it comes
+            up with {productName} running, no network needed.{' '}
+            {releases.lead.size_bytes > 0 && (
+              <span style={{ color: 'var(--text-muted)' }}>
+                {fmtGB(releases.lead.size_bytes)} · {releases.lead.slices} slices.
+              </span>
+            )}
+          </p>
+          {/* join-iso lives in the TENANT repo and fetches tenant releases; a
+              platform release carries its own rejoin script on its release page. */}
+          {releases.lead === appliance?.tenant && (
+            <div style={cmdRow}>
+              <code style={cmdCode}>{joinIsoCmd(os, releases.lead.release_tag)}</code>
+              <button style={cmdCopy} onClick={() => copy(
+                joinIsoCmd(os, releases.lead.release_tag), 'appliance-join')}>
+                {copied === 'appliance-join' ? 'Copied' : 'Copy'}
+              </button>
+            </div>
+          )}
+          {releases.lead.release_url && (
+            <a href={releases.lead.release_url} target="_blank" rel="noopener noreferrer"
+              style={{ fontSize: '0.72rem' }}>
+              release ↗
+            </a>
+          )}
+          <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', margin: '0.4rem 0 0' }}>
+            {releases.lead.boot_proof}
+          </p>
+          {releases.other && (
+            <p data-testid="appliance-other"
+              style={{ fontSize: '0.72rem', color: 'var(--text-muted)', margin: '0.4rem 0 0' }}>
+              {releases.other === appliance?.platform ? 'Platform build' : 'Tenant build'}:{' '}
+              {releases.other.release_tag}
+              {!releases.other.booted && ' (preview, not yet boot-tested)'}
+              {releases.other.release_url && (
+                <> · <a href={releases.other.release_url} target="_blank" rel="noopener noreferrer">release ↗</a></>
+              )}
+            </p>
+          )}
+        </div>
+      )}
+      <details data-testid="advanced-install" open={!door} style={{ marginTop: '0.75rem' }}>
+        <summary style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', cursor: 'pointer', marginBottom: '0.6rem' }}>
+          Advanced: install from the command line
+        </summary>
       {(downloads?.packages ?? []).map((p) => (
         <div key={p.id} style={row}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem' }}>
@@ -374,65 +519,7 @@ export default function MyHardwarePanel({
           </div>
         </div>
       )}
-
-      {/* 1b — Self-Hosted Appliance (the whole-product download) */}
-      {appliance?.tenant && (
-        <div style={{ ...row, borderColor: 'var(--accent-primary)', marginTop: '0.75rem' }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem' }}>
-            <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>
-              Self-Hosted Appliance
-            </span>
-            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-              {appliance.tenant.release_tag}
-            </span>
-            <span
-              style={{
-                marginLeft: 'auto', fontSize: '0.7rem', padding: '0.1rem 0.45rem',
-                borderRadius: 999, fontWeight: 600,
-                background: appliance.tenant.booted
-                  ? 'var(--accent-primary)'
-                  : 'var(--surface-raised)',
-                color: appliance.tenant.booted ? '#fff' : 'var(--text-muted)',
-              }}
-            >
-              {appliance.tenant.booted ? '✓ boot-proven' : 'proof pending'}
-            </span>
-          </div>
-          <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.3rem 0 0.5rem' }}>
-            The whole product as an immutable OS — install it on a machine and it comes
-            up with {productName} running, no network needed.{' '}
-            {appliance.tenant.size_bytes > 0 && (
-              <span style={{ color: 'var(--text-muted)' }}>
-                {fmtGB(appliance.tenant.size_bytes)} · {appliance.tenant.slices} slices.
-              </span>
-            )}
-          </p>
-          <div style={cmdRow}>
-            <code style={cmdCode}>{joinIsoCmd(os, appliance.tenant.release_tag)}</code>
-            <button style={cmdCopy} onClick={() => copy(
-              joinIsoCmd(os, appliance.tenant.release_tag), 'appliance-join')}>
-              {copied === 'appliance-join' ? 'Copied' : 'Copy'}
-            </button>
-          </div>
-          {appliance.tenant.release_url && (
-            <a href={appliance.tenant.release_url} target="_blank" rel="noopener noreferrer"
-              style={{ fontSize: '0.72rem' }}>
-              release ↗
-            </a>
-          )}
-          <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', margin: '0.4rem 0 0' }}>
-            {appliance.tenant.boot_proof}
-          </p>
-        </div>
-      )}
-      {appliance?.platform?.release_tag && (
-        <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', margin: '0.4rem 0 0' }}>
-          Platform build: {appliance.platform.release_tag}
-          {appliance.platform.release_url && (
-            <> · <a href={appliance.platform.release_url} target="_blank" rel="noopener noreferrer">release ↗</a></>
-          )}
-        </p>
-      )}
+      </details>
 
       {/* 2 — Enroll */}
       <h3 style={{ fontSize: '0.85rem', fontWeight: 700, margin: '1.25rem 0 0.6rem', color: 'var(--text-muted)' }}>
