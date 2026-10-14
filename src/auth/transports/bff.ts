@@ -48,6 +48,30 @@ function sessionFromBody(body: Record<string, unknown>): AuthOutcome {
     return { kind: 'session', access_token: token, user }
 }
 
+/**
+ * The page origin to hand the OAuth start route, or null when it can derive it.
+ *
+ * With a relative `basePath` the start route runs on the page's own host and
+ * records that host itself. With an ABSOLUTE one (a tenant page such as
+ * acme.aitherium.com, or app.*, whose auth routes live on api.aitherium.com)
+ * the start route only sees ITS host, so a relative returnUrl came back to
+ * api.* and the visitor was stranded there (UX audit live-ui-02). The server
+ * re-validates this value against its own allow-list and drops anything else;
+ * sending it grants nothing.
+ */
+export function crossOriginStartOrigin(base: string): string | null {
+    if (typeof window === 'undefined' || !window.location) return null
+    let baseOrigin: string
+    try {
+        baseOrigin = new URL(base).origin
+    } catch {
+        return null // relative base: same origin, the server sees the right host
+    }
+    const page = window.location.origin
+    if (!page || page === 'null' || page === baseOrigin) return null
+    return page
+}
+
 export interface BffTransportOptions {
     /** Defaults to `/api/auth`. */
     basePath?: string
@@ -217,8 +241,11 @@ export function createBffTransport(opts: BffTransportOptions = {}): AuthTranspor
             return sessionFromBody(body)
         },
 
-        oauthUrl: (provider, returnUrl) =>
-            `${base}/oauth/${provider}?returnUrl=${encodeURIComponent(returnUrl)}`,
+        oauthUrl: (provider, returnUrl) => {
+            const url = `${base}/oauth/${provider}?returnUrl=${encodeURIComponent(returnUrl)}`
+            const start = crossOriginStartOrigin(base)
+            return start ? `${url}&startOrigin=${encodeURIComponent(start)}` : url
+        },
         samlUrl: (tenantId, returnUrl) =>
             `${base}/saml/login/${encodeURIComponent(tenantId)}?return_to=${encodeURIComponent(returnUrl)}`,
         cloudflareAccessUrl: (returnUrl, provider) => {

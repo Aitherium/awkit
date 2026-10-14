@@ -129,6 +129,21 @@ export interface DesktopShellProps {
    * that has not wired auth must not be shown a guessed identity).
    */
   identity?: DesktopIdentity
+  /**
+   * The host's own assistant (e.g. "Acme Assistant" on an appliance). Renders an
+   * always-visible orb above the taskbar that opens the Ctrl+K palette from any
+   * window, and names the palette "Ask <name>". The palette answers through
+   * `/api/agent-bridge`, which a tenant backend serves from its own chat.
+   * Omitted = no orb and the generic palette prompt, as before.
+   */
+  assistant?: DesktopAssistant
+}
+
+export interface DesktopAssistant {
+  /** Display name, e.g. "Acme Assistant". */
+  name: string
+  /** Brand mark for the orb (e.g. brand.marks.bot); omitted = the name's initial. */
+  avatarUrl?: string
 }
 
 // ============================================================================
@@ -260,9 +275,10 @@ interface DesktopShellInnerProps {
   onSignOut?: () => void
   onUnresolvedApp?: (appId: string) => void
   identity?: DesktopIdentity
+  assistant?: DesktopAssistant
 }
 
-function DesktopShellInner({ widgetImportMap, SettingsDialog: SettingsDialogProp, onNavigateOverride, extraWidgets, starterWidgets, onSignOut, onUnresolvedApp, identity }: DesktopShellInnerProps) {
+function DesktopShellInner({ widgetImportMap, SettingsDialog: SettingsDialogProp, onNavigateOverride, extraWidgets, starterWidgets, onSignOut, onUnresolvedApp, identity, assistant }: DesktopShellInnerProps) {
   /**
    * Widget metadata lookup: the platform manifest first, then anything the host
    * contributed. Host entries cannot shadow a manifest widget — a tenant must
@@ -989,8 +1005,14 @@ function DesktopShellInner({ widgetImportMap, SettingsDialog: SettingsDialogProp
 
           {/* Global AI Agent Command Palette (Ctrl+K) */}
           <WidgetErrorBoundary widgetTitle="Command Palette">
-            <AgentCommandPalette />
+            <AgentCommandPalette assistantName={assistant?.name} />
           </WidgetErrorBoundary>
+
+          {/* The host assistant's orb: reachable from every window, lifted clear
+              of the 48px taskbar. Opens the same palette as Ctrl+K. */}
+          {assistant && (
+            <AssistantOrb assistant={assistant} onOpen={agentCtx.openCommandPalette} />
+          )}
 
           {/* Ambient Senses Overlay — voice/vision/tasks/approvals */}
           <WidgetErrorBoundary widgetTitle="Ambient Senses">
@@ -1006,7 +1028,25 @@ function DesktopShellInner({ widgetImportMap, SettingsDialog: SettingsDialogProp
 // EXPORTED WRAPPER WITH PROVIDER
 // ============================================================================
 
-export function DesktopShell({ widgetImportMap, SettingsDialog: SettingsDialogProp, onNavigate, appCatalog, extraWidgets, starterWidgets, onSignOut, onUnresolvedApp, identity }: DesktopShellProps) {
+export function AssistantOrb({ assistant, onOpen }: { assistant: DesktopAssistant; onOpen: () => void }) {
+  const label = `Ask ${assistant.name} (Ctrl+K)`
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      title={label}
+      aria-label={label}
+      data-testid="assistant-orb"
+      className="fixed right-4 bottom-16 z-[250] flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border border-white/15 bg-zinc-900/90 text-sm font-semibold text-zinc-100 shadow-lg backdrop-blur transition-transform hover:scale-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
+    >
+      {assistant.avatarUrl
+        ? <img src={assistant.avatarUrl} alt="" className="h-9 w-9 object-contain" />
+        : <span aria-hidden>{assistant.name.slice(0, 1).toUpperCase()}</span>}
+    </button>
+  )
+}
+
+export function DesktopShell({ widgetImportMap, SettingsDialog: SettingsDialogProp, onNavigate, appCatalog, extraWidgets, starterWidgets, onSignOut, onUnresolvedApp, identity, assistant }: DesktopShellProps) {
   return (
     <DashboardErrorBoundary>
       <AppCatalogProvider
@@ -1042,6 +1082,7 @@ export function DesktopShell({ widgetImportMap, SettingsDialog: SettingsDialogPr
                 onSignOut={onSignOut}
                 onUnresolvedApp={onUnresolvedApp}
                 identity={identity}
+                assistant={assistant}
               />
             </AgentControlBusProvider>
           </DesktopAgentProvider>

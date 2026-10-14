@@ -384,6 +384,20 @@ function PipelineTraceBadge({ pipeline, usage }: { pipeline?: PipelineTrace; usa
   )
 }
 
+/**
+ * The chat line for an accepted attachment. A 202 means the backend is still
+ * reading it (video, audio, a long scan) in a background job; "? chunks
+ * ingested" read as a failure for a file that was on its way.
+ */
+export function chatUploadMessage(
+  name: string, status: number, data: { job_id?: string; chunks_created?: number; chunk_count?: number } | null,
+): string {
+  if (status === 202 || data?.job_id) {
+    return `Reading ${name} in the background. You can keep chatting; it becomes searchable once it is indexed.`
+  }
+  return `Uploaded ${name} (${data?.chunks_created ?? data?.chunk_count ?? '?'} chunks ingested)`
+}
+
 type ChatEngine = 'aitherchat' | 'native'
 const ENGINE_KEY = 'app:chat-engine'
 function getStoredEngine(): ChatEngine {
@@ -640,10 +654,7 @@ export default function ChatPanel({ conversationId, onNewConversation, externalI
     form.append('auto_extract', 'true')
     try {
       const res = await fetch(`${getApiBase()}/api/documents/upload`, { method: 'POST', body: form })
-      if (res.ok) {
-        const data = await res.json()
-        return `Uploaded ${file.name} (${data.chunks_created ?? data.chunk_count ?? '?'} chunks ingested)`
-      }
+      if (res.ok) return chatUploadMessage(file.name, res.status, await res.json())
       return `Failed to upload ${file.name}`
     } catch {
       return `Error uploading ${file.name}`

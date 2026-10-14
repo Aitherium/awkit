@@ -53,7 +53,9 @@ interface PaletteResult {
 // COMPONENT
 // ============================================================================
 
-export function AgentCommandPalette() {
+/** `assistantName` (the host's own assistant, e.g. "Acme Assistant") names the prompt;
+ *  omitted = the generic platform prompt. */
+export function AgentCommandPalette({ assistantName }: { assistantName?: string } = {}) {
   const agent = useDesktopAgent()
   const [input, setInput] = useState('')
   const [result, setResult] = useState<PaletteResult | null>(null)
@@ -272,7 +274,7 @@ export function AgentCommandPalette() {
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask the AI anything... (Ctrl+K)"
+            placeholder={assistantName ? `Ask ${assistantName} anything... (Ctrl+K)` : 'Ask the AI anything... (Ctrl+K)'}
             className="flex-1 bg-transparent text-sm text-zinc-100 placeholder-zinc-500 outline-none"
             disabled={result?.isStreaming}
           />

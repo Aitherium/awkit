@@ -48,6 +48,29 @@ interface BriefingData {
   mode: string
 }
 
+/**
+ * GET `${apiBase}/briefing/schedule` -- the caller's stored daily briefing (the
+ * one the backend's scheduler wrote) and when the next one is generated.
+ */
+export interface BriefingSchedule {
+  enabled: boolean
+  next_run: string | null
+  timezone?: string
+  latest?: { content: string; generated_at: string | null } | null
+}
+
+/**
+ * The footer line, or null when there is nothing honest to say. Only a running
+ * schedule with a real time gets a line; why it is off is operator detail.
+ */
+export function nextBriefingLabel(s: BriefingSchedule | null): string | null {
+  if (!s || !s.enabled || !s.next_run) return null
+  const d = new Date(s.next_run)
+  if (Number.isNaN(d.getTime())) return null
+  const when = d.toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })
+  return `Next daily briefing: ${when}`
+}
+
 export interface ExecutiveBriefingPanelProps {
   apiBase?: string
 }
@@ -81,12 +104,18 @@ export default function ExecutiveBriefingPanel({
   const [data, setData] = useState<BriefingData | null>(null)
   const [loading, setLoading] = useState(true)
   const [prepLoading, setPrepLoading] = useState<string | null>(null)
+  const [schedule, setSchedule] = useState<BriefingSchedule | null>(null)
 
   const fetchBriefing = useCallback(() => {
     fetch(`${apiBase}/briefing`)
       .then(r => r.json())
       .then(d => { setData(d.data || d); setLoading(false) })
       .catch(() => setLoading(false))
+    // Optional: apps without this endpoint answer 404 -> no briefing, no footer.
+    fetch(`${apiBase}/briefing/schedule`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(s => setSchedule(s && typeof s === 'object' && 'enabled' in s ? s : null))
+      .catch(() => setSchedule(null))
   }, [apiBase])
 
   useEffect(() => {
@@ -135,6 +164,11 @@ export default function ExecutiveBriefingPanel({
         <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
           {now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })} &middot; {timeStr}
         </p>
+        {nextBriefingLabel(schedule) && (
+          <p data-testid="next-briefing" style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 4 }}>
+            {nextBriefingLabel(schedule)}
+          </p>
+        )}
       </div>
 
       {/* Next meeting hero */}
@@ -170,6 +204,24 @@ export default function ExecutiveBriefingPanel({
           >
             {prepLoading === data.next_meeting.event_id ? 'Preparing...' : 'Prepare'}
           </button>
+        </div>
+      )}
+
+      {/* The stored daily briefing (what the scheduled run wrote for this user) */}
+      {schedule?.latest?.content && (
+        <div data-testid="daily-briefing" style={{
+          marginBottom: 24, padding: '16px 20px', borderRadius: 'var(--radius)',
+          background: 'var(--bg-base)', border: '1px solid var(--glass-border)',
+        }}>
+          <h2 style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: 8 }}>Daily briefing</h2>
+          <div style={{ fontSize: '0.85rem', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
+            {schedule.latest.content}
+          </div>
+          {schedule.latest.generated_at && !Number.isNaN(new Date(schedule.latest.generated_at).getTime()) && (
+            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 8 }}>
+              Prepared {new Date(schedule.latest.generated_at).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}
+            </div>
+          )}
         </div>
       )}
 

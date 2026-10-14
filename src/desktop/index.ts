@@ -13,7 +13,7 @@
 
 // ── Core Shell & Types ──────────────────────────────────────────────────────
 export { DesktopShell } from './components/desktop/desktop-shell'
-export type { DesktopShellProps, WidgetImportMap } from './components/desktop/desktop-shell'
+export type { DesktopShellProps, DesktopAssistant, WidgetImportMap } from './components/desktop/desktop-shell'
 
 // ── Desktop Components ──────────────────────────────────────────────────────
 export { DesktopCanvas } from './components/desktop/desktop-canvas'

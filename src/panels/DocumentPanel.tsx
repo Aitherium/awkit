@@ -18,12 +18,44 @@ export interface UploadResult {
   filename: string
   status: UploadResultStatus
   detail: string
+  /** A same-name document exists (409): the row offers Replace / Keep both. */
+  duplicate?: boolean
 }
+
+/** How /upload resolves a same-name document (backend `on_duplicate`). */
+export type DuplicateChoice = 'replace' | 'keep_both'
 
 const fileExt = (name: string) => {
   const i = name.lastIndexOf('.')
   return i >= 0 ? name.slice(i).toLowerCase() : ''
 }
+
+/** Video/audio take minutes to transcribe and caption: they go through the
+ *  batch job (returns at once, then polled with per-step progress) instead of
+ *  holding one /upload request open past the tunnel's timeout. */
+const MEDIA_EXTS = new Set([
+  '.mp4', '.mov', '.m4v', '.webm', '.mkv', '.avi',
+  '.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg', '.opus',
+])
+export const isMediaUpload = (name: string) => MEDIA_EXTS.has(fileExt(name))
+
+/** Over this, or any PDF (it may be a scan read page by page by the vision
+ *  model), a single upload asks for `background` ingest: 202 + a job id. */
+const BACKGROUND_INGEST_BYTES = 5 * 1024 * 1024
+
+/**
+ * Which document features this backend advertises in /api/config/embed
+ * `features`. Projects and Replace / Keep both are host-app routes; another
+ * tenant's backend would drop the project and answer Replace with the same 409.
+ */
+export function documentFeatures(features: readonly string[] | undefined, loaded = true) {
+  const has = (f: string) => loaded && !!features?.includes(f)
+  return { projects: has('document_projects'), versions: has('document_versions') }
+}
+
+/** Ask a versions-capable backend to ingest in the background (202 + job). */
+export const wantsBackgroundIngest = (file: File) =>
+  isMediaUpload(file.name) || fileExt(file.name) === '.pdf' || file.size > BACKGROUND_INGEST_BYTES
 
 const formatMb = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`
 
@@ -54,6 +86,10 @@ const KNOWN_FILE_EXTS = new Set([
   '.xls', '.xlsx', '.ods', '.csv', '.tsv', '.ppt', '.pptx', '.odp', '.json', '.xml',
   '.yaml', '.yml', '.log', '.eml', '.msg', '.epub', '.zip',
   '.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.tif', '.tiff', '.heic', '.svg',
+  // Video/audio: a backend with media ingest advertises them; without these an
+  // allowlist containing ".mp4" was not enforced and the picker fell back to
+  // the legacy list, which cannot select a video at all.
+  ...MEDIA_EXTS,
 ])
 
 /**
@@ -130,6 +166,13 @@ interface Doc {
   doc_type: string
   uploaded_at: string | null
   chunk_count: number
+  /** Production/project tag set at upload, on backends that advertise document_projects. */
+  project?: string | null
+}
+
+/** Distinct project tags in the list, sorted, for the filter chips. */
+export function projectsOf(docs: readonly { project?: string | null }[]): string[] {
+  return Array.from(new Set(docs.map(d => d.project).filter((p): p is string => !!p))).sort()
 }
 
 interface DocChunk {
@@ -150,6 +193,12 @@ interface FileProgress {
   status: string
   chunks: number
   error?: string
+  /** Live step while the file is read, e.g. "reading scanned pages 12/40". */
+  progress?: string | null
+  /** Keep both: the name it was stored under. */
+  saved_as?: string | null
+  /** Replace: the version it retired. */
+  replaced_doc_id?: string | null
 }
 
 interface BatchJob {
@@ -180,7 +229,13 @@ export default function DocumentPanel() {
   const [listError, setListError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [viewerError, setViewerError] = useState<string | null>(null)
+  const [project, setProject] = useState('')
+  const [projectFilter, setProjectFilter] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  // Files whose upload hit a same-name 409, kept so Replace / Keep both can resend.
+  const pendingDupes = useRef(new Map<string, File>())
+  const projectRef = useRef('')
+  projectRef.current = project.trim()
 
   // The accept list and hint come from the backend's /api/config/embed when it is
   // a real extension allowlist (a pack that publishes it); other tenants keep the legacy list and
@@ -190,6 +245,9 @@ export default function DocumentPanel() {
   const acceptedRef = useRef<string[]>([])
   acceptedRef.current = enforced ? accepted : []
   const acceptedLabel = enforced ? accepted.map(t => t.slice(1).toUpperCase()).join(', ') : LEGACY_HINT
+  const supports = documentFeatures(config.features, config.loaded)
+  const supportsRef = useRef(supports)
+  supportsRef.current = supports
 
   const addResults = (more: UploadResult[]) => setResults(prev => [...prev, ...more])
 
@@ -245,12 +303,20 @@ export default function DocumentPanel() {
   useEffect(() => { fetchDocs() }, [])
 
   /** Upload one file through /upload; always resolves to a result for that file. */
-  const uploadOne = async (file: File): Promise<UploadResult> => {
+  const uploadOne = async (file: File, onDuplicate?: DuplicateChoice): Promise<UploadResult> => {
     const form = new FormData()
     form.append('file', file)
     form.append('auto_extract', 'true')
+    const { projects, versions } = supportsRef.current
+    if (projects && projectRef.current) form.append('project', projectRef.current)
+    if (onDuplicate) form.append('on_duplicate', onDuplicate)
+    if (versions && wantsBackgroundIngest(file)) form.append('background', 'true')
     try {
       const resp = await fetch(`${getApiBase()}/api/documents/upload`, { method: 'POST', body: form })
+      if (resp.status === 409 && !onDuplicate) {
+        if (versions) pendingDupes.current.set(file.name, file)
+        return { filename: file.name, status: 'error', duplicate: versions, detail: await errorDetail(resp, 'Already uploaded') }
+      }
       if (!resp.ok) {
         return { filename: file.name, status: 'error', detail: await errorDetail(resp, 'Upload failed') }
       }
@@ -260,8 +326,10 @@ export default function DocumentPanel() {
         return jobResults(job, [file])[0]
       }
       const n = data.chunks_created ?? data.chunk_count
+      const saved = data.filename && data.filename !== file.name ? ` as ${data.filename}` : ''
+      const how = onDuplicate === 'replace' ? 'Replaced; ' : ''
       if (n === 0) return { filename: file.name, status: 'warning', detail: ZERO_CHUNK_DETAIL }
-      return { filename: file.name, status: 'done', detail: `${n ?? '?'} chunks ingested` }
+      return { filename: file.name, status: 'done', detail: `${how}${n ?? '?'} chunks ingested${saved}` }
     } catch (e) {
       return { filename: file.name, status: 'error', detail: `Upload error: ${(e as Error)?.message || 'network error'}` }
     }
@@ -304,13 +372,41 @@ export default function DocumentPanel() {
       .map(f => ({ filename: f.name, status: 'skipped' as const, detail: 'Already uploaded (skipped as a duplicate)' }))
     return [...unreported, ...(job.files || []).map(f => {
       if (f.status === 'done') {
+        const how = f.replaced_doc_id ? 'Replaced; ' : ''
+        const saved = f.saved_as ? ` as ${f.saved_as}` : ''
         return f.chunks === 0
           ? { filename: f.filename, status: 'warning' as const, detail: ZERO_CHUNK_DETAIL }
-          : { filename: f.filename, status: 'done' as const, detail: `${f.chunks} chunks ingested` }
+          : { filename: f.filename, status: 'done' as const, detail: `${how}${f.chunks} chunks ingested${saved}` }
       }
+      if (f.status === 'duplicate') return duplicateResult(f.filename, f.error || 'Already uploaded', sent)
       if (f.status === 'skipped') return { filename: f.filename, status: 'skipped' as const, detail: f.error || 'Already uploaded' }
       return { filename: f.filename, status: 'error' as const, detail: f.error || `Ended as ${f.status}` }
     })]
+  }
+
+  /** A same-name row from a batch; Replace / Keep both when the backend has them. */
+  const duplicateResult = (filename: string, detail: string, sent: File[]): UploadResult => {
+    const file = sent.find(f => f.name === filename)
+    const offer = supportsRef.current.versions && !!file
+    if (offer && file) pendingDupes.current.set(filename, file)
+    return { filename, status: offer ? 'error' : 'skipped', duplicate: offer, detail }
+  }
+
+  /** Resend a same-name upload as Replace or Keep both; swaps its result row. */
+  const resolveDuplicate = async (filename: string, choice: DuplicateChoice) => {
+    const file = pendingDupes.current.get(filename)
+    if (!file) return
+    pendingDupes.current.delete(filename)
+    setUploading(true)
+    setUploadProgress(`${choice === 'replace' ? 'Replacing' : 'Uploading a new version of'} ${filename}...`)
+    try {
+      const result = await uploadOne(file, choice)
+      setResults(prev => prev.map(r => (r.filename === filename && r.duplicate ? result : r)))
+    } finally {
+      setUploadProgress(null)
+      setUploading(false)
+      fetchDocs()
+    }
   }
 
   const uploadGroup = async (group: File[]) => {
@@ -319,6 +415,7 @@ export default function DocumentPanel() {
     const form = new FormData()
     group.forEach(f => form.append('files', f))
     form.append('doc_type', 'other')
+    if (supportsRef.current.projects && projectRef.current) form.append('project', projectRef.current)
     try {
       const resp = await fetch(`${getApiBase()}/api/documents/batch`, { method: 'POST', body: form })
       if (resp.status === 404) { await uploadSequential(group); return }
@@ -329,7 +426,10 @@ export default function DocumentPanel() {
       }
       const data = await resp.json()
       if (data.status === 'all_duplicates') {
-        addResults(group.map(f => ({ filename: f.name, status: 'skipped' as const, detail: 'Already uploaded' })))
+        const dupes = new Set<string>(Array.isArray(data.duplicates) ? data.duplicates : [])
+        addResults(group.map(f => dupes.has(f.name)
+          ? duplicateResult(f.name, 'Already uploaded. Replace it with this version, or keep both.', group)
+          : { filename: f.name, status: 'skipped' as const, detail: 'Already uploaded' }))
         return
       }
       if (data.job_id) addResults(jobResults(await waitForBatchJob(data.job_id), group))
@@ -343,12 +443,13 @@ export default function DocumentPanel() {
     const arr = Array.from(fileList)
     if (arr.length === 0) return
     const { ok, rejected } = partitionUploads(arr, acceptedRef.current)
+    pendingDupes.current.clear()
     setResults(rejected)
     setActionError(null)
     if (ok.length === 0) return
     setUploading(true)
     try {
-      if (ok.length === 1 && fileExt(ok[0].name) !== '.zip') {
+      if (ok.length === 1 && fileExt(ok[0].name) !== '.zip' && !isMediaUpload(ok[0].name)) {
         setUploadProgress(`Uploading ${ok[0].name}...`)
         addResults([await uploadOne(ok[0])])
       } else {
@@ -408,6 +509,9 @@ export default function DocumentPanel() {
     }
   }
 
+  const projects = projectsOf(docs)
+  const shownDocs = projectFilter ? docs.filter(d => d.project === projectFilter) : docs
+
   // Reassemble full text from chunks if content endpoint didn't return
   const displayText = docContent?.text
     || (chunks.length > 0 ? chunks.map(c => c.text).join('\n') : '')
@@ -453,6 +557,17 @@ export default function DocumentPanel() {
           accept={accepted.join(',')}
           onChange={e => { if (e.target.files) handleFiles(e.target.files); e.target.value = '' }} />
 
+        {supports.projects && (<>
+          <input data-testid="document-project-input" value={project} onChange={e => setProject(e.target.value)}
+            placeholder="Project for new uploads (optional)" maxLength={120} list="document-projects"
+            style={{ width: '100%', marginTop: '0.5rem', padding: '0.35rem 0.6rem', fontSize: '0.75rem',
+              background: 'var(--bg-surface, #1a1a2e)', color: 'var(--text-primary, #ddd)',
+              border: '1px solid var(--glass-border, #333)', borderRadius: 'var(--radius, 6px)', boxSizing: 'border-box' }} />
+          <datalist id="document-projects">
+            {projects.map(p => <option key={p} value={p} />)}
+          </datalist>
+        </>)}
+
         {uploadProgress && (
           <div style={{ padding: '0.5rem 0.75rem', marginTop: '0.5rem', background: 'var(--bg-surface, #1a1a2e)',
             borderRadius: 'var(--radius, 8px)', border: '1px solid var(--glass-border, #333)', fontSize: '0.8rem' }}>
@@ -483,6 +598,16 @@ export default function DocumentPanel() {
                     : r.status === 'error' || r.status === 'rejected' ? 'var(--accent-coral, #ef4444)'
                     : 'var(--text-muted, #888)' }}>
                   {r.detail}
+                  {r.duplicate && !uploading && (
+                    <span style={{ display: 'inline-flex', gap: '0.3rem', marginLeft: '0.4rem' }}>
+                      <button onClick={() => resolveDuplicate(r.filename, 'replace')} style={{
+                        padding: '0.1rem 0.45rem', background: 'var(--accent-primary, #3b82f6)', color: '#fff',
+                        borderRadius: 4, fontSize: '0.65rem', cursor: 'pointer' }}>Replace</button>
+                      <button onClick={() => resolveDuplicate(r.filename, 'keep_both')} style={{
+                        padding: '0.1rem 0.45rem', background: 'var(--bg-elevated, #222)',
+                        color: 'var(--text-secondary, #aaa)', borderRadius: 4, fontSize: '0.65rem', cursor: 'pointer' }}>Keep both</button>
+                    </span>
+                  )}
                 </span>
               </div>
             ))}
@@ -523,7 +648,7 @@ export default function DocumentPanel() {
                 <span style={{ width: 6, height: 6, borderRadius: '50%', background: statusColor(f.status), flexShrink: 0 }} />
                 <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.filename}</span>
                 <span style={{ color: 'var(--text-muted, #666)', fontSize: '0.65rem' }}>
-                  {f.status === 'done' ? `${f.chunks} chunks` : f.error || f.status}
+                  {f.status === 'done' ? `${f.chunks} chunks` : f.error || f.progress || f.status}
                 </span>
               </div>
             ))}
@@ -554,7 +679,18 @@ export default function DocumentPanel() {
             </div>
           ) : (
             <div style={{ display: 'grid', gap: '0.35rem' }}>
-              {docs.map(doc => (
+              {projects.length > 0 && (
+                <div data-testid="document-project-filter" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
+                  {[null, ...projects].map(p => (
+                    <button key={p ?? '__all'} aria-pressed={projectFilter === p} onClick={() => setProjectFilter(p)} style={{
+                      padding: '0.15rem 0.55rem', borderRadius: 999, fontSize: '0.65rem', cursor: 'pointer',
+                      background: projectFilter === p ? 'var(--accent-primary, #3b82f6)' : 'var(--bg-elevated, #222)',
+                      color: projectFilter === p ? '#fff' : 'var(--text-secondary, #aaa)',
+                    }}>{p ?? 'All projects'}</button>
+                  ))}
+                </div>
+              )}
+              {shownDocs.map(doc => (
                 <div key={doc.id} onClick={() => openDoc(doc)} style={{
                   display: 'flex', alignItems: 'center', gap: '0.5rem',
                   padding: viewDoc ? '0.5rem 0.6rem' : '0.6rem 0.75rem',
@@ -569,7 +705,7 @@ export default function DocumentPanel() {
                     <div style={{ fontSize: viewDoc ? '0.75rem' : '0.85rem', fontWeight: 500, overflow: 'hidden',
                       textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.filename}</div>
                     <div style={{ fontSize: '0.65rem', color: 'var(--text-muted, #666)', marginTop: '0.1rem' }}>
-                      {doc.doc_type} · {doc.chunk_count} chunk{doc.chunk_count !== 1 ? 's' : ''}
+                      {doc.doc_type}{doc.project ? ` · ${doc.project}` : ''} · {doc.chunk_count} chunk{doc.chunk_count !== 1 ? 's' : ''}
                       {!viewDoc && doc.uploaded_at && ` · ${new Date(doc.uploaded_at).toLocaleDateString()}`}
                     </div>
                   </div>

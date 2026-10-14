@@ -18,6 +18,11 @@
  *   2. Enroll — mints a device owned by the signed-in user and returns the
  *      copy-paste commands (per OS), including the device secret shown ONCE.
  *   3. Your devices — live list (polled), each with its status and a Remove.
+ *      A host may also list machines its identity provider registered (the setup
+ *      door's `adk enroll`): `source: 'identity'`, `removable: false` — no Remove,
+ *      because the machine is revoked where it was registered. When that registry
+ *      could not be read the host says so (`identity.ok === false`) and the panel
+ *      shows it, so an outage never reads as "nothing enrolled".
  *
  * The host app must implement `GET /api/devices` + `POST /api/devices/enroll`
  * (a tenant agent's devices router does). A host that does not opt in simply never
@@ -49,6 +54,25 @@ interface DeviceInfo {
   overlay_ip?: string | null
   last_seen?: string | null
   created_at?: string | null
+  /** 'identity' = registered with the identity provider (the setup door), not here. */
+  source?: string
+  /** false = no Remove here (revoked where it was registered). Absent = removable. */
+  removable?: boolean
+}
+
+/** The host's report on the identity-registry join (absent = the host has none). */
+interface IdentityReport {
+  ok: boolean
+  errors?: string[]
+}
+
+/** "" when the join worked or the host has none; otherwise the line to show.
+ *  Plain words only: the host's error codes and tenant ids are for its logs, never
+ *  for the person reading this panel. */
+export function identityJoinWarning(body: unknown): string {
+  const r = (body && typeof body === 'object' ? (body as { identity?: IdentityReport }).identity : undefined)
+  if (!r || r.ok !== false) return ''
+  return 'Some machines set up from the setup page could not be checked just now, so this list may be missing one. It retries on its own.'
 }
 
 /** A row of the workspace-wide view: the device plus who enrolled it. */
@@ -252,6 +276,7 @@ export default function MyHardwarePanel({
   const [appliance, setAppliance] = useState<ApplianceInfo | null>(null)
   const [devices, setDevices] = useState<DeviceInfo[]>([])
   const [devicesError, setDevicesError] = useState('')
+  const [identityWarning, setIdentityWarning] = useState('')
   // null = this caller has no workspace-wide view (a member, or a host without the
   // route); the section is then absent rather than shown empty.
   const [workspaceDevices, setWorkspaceDevices] = useState<WorkspaceDeviceInfo[] | null>(null)
@@ -302,6 +327,7 @@ export default function MyHardwarePanel({
       .then(async (r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         const d = await r.json()
+        setIdentityWarning(identityJoinWarning(d))
         return Array.isArray(d) ? d : d.devices ?? []
       })
       .then((list: DeviceInfo[]) => { setDevices(list); setDevicesError('') })
@@ -599,6 +625,12 @@ export default function MyHardwarePanel({
           Could not load devices — {devicesError}
         </p>
       )}
+      {identityWarning && (
+        <p data-testid="identity-warning"
+          style={{ fontSize: '0.75rem', color: 'var(--accent-coral)', margin: '0 0 0.5rem' }}>
+          {identityWarning}
+        </p>
+      )}
       {devices.length === 0 && !devicesError && (
         <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0 }}>
           Nothing enrolled yet. Once you run the commands above, this machine shows up here.
@@ -611,7 +643,7 @@ export default function MyHardwarePanel({
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>{d.name}</div>
             <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-              {d.node_id} · {d.agent_scope}
+              {d.node_id} · {d.source === 'identity' ? 'registered with your account' : d.agent_scope}
               {d.os && d.os !== 'unknown' ? ` · ${d.os}` : ''}
             </div>
           </div>
@@ -621,12 +653,14 @@ export default function MyHardwarePanel({
           {onShowUniverse && (
             <button style={ghost} onClick={onShowUniverse}>Universe</button>
           )}
-          <button
-            style={{ ...ghost, color: 'var(--accent-coral)' }}
-            onClick={() => remove(d.id)}
-          >
-            Remove
-          </button>
+          {d.removable !== false && (
+            <button
+              style={{ ...ghost, color: 'var(--accent-coral)' }}
+              onClick={() => remove(d.id)}
+            >
+              Remove
+            </button>
+          )}
         </div>
       ))}
 

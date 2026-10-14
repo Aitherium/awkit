@@ -396,6 +396,54 @@
   margin: 0;
 }
 
+/* Greeting openers: one click SAYs the prompt. */
+.room-greeting-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.4rem 0 0.9rem;
+}
+
+.room-greeting-chip {
+  font: inherit;
+  font-size: 0.82rem;
+  padding: 0.4rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--datum) 45%, transparent);
+  background: color-mix(in srgb, var(--datum) 10%, transparent);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.room-greeting-chip:hover,
+.room-greeting-chip:focus-visible {
+  background: color-mix(in srgb, var(--datum) 22%, transparent);
+  outline: none;
+}
+
+/* The outcome of a file dropped on the room (adding / added / refused). The
+   room is a named-area grid, so the banner shares the sheet's cell and floats
+   over its top edge instead of taking an auto-placed track of its own. */
+.room-drop-status {
+  grid-area: sheet;
+  align-self: start;
+  position: relative;
+  z-index: 3;
+  margin: 0;
+  color: var(--ink);
+  padding: 0.4rem 1rem;
+  font-size: 0.82rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--datum) 30%, transparent);
+  background: var(--sheet-raised);
+  cursor: pointer;
+}
+
+/* A file is being dragged over a room that takes drops. */
+.room[data-dropping="true"] {
+  outline: 2px dashed var(--datum);
+  outline-offset: -6px;
+}
+
 /* ── Title block: presence, in the corner where a drawing signs itself ── */
 
 /* Drag handle on the block's left edge. Sits ON the border rather than beside it,
