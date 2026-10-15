@@ -34,7 +34,8 @@ import FamilySpaceCard from './FamilySpaceCard'
 import { createLearnVoice, type LearnSpeak } from './learnVoice'
 import { QUIET_RULE, fetchVoiceRule, readChildMuted, spriteMaySpeak, type SpriteVoiceRule } from './spriteVoice'
 import { C, EASE, FONT_MONO, FONT_UI, LEARN_CSS, LearnModeSwitch, learnVars, useLearnMode } from './learnTheme'
-import { KidSpriteCard, spriteEmoji, type KidSprite } from './LearnerSprite'
+import { KidSpriteCard, type KidSprite } from './LearnerSprite'
+import { SpriteFace } from './spriteLook'
 import KidClassroom, { type RoomObjectId } from './KidClassroom'
 import KidWorldIntro from './KidWorldIntro'
 
@@ -466,15 +467,16 @@ function BridgeStrip({ planks, total }: { planks: number; total: number }) {
   )
 }
 
-/** The child's Sprite as a glowing orb; `grow` plays the calm "it grew" beat. */
+/** The child's own Sprite in a glowing ring (its snapshot: one live creature per screen is
+ *  the home card's); `grow` plays the calm "it grew" beat. */
 function SpriteOrb({ sprite, size = 120, grow = false }: { sprite?: KidSprite | null; size?: number; grow?: boolean }) {
   return (
     <div aria-hidden className={grow ? 'al-grow al-glow' : 'al-glow'} style={{
       width: size, height: size, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontSize: Math.round(size * 0.5), lineHeight: 1, background: C.accentWash, border: `1px solid ${C.hairline}`,
+      background: C.accentWash, border: `1px solid ${C.hairline}`, overflow: 'hidden',
       boxShadow: `0 0 40px ${C.accentGlow}`, flexShrink: 0,
     }}>
-      {spriteEmoji(sprite)}
+      <SpriteFace sprite={sprite} size={Math.round(size * 0.92)} />
     </div>
   )
 }
@@ -932,7 +934,7 @@ export default function KidQuestPanel({ apiBase, extraHeaders = {}, homeExtra, h
             }}>
               {kidProgress.today?.goal_minutes ? (
                 <div style={{ fontSize: 22 }}>
-                  {kidProgress.today.goal_met ? '🌟 You did your learning today!' : '🌱 Today’s learning is waiting for you.'}
+                  {kidProgress.today.goal_met ? '🌟 You did your learning today!' : '☀️ Today’s learning is waiting for you.'}
                 </div>
               ) : null}
               {kidProgress.learned && kidProgress.learned.length > 0 && (

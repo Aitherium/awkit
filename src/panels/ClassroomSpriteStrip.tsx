@@ -24,7 +24,7 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties } from 're
 import { C, FONT_MONO, FONT_UI } from './learnTheme'
 import { Skel, help, mono, quiet } from './learnParts'
 import { CLASSROOM_API, classroomFetch, cs, cseg, isNotFound, send } from './classroomApi'
-import { spriteEmoji } from './LearnerSprite'
+import { SpriteFace } from './spriteLook'
 
 /** What a teacher may see of one sprite (lib/classroom/sprites.py TEACHER_CARD_KEYS). */
 export interface ClassSpriteCard {
@@ -33,6 +33,8 @@ export interface ClassSpriteCard {
   stage?: string | null
   stage_word?: string | null
   level?: number | null
+  /** the snapshot key of the student's Sprite (its cleaned design, AitherSprite /snapshots/<key>.json, in-household only) */
+  snapshot?: string | null
 }
 
 export interface ClassSpriteStudent { member_id: string; alias?: string | null; sprite: ClassSpriteCard | null }
@@ -67,7 +69,7 @@ const NOT_HATCHED = 'Some sprites did not hatch.'
 const number: CSSProperties = { font: `300 44px/1 ${FONT_UI}`, letterSpacing: '-0.02em', color: C.ink }
 const glyph: CSSProperties = {
   width: 40, height: 40, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-  fontSize: 22, lineHeight: 1, background: C.accentWash, border: `1px solid ${C.hairline}`,
+  fontSize: 22, lineHeight: 1, background: C.accentWash, border: `1px solid ${C.hairline}`, overflow: 'hidden',
 }
 /** One console line per page load when the sprite route answers 404 (router not registered). */
 let warnedAbsent = false
@@ -172,7 +174,7 @@ export default function ClassroomSpriteStrip({ classId, apiBase = CLASSROOM_API,
               const line = stageLine(s.sprite)
               return (
                 <li key={s.member_id} style={{ ...cs.row, flexWrap: 'wrap' }} data-testid={`sprite-of-${s.member_id}`}>
-                  <span aria-hidden style={{ ...glyph, opacity: s.sprite ? 1 : 0.4 }}>{spriteEmoji(s.sprite ? { species: s.sprite.species ?? undefined, stage: s.sprite.stage ?? undefined } : null)}</span>
+                  <span aria-hidden style={{ ...glyph, opacity: s.sprite ? 1 : 0.4 }} data-testid={`sprite-face-${s.member_id}`}><SpriteFace sprite={s.sprite} size={36} /></span>
                   <span style={{ flex: '1 1 120px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
                     <span style={{ color: s.sprite ? C.ink : C.faint, font: `400 15px/1.3 ${FONT_UI}`, overflowWrap: 'anywhere' }}>
                       {s.sprite ? s.sprite.name || 'Buddy' : 'No sprite yet'}

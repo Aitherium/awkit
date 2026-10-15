@@ -3,23 +3,26 @@
 /**
  * SpritePanel — the AitherSprite companion creature.
  *
- * Render tiers (highest available wins, per .PRODUCTS/.SPRITE/04-ARCHITECTURE):
- *   1. Generated animated idle sheet (media-forge auto-sprite), frame-stepped
- *   2. Generated mood still (alpha-keyed cutout) + blink-frame flipbook
- *   3. Live CSS creature (always available — gameplay never blocks on the GPU)
- *
- * Art keys follow the atelier convention: `${stage}/${form}/${moodLabel}`,
- * plus `/blink` (2-frame flipbook partner) and `/idle` (sheet).
+ * The creature (kids suite S6, one look on every surface — spriteLook.tsx):
+ *   1. The host's live 3D creature, drawn on the device from the Sprite's design
+ *      (Veil wires creature3d through SpriteRendererProvider). It measures its own frames
+ *      and drops to its snapshot on a slow device (spritePerf.ts).
+ *   2. The snapshot PNG the owner's device rendered of that same design (GET /me/snapshot).
+ *   3. "Waking up" — never a stand-in: the CSS blob, the emoji egg and generated SDXL art
+ *      are retired as the creature (PREFER_CSS_CREATURE = false). Generated art stays for
+ *      storybook pages only (SpriteAtelier); the art-progress line below still reports it.
  * Every mutating action shows a busy state — a pet must feel alive, never dead
  * (demo-verified 2026-07-08: silent 2s clicks read as "broken").
  */
 
-import { useState, useEffect, useCallback, useMemo, useRef, ReactNode } from 'react'
+import { useState, useEffect, useCallback, useContext, useMemo, useRef, ReactNode } from 'react'
 import SpriteGuideCard from './SpriteGuideCard'
+import { SpriteRendererContext, SpriteSnapshot, SpriteWaking, SNAPSHOT_KEY_RE } from './spriteLook'
 import SpriteCosmeticsCard from './SpriteCosmeticsCard'
 
 interface SpriteStatus {
   name: string
+  species?: string
   stage: string
   form: string
   needs: Record<string, number>
@@ -71,18 +74,10 @@ const MOOD_THEME: Record<string, { aura: string; face: string; label: string; sp
   dormant: { aura: '#2A4A6A', face: '-', label: 'Dormant…', speed: '6s' },
 }
 
-const STAGE_SCALE: Record<string, number> = {
-  egg: 0.72, baby: 0.76, child: 0.9, teen: 1.0, adult: 1.15, elder: 1.1,
-}
-
-// Owner call (2026-07-24, reaffirmed 2026-08-08): the generated SDXL creature
-// ("the bunny") never reads as well as the live CSS creature (the blob), which
-// genuinely breathes/blinks/floats. Default to the blob for now and skip ALL
-// generated-art tiers — including the looping WebP, which landed AFTER the
-// blob-default fix and used to bypass this flag (the bunny won again once the
-// loop finished rendering). Flip to false to restore loop > anim-sheet > idle >
-// still > CSS once the generated art is good enough to be the default.
-const PREFER_CSS_CREATURE = true
+// Kids suite S6 (2026-10-14): the CSS blob is retired. The creature is the design drawn on
+// the device (creature3d) or its snapshot, on every surface; this flag stays exported and
+// false so the old blob default cannot quietly come back (tested).
+export const PREFER_CSS_CREATURE = false
 
 // KNOWLEDGE MODEL: this creature is not fed food — it is fed knowledge.
 // "hunger" is its appetite to learn; the Teach flow (Mind section) sates it.
@@ -148,8 +143,7 @@ export default function SpritePanel({ apiBase = '/api/sprite', extraHeaders: ext
   const prevStage = useRef<string | null>(null)
   const prevIntellect = useRef<number | null>(null)
   const artPumping = useRef(false)
-  const artImgRef = useRef<HTMLImageElement | null>(null)
-  const blinkTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [snapshotKey, setSnapshotKey] = useState<string | null>(null)
   const audioCtxRef = useRef<AudioContext | null>(null)
   const bubbleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const whisperTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -355,7 +349,17 @@ export default function SpritePanel({ apiBase = '/api/sprite', extraHeaders: ext
   const whisperRef = useRef(handleFetchWhisper)
   whisperRef.current = handleFetchWhisper
 
+  const fetchSnapshot = useCallback(async () => {
+    try {
+      const r = await fetch(`${apiBase}/me/snapshot`, { headers: extraHeaders })
+      if (!r.ok) return
+      const j = await r.json()
+      if (typeof j?.key === 'string' && SNAPSHOT_KEY_RE.test(j.key)) setSnapshotKey(j.key)
+    } catch { /* the live creature or "waking up" still shows */ }
+  }, [apiBase, extraHeaders])
+
   useEffect(() => {
+    fetchSnapshot()
     fetchStatus(); fetchAppearance()
     const statusTimer = setInterval(() => { if (!document.hidden) fetchStatus() }, 60_000)
     const artTimer = setInterval(() => { if (!document.hidden) fetchAppearance() }, 300_000)
@@ -377,24 +381,6 @@ export default function SpritePanel({ apiBase = '/api/sprite', extraHeaders: ext
     }
   }, [fetchStatus, fetchAppearance])
 
-  // Blink flipbook: open-eyes ↔ blink still on a human-ish cadence.
-  useEffect(() => {
-    if (blinkTimer.current) { clearTimeout(blinkTimer.current); blinkTimer.current = null }
-    const img = artImgRef.current
-    const blinkSrc = img?.dataset.blink
-    if (!img || !blinkSrc) return
-    const open = img.src
-    const preload = new Image(); preload.src = blinkSrc
-    const cycle = () => {
-      const el = artImgRef.current
-      if (!el) return
-      el.src = blinkSrc
-      setTimeout(() => { if (artImgRef.current) artImgRef.current.src = open }, 130)
-      blinkTimer.current = setTimeout(cycle, 1800 + Math.random() * 2600)
-    }
-    blinkTimer.current = setTimeout(cycle, 1200)
-    return () => { if (blinkTimer.current) clearTimeout(blinkTimer.current) }
-  }, [appearance, sprite?.mood_label, sprite?.stage])
 
   const doPost = useCallback(async (path: string, tag: string, body?: object) => {
     setBusy(tag)
@@ -579,7 +565,7 @@ export default function SpritePanel({ apiBase = '/api/sprite', extraHeaders: ext
     return (
       <div style={{ padding: '2rem', maxWidth: 480, margin: '0 auto', textAlign: 'center' }}>
         <SpriteKeyframes />
-        <div style={{ fontSize: '5rem', animation: 'sprite-wobble 2.5s ease-in-out infinite' }}>🥚</div>
+        <div aria-hidden data-testid="hatch-light" style={{ margin: '0 auto', width: 96, height: 120, borderRadius: '50% 50% 46% 46% / 58% 58% 42% 42%', background: 'radial-gradient(ellipse at 38% 30%, #ffffff 0%, #bfefff 40%, #7c6cf6 100%)', boxShadow: '0 0 40px #8fe3ff88', animation: 'sprite-wobble 2.5s ease-in-out infinite' }} />
         <h2 style={{ color: 'var(--text-primary)', margin: '1rem 0 0.5rem' }}>Hatch your Sprite</h2>
         <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
           A tiny companion that lives in your workspace. It doesn&apos;t eat food — it
@@ -605,7 +591,7 @@ export default function SpritePanel({ apiBase = '/api/sprite', extraHeaders: ext
 
   if (needsAuth) {
     return <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)', lineHeight: 1.6 }}>
-      <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>🥚</div>
+      <div aria-hidden style={{ margin: '0 auto 0.5rem', width: 40, height: 50, borderRadius: '50% 50% 46% 46% / 58% 58% 42% 42%', background: 'radial-gradient(ellipse at 38% 30%, #ffffff 0%, #bfefff 40%, #7c6cf6 100%)', boxShadow: '0 0 18px #8fe3ff66' }} />
       <div style={{ color: 'var(--text)', fontWeight: 600, marginBottom: '0.35rem' }}>
         Your sprite is waiting on an account.
       </div>
@@ -623,11 +609,6 @@ export default function SpritePanel({ apiBase = '/api/sprite', extraHeaders: ext
   }
 
   const theme = MOOD_THEME[sprite.mood_label] ?? MOOD_THEME.content
-  const moodKey = sprite.dormant ? 'content' : sprite.mood_label
-  const loop = appearance?.assets?.[`${sprite.stage}/${sprite.form}/loop`]
-  const still = appearance?.assets?.[`${sprite.stage}/${sprite.form}/${moodKey}`]
-  const blink = appearance?.assets?.[`${sprite.stage}/${sprite.form}/blink`]
-  const idle = appearance?.assets?.[`${sprite.stage}/${sprite.form}/idle`]
   const pendingCount = appearance
     ? Object.values(appearance.assets).filter((a: any) => a.status !== 'ready').length
     : null
@@ -715,11 +696,7 @@ export default function SpritePanel({ apiBase = '/api/sprite', extraHeaders: ext
           opacity: sprite.behavior?.action === 'nap' ? 0.8 : 1,
           transition: 'transform 6s ease-in-out, opacity 1.5s',
         }}>
-          <CreatureView
-            sprite={sprite} loop={loop} still={still} blink={blink} idle={idle}
-            theme={theme} apiBase={apiBase} reaction={reaction} artImgRef={artImgRef}
-            onPetClick={handlePet} appearance={appearance}
-          />
+          <CreatureView sprite={sprite} snapshot={snapshotKey} theme={theme} apiBase={apiBase} reaction={reaction} onPetClick={handlePet} />
         </div>
         {sprite.behavior?.action === 'nap' && !sprite.dormant && (
           <div aria-label={`${sprite.name} is napping`} style={{
@@ -1049,197 +1026,30 @@ export default function SpritePanel({ apiBase = '/api/sprite', extraHeaders: ext
   )
 }
 
-/** Creature renderer — looping WebP > live CSS blob > (legacy) mood anim/idle/still.
- * The transparent looping WebP is the primary "alive" render; when it isn't ready
- * yet, PREFER_CSS_CREATURE shows the animated blob rather than the janky flipbook. */
-function CreatureView({ sprite, loop, still, blink, idle, theme, apiBase, reaction, artImgRef, onPetClick, appearance }: {
+/** The creature: the host's live 3D Sprite (drawn from its design), else the device's
+ *  snapshot of that design, else "waking up". The mood lives in the aura around it. */
+function CreatureView({ sprite, snapshot, theme, apiBase, reaction, onPetClick }: {
   sprite: SpriteStatus
-  loop: AssetEntry | undefined
-  still: AssetEntry | undefined
-  blink: AssetEntry | undefined
-  idle: AssetEntry | undefined
+  snapshot: string | null
   theme: { aura: string; face: string; speed: string }
   apiBase: string
   reaction: string | null
-  artImgRef: React.MutableRefObject<HTMLImageElement | null>
   onPetClick: (e: React.MouseEvent) => void
-  appearance: Appearance | null
 }) {
-  const sheetRef = useRef<HTMLDivElement | null>(null)
-  const scale = STAGE_SCALE[sprite.stage] ?? 1
-  const expressive = ['joyful', 'grumpy', 'sad'].includes(sprite.mood_label)
-  const wrapAnim = sprite.dormant
-    ? 'none'
-    : reaction === 'bounce' ? 'sprite-bounce 0.8s ease-out'
-    : reaction === 'shiver' ? 'sprite-shiver 0.5s ease-in-out 2'
-    : `sprite-float ${theme.speed} ease-in-out infinite`
-
-  // TOP TIER: the looping transparent WebP is the real animation — a smooth WAN
-  // i2v clip with alpha that floats over the UI. When it's ready it would beat
-  // everything (including the CSS blob), so it is gated off while
-  // PREFER_CSS_CREATURE — the animated blob is the default until the generated
-  // art animates well enough to win on its own. The wrapper still carries the
-  // float + reaction so pet/bounce/shiver read through. Renders as a plain
-  // animated <img>.
-  const loopReady = loop?.status === 'ready'
-
-  // F6: Check for mood animation sheet (preference order: anim > idle > still+blink > CSS)
-  // Gated off while PREFER_CSS_CREATURE — the blob wins until generated art animates well.
-  const moodAnimKey = `${sprite.stage}/${sprite.form}/anim-${sprite.mood_label}`
-  const moodAnim = appearance?.assets?.[moodAnimKey]
-  let sheetToUse: { type: string; asset: AssetEntry } | null = null
-  if (!PREFER_CSS_CREATURE) {
-    if (moodAnim?.status === 'ready') {
-      sheetToUse = { type: 'mood-anim', asset: moodAnim }
-    } else if (idle?.status === 'ready' && !(expressive && still?.status === 'ready')) {
-      sheetToUse = { type: 'idle', asset: idle }
-    }
-  }
-
-  // Sheet frame stepper (frame count = width / height; single-row strip, 8-frame standard size = 128px cells).
-  useEffect(() => {
-    const el = sheetRef.current
-    if (!sheetToUse || !el) return
-    const src = `${apiBase}/assets/${sheetToUse.asset.hash}`
-    const img = new Image()
-    let timer: ReturnType<typeof setInterval> | null = null
-    img.onload = () => {
-      const frames = Math.max(1, Math.round(img.width / img.height))
-      const size = 256
-      el.style.backgroundImage = `url(${src})`
-      el.style.backgroundSize = `${frames * size}px ${size}px`
-      let f = 0
-      timer = setInterval(() => {
-        f = (f + 1) % frames
-        el.style.backgroundPositionX = `-${f * size}px`
-      }, 125)
-    }
-    img.src = src
-    return () => { if (timer) clearInterval(timer) }
-  }, [sheetToUse, apiBase])
-
-  // TOP TIER: looping transparent WebP (the real WAN i2v animation, alpha-matted).
-  // Skipped while PREFER_CSS_CREATURE — the animated blob is the default.
-  if (loopReady && loop && !PREFER_CSS_CREATURE) {
-    return (
-      <div onClick={onPetClick} style={{ animation: wrapAnim, transform: `scale(${scale})`, cursor: 'pointer' }}>
-        <img
-          src={`${apiBase}/assets/${loop.hash}`}
-          alt={sprite.name}
-          style={{
-            height: 260, width: 'auto', display: 'block',
-            filter: `drop-shadow(0 0 30px ${theme.aura}66)`,
-          }}
-        />
-      </div>
-    )
-  }
-
-  if (sheetToUse) {
-    return (
-      <div onClick={onPetClick} style={{ animation: wrapAnim, scale: String(scale), cursor: 'pointer' }}>
-        <div ref={sheetRef} style={{
-          width: 256, height: 256, backgroundRepeat: 'no-repeat',
-          filter: `drop-shadow(0 0 30px ${theme.aura}66)`,
-        }} />
-      </div>
-    )
-  }
-
-  if (!PREFER_CSS_CREATURE && still?.status === 'ready') {
-    return (
-      <div onClick={onPetClick} style={{ animation: wrapAnim, position: 'relative', cursor: 'pointer' }}>
-        <img
-          ref={el => { artImgRef.current = el }}
-          src={`${apiBase}/assets/${still.hash}`}
-          // Blink flipbook disabled pending inpaint-based blink frames: SDXL
-          // same-seed "eyes closed" variants drift the pose (live-verified
-          // 2026-07-08) and read as a glitch. Wire data-blink to re-enable.
-          data-blink={undefined}
-          alt={sprite.name}
-          style={{
-            height: 280 * scale, animation: 'sprite-artlife 4.2s ease-in-out infinite',
-            filter: `drop-shadow(0 0 30px ${theme.aura}66)`,
-            cursor: 'pointer',
-          }}
-        />
-        {sprite.mood_label === 'joyful' && <>
-          <span style={sparkStyle(-6, -20)}>✨</span>
-          <span style={{ ...sparkStyle(undefined, undefined, 10, -22), animationDelay: '.7s' }}>✨</span>
-        </>}
-        {(sprite.mood_label === 'sleepy' || sprite.dormant) &&
-          <span style={{ position: 'absolute', top: -14, right: -34, animation: 'sprite-float 2s ease-in-out infinite' }}>💤</span>}
-      </div>
-    )
-  }
-
-  // Live CSS creature — always available, mood-driven.
-  if (sprite.stage === 'egg') {
-    // A styled speckled egg (not the bare 🥚 glyph, which read as broken while
-    // the real art renders). Glossy shell, mood-tinted, faint glowing crack.
-    const ew = 116 * scale
-    const speckles: [number, number, number][] = [
-      [32, 40, 7], [60, 28, 5], [72, 56, 6], [42, 66, 5], [26, 58, 4], [66, 74, 4],
-    ]
-    return (
-      <div onClick={onPetClick} style={{
-        animation: sprite.dormant ? 'none' : 'sprite-wobble 2.6s ease-in-out infinite',
-        filter: `drop-shadow(0 0 26px ${theme.aura}55)`,
-        cursor: 'pointer',
-      }}>
-        <div style={{
-          width: ew, height: ew * 1.32, position: 'relative',
-          borderRadius: '50% 50% 50% 50% / 60% 60% 40% 40%',
-          background: `radial-gradient(ellipse at 38% 30%, #ffffff 0%, ${theme.aura}dd 44%, ${theme.aura}99 100%)`,
-          boxShadow: `inset -10px -14px 26px ${theme.aura}55, inset 8px 10px 22px #ffffff88`,
-        }}>
-          {speckles.map(([l, t, r], i) => (
-            <span key={i} style={{
-              position: 'absolute', left: `${l}%`, top: `${t}%`,
-              width: r, height: r, borderRadius: '50%', background: '#ffffffcc',
-            }} />
-          ))}
-          <span style={{
-            position: 'absolute', left: '47%', top: '28%', width: 2, height: '36%',
-            background: `linear-gradient(#ffffff, ${theme.aura})`, boxShadow: '0 0 8px #fff',
-            transform: 'rotate(13deg)', animation: sprite.dormant ? 'none' : 'sprite-think 2.4s infinite',
-          }} />
-        </div>
-      </div>
-    )
-  }
-  const sleepy = sprite.mood_label === 'sleepy' || sprite.dormant
+  const Renderer = useContext(SpriteRendererContext)
+  const [n, setN] = useState(0)
+  useEffect(() => { if (reaction) setN((x) => x + 1) }, [reaction])
+  const card = { name: sprite.name, species: sprite.species || null, stage: sprite.stage, snapshot }
+  const action = sprite.dormant || sprite.mood_label === 'sleepy' ? 'sleepy'
+    : reaction === 'bounce' ? 'happy' : reaction === 'shiver' ? 'wiggle' : 'idle'
   return (
-    <div onClick={onPetClick} style={{ animation: wrapAnim, transform: `scale(${scale})`, cursor: 'pointer' }}>
-      <div style={{
-        width: 150, height: 128, position: 'relative',
-        background: `radial-gradient(circle at 35% 30%, ${theme.aura}cc, ${theme.aura}55 70%)`,
-        borderRadius: '46% 54% 52% 48% / 58% 56% 44% 42%',
-        boxShadow: `0 0 44px ${theme.aura}44, inset -8px -10px 24px rgba(0,0,0,0.25)`,
-        animation: sprite.dormant ? 'none' : 'sprite-breathe 3s ease-in-out infinite',
-      }}>
-        <div style={{ position: 'absolute', top: 44, left: 36, display: 'flex', gap: 38 }}>
-          {[0, 1].map(i => (
-            <div key={i} style={{
-              width: 15, height: sleepy ? 3 : 19,
-              borderRadius: '50%', background: '#0A1628', transition: 'height .4s',
-              animation: sprite.dormant ? 'none' : 'sprite-blink 4.5s infinite',
-            }} />
-          ))}
-        </div>
-        <div style={{
-          position: 'absolute', top: 78, left: '50%', transform: 'translateX(-50%)',
-          color: '#0A1628', fontSize: 22, fontWeight: 700, lineHeight: 1, transition: 'all .4s',
-        }}>
-          {theme.face}
-        </div>
-      </div>
-      {sleepy && (
-        <div style={{
-          position: 'absolute', marginTop: -100, marginLeft: 130,
-          color: 'var(--text-muted)', animation: 'sprite-float 2s ease-in-out infinite',
-        }}>💤</div>
-      )}
+    <div onClick={onPetClick} data-testid="sprite-creature-view" data-look={Renderer ? 'live' : snapshot ? 'snapshot' : 'waking'}
+      style={{ cursor: 'pointer', width: 280, height: 280, display: 'grid', placeItems: 'center', filter: `drop-shadow(0 0 28px ${theme.aura}55)` }}>
+      {Renderer
+        ? <Renderer sprite={card} height={280} action={action} actionKey={n} label={sprite.name} />
+        : snapshot
+          ? <SpriteSnapshot sprite={card} size={260} apiBase={apiBase} breathe={!sprite.dormant} />
+          : <SpriteWaking size={180} label={sprite.name} />}
     </div>
   )
 }
@@ -1271,13 +1081,6 @@ function SpriteKeyframes() {
       @keyframes sprite-heart-float { 0% { transform: scale(1) translateY(0); opacity: 1 } 100% { transform: scale(0.2) translateY(-60px); opacity: 0 } }
     `}</style>
   )
-}
-
-function sparkStyle(top?: number, left?: number, bottom?: number, right?: number): React.CSSProperties {
-  return {
-    position: 'absolute', top, left, bottom, right, fontSize: 15,
-    animation: 'sprite-think 1.6s infinite',
-  }
 }
 
 function inputStyle(): React.CSSProperties {

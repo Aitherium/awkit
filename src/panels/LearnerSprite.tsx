@@ -1,8 +1,10 @@
 /**
  * Aither Learn sprite pieces (gap 6).
  *
- * - KidSpriteCard: the child's own learning buddy on the /learn home. Name, level and
- *   the latest thing it learned. Never needs, hunger, mood numbers, streaks or "I
+ * - KidSpriteCard: the child's own learning buddy on the /learn home: their OWN Sprite
+ *   (SpriteFace: the host's live 3D creature, else the snapshot their device rendered of
+ *   their design; never an emoji or a stand-in), its name, level and the latest thing it
+ *   learned. Never needs, hunger, mood numbers, streaks or "I
  *   missed you": the server keeps a child's sprite in learner mode (no decay, no guilt).
  * - LearnerSpriteButton / SpriteOfferCard: the guardian's "Hatch a sprite" action.
  *   POST /family/learners/{lid}/sprite is idempotent and the sprite is private. The
@@ -11,6 +13,7 @@
  */
 import { useState, type CSSProperties } from 'react'
 import { C, FONT_MONO, FONT_UI } from './learnTheme'
+import { SpriteFace } from './spriteLook'
 
 export interface KidSprite {
   name?: string
@@ -22,21 +25,13 @@ export interface KidSprite {
   latest_learned?: string | null
   /** false = an ordinary sprite the child already had (decay, whispers); true = learner buddy. */
   learner_mode?: boolean
+  /** AitherSprite snapshot key: the PNG the child's device rendered of their design. */
+  snapshot?: string | null
 }
 
-const SPECIES_EMOJI: Record<string, string> = {
-  sprout: '🌱', fox: '🦊', owl: '🦉', bunny: '🐰', dragon: '🐲', turtle: '🐢', cat: '🐱', otter: '🦦',
-}
-
-export function spriteEmoji(sprite?: KidSprite | null): string {
-  if (!sprite) return '🌱'
-  if (sprite.stage === 'egg') return '🥚'
-  return SPECIES_EMOJI[String(sprite.species || '')] ?? '🌱'
-}
-
-/** The kid's sprite on the home screen: the hero. Name, level and the latest thing
- *  it learned, in a soft accent glow. Renders nothing without a sprite. `face={false}`
- *  leaves the emoji out where the page draws the Sprite's body itself (My Sprite). */
+/** The kid's sprite on the home screen: the hero. Their own creature, name, level and the
+ *  latest thing it learned, in a soft accent glow. Renders nothing without a sprite.
+ *  `face={false}` leaves the creature out where the page draws it itself (My Sprite). */
 export function KidSpriteCard({ sprite, face = true }: { sprite?: KidSprite | null; face?: boolean }) {
   if (!sprite || !sprite.name) return null
   const level = Math.max(1, Number(sprite.level ?? 1))
@@ -44,11 +39,10 @@ export function KidSpriteCard({ sprite, face = true }: { sprite?: KidSprite | nu
     <div data-testid="kid-sprite-card" style={{
       display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, width: '100%', textAlign: 'center',
     }}>
-      {face ? <div aria-hidden className="al-glow" style={{
-        width: 148, height: 148, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 76, lineHeight: 1, background: C.accentWash, border: `1px solid ${C.hairline}`,
-        boxShadow: `0 0 48px ${C.accentGlow}`,
-      }}>{spriteEmoji(sprite)}</div> : null}
+      {face ? <div className="al-glow" data-testid="kid-sprite-face" style={{
+        width: 168, height: 168, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: C.accentWash, border: `1px solid ${C.hairline}`, boxShadow: `0 0 48px ${C.accentGlow}`, overflow: 'hidden',
+      }}><SpriteFace sprite={sprite} size={160} live /></div> : null}
       <div style={{ fontSize: 26, fontWeight: 500, letterSpacing: '-0.02em', color: C.ink }}>{sprite.name}</div>
       <div data-testid="kid-sprite-level" style={{
         fontFamily: FONT_MONO, fontSize: 14, letterSpacing: '.18em', textTransform: 'lowercase', color: C.dim,
@@ -134,9 +128,10 @@ export function SpriteOfferCard({ call, lid, name, onClose }: {
       display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', fontFamily: FONT_UI,
     }}>
       <div aria-hidden className="al-glow" style={{
-        width: 52, height: 52, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 28, background: C.accentWash, boxShadow: `0 0 24px ${C.accentGlow}`, flexShrink: 0,
-      }}>{spriteEmoji(null)}</div>
+        width: 52, height: 52, borderRadius: '50%', flexShrink: 0,
+        background: `radial-gradient(circle at 38% 32%, ${C.accentWash}, ${C.accentGlow} 100%)`,
+        boxShadow: `0 0 24px ${C.accentGlow}`,
+      }} />
       <div style={{ flex: '1 1 220px', fontSize: 15, lineHeight: 1.5 }}>
         Give {name} a learning sprite? It is private to {name}, learns each skill they master, and
         never gets hungry, sad or sulky.

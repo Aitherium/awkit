@@ -29,7 +29,8 @@ import TutorProgressCard from './TutorProgressCard'
 import LearnerGuardCard from './LearnerGuardCard'
 import LearnVoiceCard from './LearnVoiceCard'
 import CoGuardiansCard from './CoGuardiansCard'
-import { LearnerSpriteButton, SpriteOfferCard, spriteEmoji, type KidSprite } from './LearnerSprite'
+import { LearnerSpriteButton, SpriteOfferCard, type KidSprite } from './LearnerSprite'
+import { SpriteFace } from './spriteLook'
 import { C, EASE, FONT_MONO, FONT_UI, LEARN_CSS, LearnModeSwitch, learnVars, useLearnMode } from './learnTheme'
 import { CheckRow, Field, SelectBox, Sheet, SheetHeading, Skel, fieldBox, help, mono, primary, quiet } from './learnParts'
 
@@ -287,10 +288,10 @@ function Avatar({ sprite, name }: { sprite?: KidSprite | null; name: string }) {
     <div aria-hidden style={{
       width: 64, height: 64, flexShrink: 0, borderRadius: '50%', display: 'grid', placeItems: 'center',
       background: C.raise, border: `1px solid ${has ? C.accent : C.hairline}`,
-      boxShadow: has ? `0 0 28px ${C.accentGlow}` : 'none', color: C.dim,
+      boxShadow: has ? `0 0 28px ${C.accentGlow}` : 'none', color: C.dim, overflow: 'hidden',
       font: has ? `400 32px/1 ${FONT_UI}` : `400 22px/1 ${FONT_MONO}`,
     }}>
-      {has ? spriteEmoji(sprite) : (firstName(name)[0] || '?').toLowerCase()}
+      {has ? <SpriteFace sprite={sprite} size={60} /> : (firstName(name)[0] || '?').toLowerCase()}
     </div>
   )
 }
