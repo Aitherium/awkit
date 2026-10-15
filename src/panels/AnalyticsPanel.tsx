@@ -14,10 +14,11 @@ interface RevenuePoint {
   amount: number
 }
 
+/** Each count is optional: a backend that does not track one omits it and the card is not drawn. */
 interface EngagementData {
-  chat_sessions: number
-  form_submissions: number
-  bookings: number
+  chat_sessions?: number
+  form_submissions?: number
+  bookings?: number
 }
 
 interface AgentMetric {
@@ -33,13 +34,26 @@ interface FunnelStage {
   rate?: number
 }
 
+/** The five analytics views. Revenue and funnel are commerce-shaped. */
+export type AnalyticsTab = 'overview' | 'revenue' | 'engagement' | 'agents' | 'funnel'
+
+export const ANALYTICS_TABS: readonly AnalyticsTab[] = ['overview', 'revenue', 'engagement', 'agents', 'funnel']
+
 export interface AnalyticsPanelProps {
   apiBase?: string
+  /**
+   * Which views to fetch and render. Omitted = all five (unchanged behaviour). A
+   * workspace without the commerce domain passes ['overview','engagement','agents']
+   * so Revenue and Funnel are neither requested nor shown.
+   */
+  tabs?: readonly AnalyticsTab[]
 }
 
 type Period = '7d' | '30d' | '90d' | '12m'
 
-export default function AnalyticsPanel({ apiBase = '/api/analytics' }: AnalyticsPanelProps) {
+export default function AnalyticsPanel({ apiBase = '/api/analytics', tabs }: AnalyticsPanelProps) {
+  const enabledKey = (tabs && tabs.length ? ANALYTICS_TABS.filter(t => tabs.includes(t)) : ANALYTICS_TABS).join(',')
+  const show = useCallback((t: AnalyticsTab) => enabledKey.split(',').includes(t), [enabledKey])
   const [period, setPeriod] = useState<Period>('30d')
   const [loading, setLoading] = useState(true)
 
@@ -53,12 +67,11 @@ export default function AnalyticsPanel({ apiBase = '/api/analytics' }: Analytics
     setLoading(true)
     try {
       const qs = `?period=${period}`
+      const get = (t: AnalyticsTab) => show(t)
+        ? fetch(`${apiBase}/${t}${qs}`).then(r => r.ok ? r.json() : null)
+        : Promise.resolve(null)
       const [overviewRes, revenueRes, engagementRes, agentsRes, funnelRes] = await Promise.all([
-        fetch(`${apiBase}/overview${qs}`).then(r => r.ok ? r.json() : null),
-        fetch(`${apiBase}/revenue${qs}`).then(r => r.ok ? r.json() : null),
-        fetch(`${apiBase}/engagement${qs}`).then(r => r.ok ? r.json() : null),
-        fetch(`${apiBase}/agents${qs}`).then(r => r.ok ? r.json() : null),
-        fetch(`${apiBase}/funnel${qs}`).then(r => r.ok ? r.json() : null),
+        get('overview'), get('revenue'), get('engagement'), get('agents'), get('funnel'),
       ])
 
       if (overviewRes?.data?.metrics) {
@@ -88,7 +101,7 @@ export default function AnalyticsPanel({ apiBase = '/api/analytics' }: Analytics
       console.error('Analytics fetch error:', e)
     }
     setLoading(false)
-  }, [apiBase, period])
+  }, [apiBase, period, show])
 
   useEffect(() => { fetchData() }, [fetchData])
 
@@ -145,8 +158,8 @@ export default function AnalyticsPanel({ apiBase = '/api/analytics' }: Analytics
       </div>
 
       {/* Overview Cards */}
-      {overview.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(overview.length, 4)}, 1fr)`, gap: 12, marginBottom: '1.5rem' }}>
+      {show('overview') && overview.length > 0 && (
+        <div data-analytics-tab="overview" style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(overview.length, 4)}, 1fr)`, gap: 12, marginBottom: '1.5rem' }}>
           {overview.map((metric, i) => {
             const arrow = trendArrow(metric.trend)
             return (
@@ -167,8 +180,8 @@ export default function AnalyticsPanel({ apiBase = '/api/analytics' }: Analytics
       )}
 
       {/* Revenue Chart */}
-      {revenue.length > 0 && (
-        <div style={{ ...cardStyle, marginBottom: '1.5rem' }}>
+      {show('revenue') && revenue.length > 0 && (
+        <div data-analytics-tab="revenue" style={{ ...cardStyle, marginBottom: '1.5rem' }}>
           <div style={sectionTitle}>Revenue</div>
           <div style={{
             display: 'flex', alignItems: 'flex-end', gap: 2, height: 140,
@@ -205,15 +218,15 @@ export default function AnalyticsPanel({ apiBase = '/api/analytics' }: Analytics
       )}
 
       {/* Engagement Section */}
-      {engagement && (
-        <div style={{ ...cardStyle, marginBottom: '1.5rem' }}>
+      {show('engagement') && engagement && (
+        <div data-analytics-tab="engagement" style={{ ...cardStyle, marginBottom: '1.5rem' }}>
           <div style={sectionTitle}>Engagement</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
             {[
               { label: 'Chat Sessions', value: engagement.chat_sessions },
               { label: 'Form Submissions', value: engagement.form_submissions },
               { label: 'Bookings', value: engagement.bookings },
-            ].map((item, i) => (
+            ].filter((item): item is { label: string; value: number } => typeof item.value === 'number').map((item, i) => (
               <div key={i} style={{
                 padding: '12px', borderRadius: 6, background: 'var(--bg-deep)',
                 textAlign: 'center',
@@ -231,8 +244,8 @@ export default function AnalyticsPanel({ apiBase = '/api/analytics' }: Analytics
       )}
 
       {/* Agent Performance Table */}
-      {agents.length > 0 && (
-        <div style={{ ...cardStyle, marginBottom: '1.5rem' }}>
+      {show('agents') && agents.length > 0 && (
+        <div data-analytics-tab="agents" style={{ ...cardStyle, marginBottom: '1.5rem' }}>
           <div style={sectionTitle}>Agent Performance</div>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
             <thead>
@@ -268,8 +281,8 @@ export default function AnalyticsPanel({ apiBase = '/api/analytics' }: Analytics
       )}
 
       {/* Conversion Funnel */}
-      {funnel.length > 0 && (
-        <div style={cardStyle}>
+      {show('funnel') && funnel.length > 0 && (
+        <div data-analytics-tab="funnel" style={cardStyle}>
           <div style={sectionTitle}>Conversion Funnel</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {funnel.map((stage, i) => {

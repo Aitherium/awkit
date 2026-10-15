@@ -87,17 +87,21 @@ export default function ProtonSuitePanel({
     setSaving(true)
     setSetupError(null)
     try {
-      // Store each credential separately via workspace secrets API
+      // Store each credential separately via workspace secrets API. A key that already
+      // exists answers 409 on create; re-setup then replaces its value with PUT.
       const headers = { 'Content-Type': 'application/json' }
+      const upsert = async (key: string, value: string, description: string) => {
+        const created = await fetch(`${apiBase}/api/secrets`, {
+          method: 'POST', headers, body: JSON.stringify({ key, value, description }),
+        })
+        if (created.status !== 409) return created
+        return fetch(`${apiBase}/api/secrets/${encodeURIComponent(key)}`, {
+          method: 'PUT', headers, body: JSON.stringify({ value, description }),
+        })
+      }
       const [r1, r2] = await Promise.all([
-        fetch(`${apiBase}/api/secrets`, {
-          method: 'POST', headers,
-          body: JSON.stringify({ key: 'PROTON_EMAIL', value: email, description: 'Proton account email' }),
-        }),
-        fetch(`${apiBase}/api/secrets`, {
-          method: 'POST', headers,
-          body: JSON.stringify({ key: 'PROTON_BRIDGE_PASSWORD', value: password, description: 'Proton Bridge app password' }),
-        }),
+        upsert('PROTON_EMAIL', email, 'Proton account email'),
+        upsert('PROTON_BRIDGE_PASSWORD', password, 'Proton Bridge app password'),
       ])
       if (!r1.ok || !r2.ok) throw new Error('Failed to save credentials')
       setSetupMode(false)

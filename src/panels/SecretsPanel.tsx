@@ -123,10 +123,11 @@ export default function SecretsPanel({ apiBase = '/api/secrets' }: SecretsPanelP
       return
     }
     try {
-      const resp = await fetch(`${apiBase}/${encodeURIComponent(key)}`)
+      // GET /{key} returns metadata and a masked hint only; reveal is an audited POST.
+      const resp = await fetch(`${apiBase}/${encodeURIComponent(key)}/reveal`, { method: 'POST' })
       if (resp.ok) {
         const data = await resp.json()
-        setRevealedValue(data?.data?.value ?? data?.value ?? '***')
+        setRevealedValue(data?.value ?? '***')
         setRevealedKey(key)
       }
     } catch (e) {
