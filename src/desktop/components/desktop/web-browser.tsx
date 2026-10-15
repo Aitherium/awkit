@@ -56,7 +56,7 @@ import React, { useState, useCallback, useRef, useEffect } from 'react'
 import {
   Globe, ArrowLeft, ArrowRight, RotateCw, Home, Star, Plus, X,
   Search, Lock, Loader2, AlertTriangle, Keyboard, Bookmark,
-  ChevronUp, ChevronDown, ExternalLink, Link2, LogIn
+  ChevronUp, ChevronDown, ExternalLink, Link2, LogIn, Monitor, Download
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -113,6 +113,16 @@ interface BrowserTab {
   authRequired: boolean
   /** The URL the desk's native Aither Browser opened for this tab, or null. */
   deskOpened: string | null
+  /**
+   * The URL this tab wants to show that can only open on the user's OWN computer
+   * (Aither Desk), or null. Set instead of opening a remote session when the host
+   * says this user browses locally, and when the remote session refused (403).
+   */
+  needsLocal: string | null
+  /** Why `needsLocal` was set, in words (a desk refusal, an RBAC sentence), or null. */
+  localReason: string | null
+  /** The `desk://browse` hand-off for `needsLocal`: not tried, waiting, taken, or no answer. */
+  handoff: 'idle' | 'pending' | 'opened' | 'no-answer'
   view: 'idle' | 'page' | 'results'
   results: SearchResult[]
   query: string
@@ -242,6 +252,24 @@ export function hasDeskBrowser(): boolean {
   return document.documentElement?.getAttribute('data-aither-host') === 'desk'
 }
 
+/**
+ * The hand-off from a PLAIN web browser to Aither Desk on the same computer: the
+ * `desk://` scheme Desk registers (protocol-actions.cjs `browse`). It opens `url` in
+ * Desk's own Aither Browser window -- a real local browser, no platform session.
+ * http(s) only; anything else yields null and is never handed off.
+ */
+export function deskBrowseLink(url: string): string | null {
+  if (!/^https?:\/\//i.test(url)) return null
+  return `desk://browse?url=${encodeURIComponent(url)}`
+}
+
+/**
+ * A web page cannot ask whether a protocol handler exists. When one does, the OS
+ * hands focus to it and this window blurs; when none does, nothing happens. So a
+ * blur inside this window means Desk took the link, and none means "install Desk".
+ */
+export const DESK_HANDOFF_WAIT_MS = 2000
+
 /** An old desk build has no `desk-browse` handler and never answers; we fall back after this. */
 export const DESK_BROWSE_TIMEOUT_MS = 2500
 
@@ -327,6 +355,9 @@ function newTabRecord(): BrowserTab {
     sessionLost: false,
     authRequired: false,
     deskOpened: null,
+    needsLocal: null,
+    localReason: null,
+    handoff: 'idle',
     view: 'idle',
     results: [],
     query: '',
@@ -343,6 +374,69 @@ function releaseSession(sessionId: string | null) {
       keepalive: true,
     }).catch(() => { /* teardown is best-effort; the server TTL is the backstop */ })
   } catch { /* same */ }
+}
+
+// ============================================================================
+// LOCAL: "Aither Browser runs on your computer"
+// ============================================================================
+
+/**
+ * What a user sees when a page can only open on their own computer: why, a
+ * `desk://browse` hand-off to Aither Desk (or a retry inside Desk), and where to
+ * get Desk. Never a status code -- the reason, when there is one, is a sentence.
+ */
+export function LocalBrowserPanel({ url, reason, handoff, inDesk, setupHref, onHandoff, onRetryDesk }: {
+  url: string
+  reason: string | null
+  handoff: BrowserTab['handoff']
+  inDesk: boolean
+  setupHref?: string
+  onHandoff: () => void
+  onRetryDesk: () => void
+}) {
+  const link = deskBrowseLink(url)
+  return (
+    <div data-testid="local-browser-panel">
+      <Monitor className="w-8 h-8 text-[#5EC9CC] mx-auto mb-2" />
+      <p className="text-zinc-200 text-sm font-medium">Aither Browser runs on your computer</p>
+      <p className="text-zinc-500 text-xs mt-1">
+        {inDesk
+          ? `Aither Desk opens ${hostLabel(url)} in its own browser on this machine.`
+          : `Open Aither Desk to see ${hostLabel(url)}. Pages open in Desk's own browser on this machine, with your own sign-ins, so nothing is browsed on our servers.`}
+      </p>
+      {reason && <p className="text-zinc-600 text-[11px] mt-2 break-words">{reason}</p>}
+      <div className="mt-3 flex items-center justify-center gap-2 flex-wrap">
+        {inDesk ? (
+          <button onClick={onRetryDesk}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-[#5EC9CC]/80 hover:bg-[#7AD6D8] text-white text-sm transition-colors">
+            <Monitor className="w-3.5 h-3.5" /> Try again in Desk
+          </button>
+        ) : link ? (
+          <a href={link} onClick={onHandoff}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-[#5EC9CC]/80 hover:bg-[#7AD6D8] text-white text-sm transition-colors">
+            <Monitor className="w-3.5 h-3.5" /> Open in Desk
+          </a>
+        ) : null}
+        {setupHref && (
+          <a href={setupHref} target="_blank" rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-sm transition-colors">
+            <Download className="w-3.5 h-3.5" /> Get Aither Desk
+          </a>
+        )}
+      </div>
+      {handoff === 'pending' && (
+        <p className="text-zinc-500 text-xs mt-2">Opening Aither Desk&hellip;</p>
+      )}
+      {handoff === 'opened' && (
+        <p className="text-zinc-400 text-xs mt-2">Desk took it: the page is open in Desk&apos;s Aither Browser.</p>
+      )}
+      {handoff === 'no-answer' && (
+        <p className="text-amber-300/90 text-xs mt-2">
+          Desk did not open. If it is not on this computer yet, {setupHref ? 'get it with the button above' : 'install Aither Desk'}, then try again.
+        </p>
+      )}
+    </div>
+  )
 }
 
 // ============================================================================
@@ -384,9 +478,20 @@ export interface BrowserSidebarContext {
     detectSpace: () => Promise<unknown>
 }
 
-export function WebBrowser({ className = '', renderSidebar }: {
+export function WebBrowser({ className = '', renderSidebar, localOnly = false, deskSetupHref }: {
     className?: string
     renderSidebar?: (ctx: BrowserSidebarContext) => React.ReactNode
+    /**
+     * This user browses on their OWN computer, never through the platform's remote
+     * session (owner decision 2026-10-14: workspace members get Aither Browser, run
+     * locally -- not riding on the platform). When true, NOTHING here calls
+     * `/api/browser-session`: inside Desk a URL opens in Desk's browser, on the
+     * plain web it is handed to Desk over `desk://browse`, and with neither the
+     * user gets the "runs on your computer" panel. The host decides who this is.
+     */
+    localOnly?: boolean
+    /** Where to get Aither Desk on this host (a tenant's `/setup-pc`). Omitted: no link. */
+    deskSetupHref?: string
 }) {
   const [tabs, setTabs] = useState<BrowserTab[]>(() => [newTabRecord()])
   const [activeTab, setActiveTab] = useState<string>('')
@@ -455,12 +560,26 @@ export function WebBrowser({ className = '', renderSidebar }: {
 
   // ── Session lifecycle ─────────────────────────────────────────────────
 
+  /** Show the "runs on your computer" panel for `url` -- never a remote session. */
+  const needLocal = useCallback((tabId: string, url: string, reason: string | null = null) => {
+    patch(tabId, {
+      loading: false, busy: null, error: null, sessionLost: false, authRequired: false,
+      deskOpened: null, sessionId: null, screenshot: null, view: 'idle',
+      url, title: hostLabel(url), needsLocal: url, localReason: reason, handoff: 'idle',
+    })
+    if (tabId === activeRef.current) setUrlInput(url)
+  }, [patch])
+
   const openSession = useCallback(async (tabId: string, url: string) => {
+    // Defence in depth: every path that could open a remote session (navigate,
+    // reload, reopen, retry) funnels through here, so a local-only user never
+    // reaches the platform session whichever button they press.
+    if (localOnly) { needLocal(tabId, url); return }
     const viewport = measureViewport()
     patch(tabId, {
       loading: true, busy: 'opening session', error: null, sessionLost: false,
-      authRequired: false, deskOpened: null, view: 'page', url, viewport, title: hostLabel(url),
-      screenshot: null,
+      authRequired: false, deskOpened: null, needsLocal: null, localReason: null,
+      view: 'page', url, viewport, title: hostLabel(url), screenshot: null,
     })
     if (tabId === activeRef.current) setUrlInput(url)
     const t0 = Date.now()
@@ -498,14 +617,18 @@ export function WebBrowser({ className = '', renderSidebar }: {
         const orphan = typeof data?.sessionId === 'string' && data.sessionId
           ? data.sessionId
           : null
+        if (res.status === 403 && !orphan) {
+          // Refused by the platform: this account browses on its own computer. The
+          // panel says so in words and offers Desk -- never a bare "HTTP 403".
+          needLocal(tabId, url, refusalText(data, res))
+          return
+        }
         patch(tabId, {
           sessionId: orphan, screenshot: null,
           loading: false, busy: null, latencyMs: Date.now() - t0,
           error: orphan
             ? `The session opened but its first view did not come back: ${detailOf(data, res)}`
-            : res.status === 403
-              ? refusalText(data, res)
-              : `Could not open a browser session: ${detailOf(data, res)}`,
+            : `Could not open a browser session: ${detailOf(data, res)}`,
         })
         return
       }
@@ -534,7 +657,7 @@ export function WebBrowser({ className = '', renderSidebar }: {
         error: `Could not open a browser session: ${errText(e)}`,
       })
     }
-  }, [measureViewport, patch])
+  }, [localOnly, measureViewport, needLocal, patch])
 
   /**
    * The marker probe, deliberately NOT routed through `act`.
@@ -702,7 +825,7 @@ export function WebBrowser({ className = '', renderSidebar }: {
   const runSearch = useCallback(async (tabId: string, query: string) => {
     patch(tabId, {
       loading: true, busy: 'searching', error: null, view: 'results',
-      query, results: [], title: query || 'Search',
+      query, results: [], title: query || 'Search', needsLocal: null, localReason: null,
     })
     const t0 = Date.now()
     try {
@@ -745,8 +868,8 @@ export function WebBrowser({ className = '', renderSidebar }: {
   const openViaDesk = useCallback(async (tabId: string, url: string) => {
     patch(tabId, {
       loading: true, busy: 'opening in Aither Browser', error: null, sessionLost: false,
-      authRequired: false, deskOpened: null, view: 'idle', url, title: hostLabel(url),
-      screenshot: null,
+      authRequired: false, deskOpened: null, needsLocal: null, localReason: null,
+      view: 'idle', url, title: hostLabel(url), screenshot: null,
     })
     const t0 = Date.now()
     const r = await openInDeskBrowser(url)
@@ -758,8 +881,36 @@ export function WebBrowser({ className = '', renderSidebar }: {
       if (tabId === activeRef.current) setUrlInput(r.url)
       return
     }
+    // A local-only user never falls back to the platform: the desk's own reason is
+    // shown with a retry and the setup link, so the failure is not silent.
+    if (localOnly) { needLocal(tabId, url, `Aither Desk did not open it: ${r.error}.`); return }
     await openSession(tabId, url)
-  }, [openSession, patch])
+  }, [localOnly, needLocal, openSession, patch])
+
+  /**
+   * The plain-web hand-off. The anchor's own `desk://browse` navigation does the
+   * launching (a user gesture, so the browser allows it); this only watches for
+   * the blur that means Desk took it, and otherwise points at the setup link.
+   */
+  const handoffRef = useRef<{ timer: ReturnType<typeof setTimeout> | null; onBlur: (() => void) | null }>(
+    { timer: null, onBlur: null }
+  )
+  const stopHandoff = useCallback(() => {
+    const h = handoffRef.current
+    if (h.timer) clearTimeout(h.timer)
+    if (h.onBlur && typeof window !== 'undefined') window.removeEventListener('blur', h.onBlur)
+    h.timer = null
+    h.onBlur = null
+  }, [])
+  const startHandoff = useCallback((tabId: string) => {
+    stopHandoff()
+    patch(tabId, { handoff: 'pending' })
+    const h = handoffRef.current
+    h.onBlur = () => { stopHandoff(); patch(tabId, { handoff: 'opened' }) }
+    window.addEventListener('blur', h.onBlur)
+    h.timer = setTimeout(() => { stopHandoff(); patch(tabId, { handoff: 'no-answer' }) }, DESK_HANDOFF_WAIT_MS)
+  }, [patch, stopHandoff])
+  useEffect(() => stopHandoff, [stopHandoff])
 
   const navigate = useCallback((raw: string, tabId: string = activeRef.current, remote = false) => {
     const url = asUrl(raw)
@@ -767,12 +918,13 @@ export function WebBrowser({ className = '', renderSidebar }: {
     setUrlInput(url)
     const t = getTab(tabId)
     if (!t || !t.sessionId) {
-      if (!remote && hasDeskBrowser()) { void openViaDesk(tabId, url); return }
+      if ((!remote || localOnly) && hasDeskBrowser()) { void openViaDesk(tabId, url); return }
+      if (localOnly) { needLocal(tabId, url); return }
       void openSession(tabId, url)
       return
     }
     void act(tabId, { action: 'goto', value: url }, `goto ${hostLabel(url)}`)
-  }, [act, getTab, openSession, openViaDesk, runSearch])
+  }, [act, getTab, localOnly, needLocal, openSession, openViaDesk, runSearch])
 
   const submitUrl = useCallback((e: React.FormEvent) => {
     e.preventDefault()
@@ -1151,6 +1303,16 @@ export function WebBrowser({ className = '', renderSidebar }: {
                   </button>
                   {/* the 401 path clears sessionId, so there is nothing to re-observe */}
                 </>
+              ) : tab.needsLocal ? (
+                <LocalBrowserPanel
+                  url={tab.needsLocal}
+                  reason={tab.localReason}
+                  handoff={tab.handoff}
+                  inDesk={hasDeskBrowser()}
+                  setupHref={deskSetupHref}
+                  onHandoff={() => startHandoff(tab.id)}
+                  onRetryDesk={() => navigate(tab.needsLocal || HOME_PAGE, tab.id)}
+                />
               ) : tab.deskOpened ? (
                 <>
                   <p className="text-zinc-200 text-sm font-medium">
@@ -1160,10 +1322,12 @@ export function WebBrowser({ className = '', renderSidebar }: {
                     This desktop runs inside Aither Desk, so the page opened in Desk&apos;s own
                     Aither Browser window, a real browser with no remote session.
                   </p>
-                  <button onClick={() => navigate(tab.deskOpened || HOME_PAGE, tab.id, true)}
-                    className="mt-3 px-3 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-sm transition-colors">
-                    Show it here instead
-                  </button>
+                  {!localOnly && (
+                    <button onClick={() => navigate(tab.deskOpened || HOME_PAGE, tab.id, true)}
+                      className="mt-3 px-3 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-sm transition-colors">
+                      Show it here instead
+                    </button>
+                  )}
                 </>
               ) : tab.sessionLost ? (
                 <>
@@ -1186,7 +1350,9 @@ export function WebBrowser({ className = '', renderSidebar }: {
                 <>
                   <p className="text-zinc-400 text-sm">No page open.</p>
                   <p className="text-zinc-600 text-xs mt-1">
-                    Enter a URL to start a remote browser session, or type anything else to search AitherSearch.
+                    {localOnly
+                      ? 'Enter a URL to open it in Aither Browser on your computer, or type anything else to search AitherSearch.'
+                      : 'Enter a URL to start a remote browser session, or type anything else to search AitherSearch.'}
                   </p>
                   <button onClick={() => navigate(HOME_PAGE)}
                     className="mt-3 px-3 py-1.5 rounded bg-[#5EC9CC]/80 hover:bg-[#7AD6D8] text-white text-sm transition-colors">
@@ -1235,7 +1401,9 @@ export function WebBrowser({ className = '', renderSidebar }: {
             ? `session ${tab.sessionId.slice(0, 8)} · ${tab.viewport.width}×${tab.viewport.height}`
             : tab.deskOpened
               ? 'opened in Desk’s Aither Browser'
-              : 'remote session not started'}
+              : localOnly || tab.needsLocal
+                ? 'runs on your computer'
+                : 'remote session not started'}
         </span>
 
         {tab.busy && <span className="text-[#5EC9CC] shrink-0">{tab.busy}&hellip;</span>}

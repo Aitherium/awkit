@@ -16,7 +16,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 jest.mock('sonner', () => ({ toast: { info: jest.fn(), success: jest.fn() } }))
 
-import { WebBrowser, openInDeskBrowser, refusalText } from '../web-browser'
+import { DESK_HANDOFF_WAIT_MS, WebBrowser, deskBrowseLink, openInDeskBrowser, refusalText } from '../web-browser'
 
 type Call = { url: string; init?: RequestInit }
 
@@ -101,6 +101,9 @@ describe('a 403 names its cause', () => {
     expect(banner).toContain("You don't have permission to execute browser.")
     expect(banner).not.toMatch(/HTTP 403/)
     expect(calls[0].url).toBe('/api/browser-session')
+    // ...and it is said inside the "runs on your computer" panel, with the Desk hand-off.
+    expect(screen.getByTestId('local-browser-panel')).toBeTruthy()
+    expect(screen.getByText('Aither Browser runs on your computer')).toBeTruthy()
   })
 
   it('refusalText keeps a route detail and never prints a bare status', () => {
@@ -184,5 +187,95 @@ describe('openInDeskBrowser', () => {
 
   it('is a no-op refusal outside the desk', async () => {
     await expect(openInDeskBrowser('https://github.com')).resolves.toEqual({ ok: false, error: 'not running inside the desk' })
+  })
+})
+
+/*
+ * Owner decision 2026-10-14: every workspace member may use Aither Browser, but it runs
+ * LOCALLY, never on the platform's remote session. `localOnly` users never call
+ * /api/browser-session, whatever they press.
+ */
+describe('localOnly: a workspace member browses on their own computer', () => {
+  const sessionCalls = () => calls.filter((c) => c.url.startsWith('/api/browser-session'))
+
+  it('inside the desk, opens Desk\'s browser and offers no "show it here" remote fallback', async () => {
+    markDesk(true)
+    stubFetch(() => jsonResponse(200, {}))
+    const asked = deskAnswers((url) => ({ ok: true, url }))
+    render(<WebBrowser localOnly deskSetupHref="/setup-pc" />)
+    go('https://github.com')
+    await waitFor(() => expect(screen.getByText(/Opened github.com in Aither Browser/)).toBeTruthy())
+    expect(asked).toHaveLength(1)
+    expect(screen.queryByText('Show it here instead')).toBeNull()
+    expect(sessionCalls()).toHaveLength(0)
+  })
+
+  it('a desk refusal shows the panel with the reason, never the remote session', async () => {
+    markDesk(true)
+    stubFetch(() => jsonResponse(200, { sessionId: 'sid-x', screenshot: 'AAAA' }))
+    deskAnswers(() => ({ ok: false, error: 'opening the Aither Browser needs a click or key press' }))
+    render(<WebBrowser localOnly deskSetupHref="/setup-pc" />)
+    go('https://github.com')
+    await waitFor(() => expect(screen.getByTestId('local-browser-panel')).toBeTruthy())
+    expect(screen.getByText(/needs a click or key press/)).toBeTruthy()
+    expect(screen.getByText('Try again in Desk')).toBeTruthy()
+    expect(sessionCalls()).toHaveLength(0)
+  })
+
+  it('on the plain web, hands the URL to Desk over desk://browse and links /setup-pc', async () => {
+    stubFetch(() => jsonResponse(200, { sessionId: 'sid-x', screenshot: 'AAAA' }))
+    const asked = deskAnswers(() => ({ ok: true }))
+    render(<WebBrowser localOnly deskSetupHref="/setup-pc" />)
+    go('https://github.com/a?b=1')
+    await waitFor(() => expect(screen.getByTestId('local-browser-panel')).toBeTruthy())
+    const open = screen.getByText('Open in Desk').closest('a') as HTMLAnchorElement
+    expect(open.getAttribute('href')).toBe(`desk://browse?url=${encodeURIComponent('https://github.com/a?b=1')}`)
+    const get = screen.getByText('Get Aither Desk').closest('a') as HTMLAnchorElement
+    expect(get.getAttribute('href')).toBe('/setup-pc')
+    expect(asked).toHaveLength(0)
+    expect(sessionCalls()).toHaveLength(0)
+    // Reload / Home / Try again all funnel through the same guard.
+    fireEvent.click(screen.getByLabelText('Reload'))
+    fireEvent.click(screen.getByLabelText('Home'))
+    expect(sessionCalls()).toHaveLength(0)
+  })
+
+  it('the hand-off reads "Desk did not open" when the window never blurs, and "Desk took it" when it does', async () => {
+    stubFetch(() => jsonResponse(200, {}))
+    render(<WebBrowser localOnly deskSetupHref="/setup-pc" />)
+    go('https://github.com')
+    await waitFor(() => expect(screen.getByTestId('local-browser-panel')).toBeTruthy())
+    jest.useFakeTimers()
+    try {
+      const link = screen.getByText('Open in Desk').closest('a') as HTMLAnchorElement
+      link.addEventListener('click', (e) => e.preventDefault())
+      fireEvent.click(link)
+      expect(screen.getByText(/Opening Aither Desk/)).toBeTruthy()
+      await act(async () => { jest.advanceTimersByTime(DESK_HANDOFF_WAIT_MS + 10) })
+      expect(screen.getByText(/Desk did not open/)).toBeTruthy()
+      fireEvent.click(link)
+      await act(async () => { window.dispatchEvent(new Event('blur')) })
+      expect(screen.getByText(/Desk took it/)).toBeTruthy()
+    } finally {
+      jest.useRealTimers()
+    }
+  })
+
+  it('search still works locally-only (AitherSearch is not the remote browser)', async () => {
+    stubFetch((url) => url === '/api/search/query'
+      ? jsonResponse(200, { results: [{ title: 'Hit', url: 'https://hit.test', snippet: 's' }] })
+      : jsonResponse(500, {}))
+    render(<WebBrowser localOnly />)
+    go('how do browsers work')
+    await waitFor(() => expect(screen.getByText('Hit')).toBeTruthy())
+    expect(sessionCalls()).toHaveLength(0)
+  })
+})
+
+describe('deskBrowseLink', () => {
+  it('carries http(s) only', () => {
+    expect(deskBrowseLink('https://a.test/x?y=1')).toBe('desk://browse?url=https%3A%2F%2Fa.test%2Fx%3Fy%3D1')
+    expect(deskBrowseLink('javascript:alert(1)')).toBeNull()
+    expect(deskBrowseLink('file:///etc/passwd')).toBeNull()
   })
 })
