@@ -1,4 +1,5 @@
 import { Component, type ReactNode } from 'react'
+import { reportCaughtError } from '../lib/errorReporter'
 
 interface Props {
   children: ReactNode
@@ -11,6 +12,11 @@ export default class ErrorBoundary extends Component<Props, State> {
 
   static getDerivedStateFromError(error: Error) {
     return { hasError: true, error: error.message }
+  }
+
+  componentDidCatch(error: Error, info: { componentStack?: string | null }) {
+    // Reaches support only where the host app installed the error reporter.
+    reportCaughtError(error, info?.componentStack || '')
   }
 
   render() {

@@ -3,3 +3,4 @@ export * from './restartFetch';
 export * from './identityFetch';
 export * from './brandTokens';
 export * from './telemetry';
+export * from './errorReporter';
