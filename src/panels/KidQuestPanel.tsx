@@ -851,6 +851,7 @@ export default function KidQuestPanel({ apiBase, extraHeaders = {}, homeExtra, h
           <KidClassroom
             name={me?.alias ? me.alias.split(' ')[0] : undefined}
             spriteName={me?.sprite?.name || undefined}
+            sprite={me?.sprite ?? null}
             storageKey={me?.alias || 'me'}
             minutesLeft={typeof me?.today_minutes_left === 'number' ? me.today_minutes_left : null}
             learnedToday={Boolean(kidProgress?.today?.goal_met)}

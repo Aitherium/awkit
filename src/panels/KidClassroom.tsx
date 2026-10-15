@@ -26,8 +26,10 @@
  * always there. At the guardian's daily cap the room says goodnight and dims. No streaks,
  * no countdowns, no badges, no score, no infinite list.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { C, EASE, FONT_UI } from './learnTheme'
+import { SpriteFace, type SpriteCardLike } from './spriteLook'
+import { SpriteVector } from './SpriteVectorView'
 
 /** The room's objects, in the manifest's bead order. check_child_nav.py CHN002 reads this. */
 export const ROOM_OBJECT_IDS = ['nest', 'door', 'bookshelf', 'easel', 'toychest', 'mailbox', 'window', 'wall', 'wardrobe'] as const
@@ -119,6 +121,8 @@ export interface KidClassroomProps {
   name?: string
   /** The Sprite's name, for the Nest's line. */
   spriteName?: string
+  /** The child's Sprite card (/me sprite): drawn in the nest with the sprites-v2 vector art. */
+  sprite?: SpriteCardLike | null
   /** What each object opens. An object with no view is not drawn (the Easel has its own). */
   views: Partial<Record<RoomObjectId, ReactNode>>
   /** Open this object's view first (a deep link: /learn?room=<id>). */
@@ -154,7 +158,11 @@ const ROOM_CSS = `
 @media (prefers-reduced-motion: reduce){.kc-obj,.kc-glow .kc-halo,.kc-bob,.kc-blink{animation:none!important;transition:none!important}}
 `
 
-export default function KidClassroom({
+export default function KidClassroom(props: KidClassroomProps) {
+  return <NestSprite.Provider value={props.sprite ?? null}><Room {...props} /></NestSprite.Provider>
+}
+
+function Room({
   name, spriteName, views, initialObject = null, minutesLeft = null, learnedToday = false,
   storageKey = 'me', speak, onOpen, now = () => new Date(),
 }: KidClassroomProps) {
@@ -355,38 +363,24 @@ function Art({ id }: { id: RoomObjectId }) {
   }
 }
 
-/** The child's Sprite in its nest: a round, big-eyed buddy (no emoji, no stock art). */
+/** The child's own Sprite (KidClassroom `sprite`), drawn in the nest. */
+const NestSprite = createContext<SpriteCardLike | null>(null)
+
+/** The child's Sprite in its nest, in the sprites-v2 vector art (the one Sprite look): their own
+ *  design or snapshot when the room has it, else their species' creature. */
 function NestArt({ sleeping = false }: { sleeping?: boolean }) {
+  const sprite = useContext(NestSprite)
+  const own = !!sprite && (!!sprite.design || !!sprite.snapshot)
   return (
     <g>
-      <g className={sleeping ? undefined : 'kc-bob'}>
-        <path d="M34 70 Q30 38 60 34 Q90 38 86 70 Z" fill="#7fd6c2" {...S} />
-        <path d="M52 36 Q56 22 62 34 Q66 24 70 38" fill="#7fd6c2" {...S} />
-        <ellipse cx="60" cy="60" rx="14" ry="10" fill="#c8f2e7" />
-        {sleeping ? (
-          <g>
-            <path d="M44 52 q6 5 12 0" fill="none" {...S} strokeWidth={3} />
-            <path d="M64 52 q6 5 12 0" fill="none" {...S} strokeWidth={3} />
-            <ellipse cx="60" cy="63" rx="5" ry="6" fill={INK} />
-            <text x="84" y="34" fontSize="16" fontWeight="700" fill="#fff" stroke={INK} strokeWidth="1">z</text>
-            <text x="94" y="22" fontSize="12" fontWeight="700" fill="#fff" stroke={INK} strokeWidth="1">z</text>
-          </g>
-        ) : (
-          <g>
-            <g className="kc-blink" style={{ transformOrigin: '60px 50px' }}>
-              <circle cx="50" cy="50" r="8" fill="#fff" {...S} strokeWidth={3} />
-              <circle cx="70" cy="50" r="8" fill="#fff" {...S} strokeWidth={3} />
-              <circle cx="51" cy="51" r="4" fill={INK} />
-              <circle cx="71" cy="51" r="4" fill={INK} />
-              <circle cx="53" cy="49" r="1.6" fill="#fff" />
-              <circle cx="73" cy="49" r="1.6" fill="#fff" />
-            </g>
-            <path d="M54 61 q6 5 12 0" fill="none" {...S} strokeWidth={3} />
-            <circle cx="43" cy="60" r="3.5" fill="#ffc078" />
-            <circle cx="77" cy="60" r="3.5" fill="#ffc078" />
-          </g>
-        )}
-      </g>
+      <foreignObject x="17" y="-4" width="86" height="86">
+        <div data-testid="nest-sprite" data-look="vector" data-species={own ? undefined : sprite?.species || 'sprout'}
+          style={{ width: 86, height: 86, lineHeight: 0, display: 'grid', placeItems: 'center' }}>
+          {own
+            ? <SpriteFace sprite={sprite} size={86} action={sleeping ? 'sleepy' : undefined} />
+            : <SpriteVector design={{ species: sprite?.species || 'sprout' }} expression={sleeping ? 'sleepy' : 'content'} size={86} shadow={false} />}
+        </div>
+      </foreignObject>
       <path d="M18 70 Q60 104 102 70 Q100 92 60 98 Q20 92 18 70 Z" fill="#c98f4f" {...S} />
       <path d="M26 78 Q60 96 94 78 M30 86 Q60 100 90 86" fill="none" stroke="#8a5a2b" strokeWidth="3" strokeLinecap="round" />
     </g>

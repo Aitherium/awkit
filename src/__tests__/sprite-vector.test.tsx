@@ -199,4 +199,19 @@ describe('Sprite v2 vector renderer', () => {
     const all = Array.from(container.querySelectorAll('[id]')).map((e) => e.id)
     expect(new Set(all).size).toBe(all.length)
   })
+
+  it('talks: an open or closed mouth for every species and expression, the expression’s own when unset', () => {
+    for (const species of VECTOR_SPECIES) {
+      for (const expression of EXPRESSIONS) {
+        const open = parse(renderSpriteSvg({ species }, { expression, mouth: 'open' }))
+        expect(open.querySelectorAll('[data-mouth="open"]')).toHaveLength(1)
+        const closed = parse(renderSpriteSvg({ species }, { expression, mouth: 'closed' }))
+        expect(closed.querySelectorAll('[data-mouth="closed"]')).toHaveLength(1)
+        expect(renderSpriteSvg({ species }, { expression })).not.toContain('data-mouth=')
+      }
+    }
+    // the pet never talks for its owner
+    const withPet = renderSpriteSvg({ species: 'fox', pet: 'owl' }, { mouth: 'open' })
+    expect(withPet.match(/data-mouth="open"/g)).toHaveLength(1)
+  })
 })

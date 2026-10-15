@@ -215,6 +215,9 @@ describe('KidWorldIntro', () => {
     expect(screen.getAllByTestId('intro-pick-egg')).toHaveLength(1)
     await act(async () => { fireEvent.click(screen.getByTestId('intro-pick-egg')) })
     expect(screen.getByTestId('intro-creature').getAttribute('data-species')).toBe('otter')
+    // the starter creature is the sprites-v2 vector art, never the old hand-drawn blob
+    expect(screen.getByTestId('intro-creature').getAttribute('data-look')).toBe('vector')
+    expect(screen.getByTestId('intro-creature').querySelector('[data-testid="sprite-vector"] svg')!.getAttribute('data-species')).toBe('otter')
   })
 })
 

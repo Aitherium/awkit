@@ -89,6 +89,9 @@ export interface VectorRenderOptions {
   /** id prefix; must be unique per document when several Sprites share a page */
   idPrefix?: string
   title?: string
+  /** speaking: 'open' draws the mouth open (whatever the expression), 'closed' a closed
+   *  smile; unset = the expression's own mouth. Toggling it makes the Sprite talk. */
+  mouth?: 'open' | 'closed'
 }
 
 export const INK = '#2a1f3d'
@@ -389,7 +392,8 @@ function glossyEye(cx: number, cy: number, rx: number, ry: number, s: ResolvedSp
     + `<circle cx="${cx - 5 + look}" cy="${cy + 8}" r="2.8" fill="#fff" opacity=".9"/>`
 }
 
-function face(s: ResolvedSprite, id: string): string {
+function face(s: ResolvedSprite, id: string, mouth?: 'open' | 'closed'): string {
+  if (mouth) return eyesOnly(s, id) + talkingMouth(s, mouth)
   const mouthInk = '#5a1f2e'
   const owl = s.species === 'owl'
   const smile = owl || s.species === 'bunny' || s.species === 'otter'
@@ -432,6 +436,35 @@ function face(s: ResolvedSprite, id: string): string {
       return glossyEye(EYE_L, EYE_Y, 15, 18, s, id) + glossyEye(EYE_R, EYE_Y, 15, 18, s, id)
         + `<g transform="translate(0 ${mouthY})">${owl ? '' : smile}${fang}</g>`
   }
+}
+
+/** The expression's eyes (and brows) without its mouth: the talking mouth goes under them. */
+function eyesOnly(s: ResolvedSprite, id: string): string {
+  const happyEye = (cx: number) => `<path d="M${cx - 14} ${EYE_Y + 4} Q${cx} ${EYE_Y - 16} ${cx + 14} ${EYE_Y + 4}" fill="none" ${st(6.5)}/>`
+  switch (s.expression) {
+    case 'happy': case 'proud': return happyEye(EYE_L) + happyEye(EYE_R)
+    case 'curious':
+      return glossyEye(EYE_L, EYE_Y + 1, 14, 17, s, id, 3) + glossyEye(EYE_R, EYE_Y - 1, 16.5, 20, s, id, 3)
+        + `<path d="M108 70 Q121 61 135 68" fill="none" ${st(4.2)}/>`
+    case 'sleepy': {
+      const shut = (cx: number) => `<path d="M${cx - 13} ${EYE_Y + 1} Q${cx} ${EYE_Y + 11} ${cx + 13} ${EYE_Y + 1}" fill="none" ${st(5.5)}/>`
+      return shut(EYE_L) + shut(EYE_R)
+    }
+    case 'surprised':
+      return glossyEye(EYE_L, EYE_Y, 16.5, 21, s, id) + glossyEye(EYE_R, EYE_Y, 16.5, 21, s, id)
+        + `<path d="M64 70 Q76 62 88 68" fill="none" ${st(4.2)}/><path d="M112 68 Q124 62 136 70" fill="none" ${st(4.2)}/>`
+    default:
+      return glossyEye(EYE_L, EYE_Y, 15, 18, s, id) + glossyEye(EYE_R, EYE_Y, 15, 18, s, id)
+  }
+}
+
+/** The mouth while the Sprite speaks: open (a round "ah" with a tongue) or a closed smile. */
+function talkingMouth(s: ResolvedSprite, mouth: 'open' | 'closed'): string {
+  const y = s.species === 'owl' ? 8 : 0
+  const fang = s.species === 'dragon' ? '<path d="M103 121.5 L106 128 L109 120 Z" fill="#fff" stroke="' + INK + '" stroke-width="1.6" stroke-linejoin="round"/>' : ''
+  if (mouth === 'closed') return `<g data-mouth="closed" transform="translate(0 ${y})"><path d="M89 117 Q100 128 111 117" fill="none" ${st(4.2)}/>${fang}</g>`
+  return `<g data-mouth="open" transform="translate(0 ${y})"><path d="M89 115 Q100 113 111 115 Q110 133 100 133 Q90 133 89 115 Z" fill="#5a1f2e" ${st(3.6)}/>`
+    + `<path d="M93 128 Q100 123 107 128 Q105 132 100 132 Q95 132 93 128 Z" fill="#ff7a90"/>${fang}</g>`
 }
 
 function cheeks(s: ResolvedSprite): string {
@@ -700,7 +733,7 @@ export function spriteLayers(design: VectorSpriteDesign = {}, opts: VectorRender
     pattern: pattern(s, id),
     top: s.outfit.top ? clipped(atNeck(top(s.outfit.top))) : '',
     'species-front': sp['species-front'] || '',
-    face: `<g transform="${ft}">${sp.faceDecor || ''}${face(s, id)}</g>`,
+    face: `<g transform="${ft}">${sp.faceDecor || ''}${face(s, id, opts.mouth)}</g>`,
     cheeks: `<g transform="${ft}">${cheeks(s)}</g>`,
     arms,
     shoes: `<path d="M${f1} 186 q11 -16 22 0 Z M${f2} 186 q11 -16 22 0 Z" fill="${feet}" ${st(4.4)}/>` + shoeTrim,

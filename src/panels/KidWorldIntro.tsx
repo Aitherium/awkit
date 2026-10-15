@@ -28,6 +28,7 @@
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { createLearnVoice, type LearnSpeak } from './learnVoice'
+import { SpriteVector } from './SpriteVectorView'
 import { FONT_UI } from './learnTheme'
 
 // --------------------------------------------------------------------------- the step machine
@@ -216,72 +217,18 @@ function paintOf(id?: string, species?: string) {
 
 const INK = '#2a1f3d'
 
-/** A chunky toon creature in an ink outline: big eyes with highlights, a belly, the
- *  species' ears/wings/horns, an idle breathe and blink (both off under reduced motion). */
+/** The child's starter creature in the sprites-v2 vector art (the one Sprite look, spriteVector.ts),
+ *  in the paint pot they picked; it breathes (off under reduced motion). */
 export function IntroCreature({ species = 'fox', paint, size = 180, label }: {
   species?: string; paint?: string; size?: number; label?: string
 }) {
   const p = paintOf(paint, species)
-  const sw = 5
-  const ears: ReactNode = species === 'owl' ? (
-    <g>
-      <path d="M58 70 L66 34 L86 62 Z" fill={p.accent} stroke={INK} strokeWidth={sw} strokeLinejoin="round" />
-      <path d="M142 70 L134 34 L114 62 Z" fill={p.accent} stroke={INK} strokeWidth={sw} strokeLinejoin="round" />
-    </g>
-  ) : species === 'dragon' ? (
-    <g>
-      <path d="M70 62 Q60 30 82 40 Q80 52 86 58 Z" fill={p.belly} stroke={INK} strokeWidth={sw} strokeLinejoin="round" />
-      <path d="M130 62 Q140 30 118 40 Q120 52 114 58 Z" fill={p.belly} stroke={INK} strokeWidth={sw} strokeLinejoin="round" />
-    </g>
-  ) : (
-    <g>
-      <path d="M56 78 L58 26 L96 58 Z" fill={p.body} stroke={INK} strokeWidth={sw} strokeLinejoin="round" />
-      <path d="M144 78 L142 26 L104 58 Z" fill={p.body} stroke={INK} strokeWidth={sw} strokeLinejoin="round" />
-      <path d="M64 66 L64 42 L84 60 Z" fill={p.belly} />
-      <path d="M136 66 L136 42 L116 60 Z" fill={p.belly} />
-    </g>
-  )
-  const back: ReactNode = species === 'owl' ? (
-    <g>
-      <path d="M38 128 Q20 150 44 170 Q52 150 58 140 Z" fill={p.accent} stroke={INK} strokeWidth={sw} strokeLinejoin="round" />
-      <path d="M162 128 Q180 150 156 170 Q148 150 142 140 Z" fill={p.accent} stroke={INK} strokeWidth={sw} strokeLinejoin="round" />
-    </g>
-  ) : species === 'dragon' ? (
-    <g>
-      <path d="M44 118 Q8 96 18 150 Q34 138 50 142 Z" fill={p.accent} stroke={INK} strokeWidth={sw} strokeLinejoin="round" />
-      <path d="M156 118 Q192 96 182 150 Q166 138 150 142 Z" fill={p.accent} stroke={INK} strokeWidth={sw} strokeLinejoin="round" />
-    </g>
-  ) : (
-    <path d="M150 168 Q196 160 184 118 Q176 140 150 146 Z" fill={p.body} stroke={INK} strokeWidth={sw} strokeLinejoin="round" />
-  )
+  const design = useMemo(() => ({ species, colors: { body: p.body, belly: p.belly, accent: p.accent } }), [species, p.body, p.belly, p.accent])
   return (
-    <svg data-testid="intro-creature" data-species={species} data-paint={p.id} role="img"
-      aria-label={label || `your ${species}`} width={size} height={size} viewBox="0 0 200 200"
-      style={{ overflow: 'visible', display: 'block' }}>
-      <ellipse cx="100" cy="190" rx="54" ry="8" fill="rgba(0,0,0,.18)" />
-      <g className="kwi-breathe">
-        {back}
-        {ears}
-        <path d="M100 44 C150 44 168 88 166 128 C164 170 138 186 100 186 C62 186 36 170 34 128 C32 88 50 44 100 44 Z"
-          fill={p.body} stroke={INK} strokeWidth={sw} strokeLinejoin="round" />
-        <path d="M100 112 C128 112 142 132 140 152 C138 172 122 180 100 180 C78 180 62 172 60 152 C58 132 72 112 100 112 Z"
-          fill={p.belly} />
-        <g className="kwi-blink">
-          <ellipse cx="78" cy="98" rx="15" ry="18" fill={INK} />
-          <ellipse cx="122" cy="98" rx="15" ry="18" fill={INK} />
-          <circle cx="83" cy="91" r="6" fill="#fff" />
-          <circle cx="127" cy="91" r="6" fill="#fff" />
-          <circle cx="74" cy="105" r="2.6" fill="#fff" opacity=".8" />
-          <circle cx="118" cy="105" r="2.6" fill="#fff" opacity=".8" />
-        </g>
-        <ellipse cx="60" cy="120" rx="10" ry="6" fill="#ff8fab" opacity=".55" />
-        <ellipse cx="140" cy="120" rx="10" ry="6" fill="#ff8fab" opacity=".55" />
-        {species === 'owl'
-          ? <path d="M93 114 L107 114 L100 126 Z" fill="#ffb347" stroke={INK} strokeWidth={3} strokeLinejoin="round" />
-          : <path d="M90 118 Q100 128 110 118" fill="none" stroke={INK} strokeWidth={4} strokeLinecap="round" />}
-        <path d="M70 182 q8 -12 16 0 M114 182 q8 -12 16 0" fill={p.accent} stroke={INK} strokeWidth={4} strokeLinejoin="round" />
-      </g>
-    </svg>
+    <span data-testid="intro-creature" data-species={species} data-paint={p.id} data-look="vector" role="img"
+      aria-label={label || `your ${species}`} style={{ display: 'block', width: size, height: size }}>
+      <SpriteVector design={design} size={size} label={label || `your ${species}`} shadow className="kwi-breathe" />
+    </span>
   )
 }
 
@@ -308,7 +255,7 @@ function Egg({ size = 150, wobble = false, tone = '#ffd166', testId }: { size?: 
 }
 
 const KWI_CSS = `
-.kwi-breathe{transform-origin:100px 186px;animation:kwi-breathe 3.2s ease-in-out infinite}
+.kwi-breathe{transform-origin:50% 90%;display:inline-block;animation:kwi-breathe 3.2s ease-in-out infinite}
 .kwi-blink{transform-origin:100px 98px;animation:kwi-blink 5.4s infinite}
 .kwi-wobble{transform-origin:50% 90%;animation:kwi-wobble 1.6s ease-in-out infinite}
 .kwi-pop{animation:kwi-pop .7s cubic-bezier(.2,.8,.2,1) both}

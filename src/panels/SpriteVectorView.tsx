@@ -15,15 +15,17 @@ export interface SpriteVectorProps {
   glow?: boolean
   shadow?: boolean
   label?: string
+  /** speaking: 'open' / 'closed' mouth (unset = the expression's own) */
+  mouth?: 'open' | 'closed'
   className?: string
   style?: CSSProperties
 }
 
-export function SpriteVector({ design, expression, size, glow, shadow, label, className, style }: SpriteVectorProps) {
+export function SpriteVector({ design, expression, size, glow, shadow, label, mouth, className, style }: SpriteVectorProps) {
   const prefix = 'spv' + useId().replace(/[^a-zA-Z0-9]/g, '')
   const markup = useMemo(
-    () => renderSpriteSvg(design || {}, { expression, size, glow, shadow, idPrefix: prefix, title: label }),
-    [design, expression, size, glow, shadow, prefix, label],
+    () => renderSpriteSvg(design || {}, { expression, size, glow, shadow, idPrefix: prefix, title: label, mouth }),
+    [design, expression, size, glow, shadow, prefix, label, mouth],
   )
   return (
     <span data-testid="sprite-vector" data-look="vector" className={className}
