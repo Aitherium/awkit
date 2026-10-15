@@ -111,6 +111,8 @@ interface BrowserTab {
   sessionLost: boolean
   /** 401 from the session routes. A real state with its own panel, not a blank pane. */
   authRequired: boolean
+  /** The URL the desk's native Aither Browser opened for this tab, or null. */
+  deskOpened: string | null
   view: 'idle' | 'page' | 'results'
   results: SearchResult[]
   query: string
@@ -202,7 +204,90 @@ async function readJson(res: Response): Promise<any> {
 
 function detailOf(data: any, res: Response): string {
   if (data && typeof data.detail === 'string' && data.detail) return data.detail
+  // The Veil edge (proxy.ts) refuses with `{ error, message, required }`, not
+  // `{ detail }`. Reading only `detail` turned its sentence into a bare
+  // "HTTP 403" -- which names nothing a signed-in user can act on.
+  if (data && typeof data.message === 'string' && data.message) return data.message
   return `HTTP ${res.status}${res.statusText ? ' ' + res.statusText : ''}`
+}
+
+/**
+ * The 403 sentence. A 403 here means the caller WAS identified and was refused --
+ * an account permission (the edge's RBAC gate, which names what it needed in
+ * `required`) or a failed guest check (the route's `detail`). Either way the user
+ * gets the cause in words, never "HTTP 403".
+ */
+export function refusalText(data: any, res: Response): string {
+  const need = data && typeof data.required === 'string' && data.required ? data.required : ''
+  const said = detailOf(data, res)
+  const reason = /^HTTP \d+/.test(said) ? '' : ` The server said: "${said}"`
+  const perm = need ? ` (it needs the ${need} permission)` : ''
+  return `Your account is not allowed to open an Aither Browser session${perm}.${reason} ` +
+    'Ask an admin of your workspace to grant it, then try again.'
+}
+
+// ============================================================================
+// DESK: the native Aither Browser, when this desktop runs inside awdesk
+// ============================================================================
+
+/**
+ * awdesk loads AitherOS Online top-level and its preload marks the document
+ * `data-aither-host="desk"` (living-desktop-preload.cjs). There the desk HAS a real
+ * browser -- its own Aither Browser window -- so a URL typed here opens THERE: a
+ * real page, the user's own cookies, no remote session and no server round trip.
+ * Everywhere else (a plain web browser) the remote session below is the browser.
+ */
+export function hasDeskBrowser(): boolean {
+  if (typeof document === 'undefined') return false
+  return document.documentElement?.getAttribute('data-aither-host') === 'desk'
+}
+
+/** An old desk build has no `desk-browse` handler and never answers; we fall back after this. */
+export const DESK_BROWSE_TIMEOUT_MS = 2500
+
+export type DeskBrowseResult = { ok: true; url: string } | { ok: false; error: string }
+
+let deskReqSeq = 0
+
+/**
+ * Ask the desk to open `url` in a new tab of its Aither Browser (aither-host/1
+ * `desk-browse`, answered with `desk-browse-result`). Posted to the page's OWN
+ * window pinned to its origin -- the only place the desk preload listens -- and
+ * only an answer from this window, this origin and this reqId is accepted.
+ * Resolves `{ok:false}` on a refusal or no answer; never throws.
+ */
+export function openInDeskBrowser(url: string, timeoutMs: number = DESK_BROWSE_TIMEOUT_MS): Promise<DeskBrowseResult> {
+  return new Promise((resolve) => {
+    if (typeof window === 'undefined' || !hasDeskBrowser()) {
+      resolve({ ok: false, error: 'not running inside the desk' })
+      return
+    }
+    deskReqSeq += 1
+    const reqId = `browse-${Date.now()}-${deskReqSeq}`
+    let done = false
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const onMessage = (e: MessageEvent) => {
+      if (e.source !== window || e.origin !== window.location.origin) return
+      const d = e.data
+      if (!d || d.__aither !== 'desk-browse-result' || d.reqId !== reqId) return
+      if (d.ok === true) finish({ ok: true, url: typeof d.url === 'string' && d.url ? d.url : url })
+      else finish({ ok: false, error: typeof d.error === 'string' && d.error ? d.error : 'the desk refused' })
+    }
+    const finish = (r: DeskBrowseResult) => {
+      if (done) return
+      done = true
+      if (timer) clearTimeout(timer)
+      window.removeEventListener('message', onMessage)
+      resolve(r)
+    }
+    timer = setTimeout(() => finish({ ok: false, error: 'the desk did not answer' }), timeoutMs)
+    window.addEventListener('message', onMessage)
+    try {
+      window.postMessage({ __aither: 'desk-browse', reqId, url }, window.location.origin)
+    } catch (err) {
+      finish({ ok: false, error: errText(err) })
+    }
+  })
 }
 
 /**
@@ -241,6 +326,7 @@ function newTabRecord(): BrowserTab {
     error: null,
     sessionLost: false,
     authRequired: false,
+    deskOpened: null,
     view: 'idle',
     results: [],
     query: '',
@@ -373,7 +459,7 @@ export function WebBrowser({ className = '', renderSidebar }: {
     const viewport = measureViewport()
     patch(tabId, {
       loading: true, busy: 'opening session', error: null, sessionLost: false,
-      authRequired: false, view: 'page', url, viewport, title: hostLabel(url),
+      authRequired: false, deskOpened: null, view: 'page', url, viewport, title: hostLabel(url),
       screenshot: null,
     })
     if (tabId === activeRef.current) setUrlInput(url)
@@ -417,7 +503,9 @@ export function WebBrowser({ className = '', renderSidebar }: {
           loading: false, busy: null, latencyMs: Date.now() - t0,
           error: orphan
             ? `The session opened but its first view did not come back: ${detailOf(data, res)}`
-            : `Could not open a browser session: ${detailOf(data, res)}`,
+            : res.status === 403
+              ? refusalText(data, res)
+              : `Could not open a browser session: ${detailOf(data, res)}`,
         })
         return
       }
@@ -649,14 +737,42 @@ export function WebBrowser({ className = '', renderSidebar }: {
 
   // ── Navigation ────────────────────────────────────────────────────────
 
-  const navigate = useCallback((raw: string, tabId: string = activeRef.current) => {
+  /**
+   * Inside the desk, a URL opens in the desk's NATIVE Aither Browser. A refusal or
+   * an old desk that never answers falls back to the remote session, so the URL is
+   * always opened somewhere and the fallback is never silent.
+   */
+  const openViaDesk = useCallback(async (tabId: string, url: string) => {
+    patch(tabId, {
+      loading: true, busy: 'opening in Aither Browser', error: null, sessionLost: false,
+      authRequired: false, deskOpened: null, view: 'idle', url, title: hostLabel(url),
+      screenshot: null,
+    })
+    const t0 = Date.now()
+    const r = await openInDeskBrowser(url)
+    if (r.ok) {
+      patch(tabId, {
+        loading: false, busy: null, url: r.url, title: hostLabel(r.url),
+        deskOpened: r.url, latencyMs: Date.now() - t0,
+      })
+      if (tabId === activeRef.current) setUrlInput(r.url)
+      return
+    }
+    await openSession(tabId, url)
+  }, [openSession, patch])
+
+  const navigate = useCallback((raw: string, tabId: string = activeRef.current, remote = false) => {
     const url = asUrl(raw)
     if (!url) { void runSearch(tabId, raw.trim()); return }
     setUrlInput(url)
     const t = getTab(tabId)
-    if (!t || !t.sessionId) { void openSession(tabId, url); return }
+    if (!t || !t.sessionId) {
+      if (!remote && hasDeskBrowser()) { void openViaDesk(tabId, url); return }
+      void openSession(tabId, url)
+      return
+    }
     void act(tabId, { action: 'goto', value: url }, `goto ${hostLabel(url)}`)
-  }, [act, getTab, openSession, runSearch])
+  }, [act, getTab, openSession, openViaDesk, runSearch])
 
   const submitUrl = useCallback((e: React.FormEvent) => {
     e.preventDefault()
@@ -1035,6 +1151,20 @@ export function WebBrowser({ className = '', renderSidebar }: {
                   </button>
                   {/* the 401 path clears sessionId, so there is nothing to re-observe */}
                 </>
+              ) : tab.deskOpened ? (
+                <>
+                  <p className="text-zinc-200 text-sm font-medium">
+                    Opened {hostLabel(tab.deskOpened)} in Aither Browser
+                  </p>
+                  <p className="text-zinc-500 text-xs mt-1">
+                    This desktop runs inside Aither Desk, so the page opened in Desk&apos;s own
+                    Aither Browser window, a real browser with no remote session.
+                  </p>
+                  <button onClick={() => navigate(tab.deskOpened || HOME_PAGE, tab.id, true)}
+                    className="mt-3 px-3 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-sm transition-colors">
+                    Show it here instead
+                  </button>
+                </>
               ) : tab.sessionLost ? (
                 <>
                   <p className="text-zinc-400 text-sm">The remote session was closed.</p>
@@ -1103,7 +1233,9 @@ export function WebBrowser({ className = '', renderSidebar }: {
         <span className="truncate flex-1">
           {tab.sessionId
             ? `session ${tab.sessionId.slice(0, 8)} · ${tab.viewport.width}×${tab.viewport.height}`
-            : 'remote session not started'}
+            : tab.deskOpened
+              ? 'opened in Desk’s Aither Browser'
+              : 'remote session not started'}
         </span>
 
         {tab.busy && <span className="text-[#5EC9CC] shrink-0">{tab.busy}&hellip;</span>}
