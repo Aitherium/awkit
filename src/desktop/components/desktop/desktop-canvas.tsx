@@ -28,6 +28,7 @@ import {
 import { useWindowManager } from '../../contexts/window-manager-context'
 import { DesktopContextMenu } from './desktop-context-menu'
 import { NeuralMinimap } from './neural-minimap'
+import { useAnimatedBackgroundAllowed } from './ambient-motion'
 import { toast } from 'sonner'
 import { createFile as createLocalFile } from '../../lib/desktop-file-store'
 import { DESKTOP_ICON_APPS } from '../../data/apps-manifest'
@@ -347,6 +348,7 @@ interface DesktopCanvasProps {
 }
 
 export function DesktopCanvas({ onOpenWidget, onOpenFile, onOpenTerminal, onOpenSettings, onNavigate }: DesktopCanvasProps) {
+  const animatedBackground = useAnimatedBackgroundAllowed()
   // Persisted state
   const [icons, setIcons] = useState<DesktopIcon[]>(() => {
     if (typeof window === 'undefined') return DEFAULT_ICONS
@@ -629,8 +631,9 @@ export function DesktopCanvas({ onOpenWidget, onOpenFile, onOpenTerminal, onOpen
       onClick={handleCanvasClick}
       onContextMenu={handleContextMenu}
     >
-      {/* Starfield — ambient twinkling stars */}
-      <DesktopStarfield />
+      {/* Starfield — ambient twinkling stars. Opt-in (ambient-motion.ts):
+          off, no canvas and no rAF loop exist at all. */}
+      {animatedBackground && <DesktopStarfield />}
 
       {/* Neural Field minimap removed — takes over screen with empty view */}
 
