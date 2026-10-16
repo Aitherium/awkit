@@ -22,6 +22,8 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties, type Reac
 import { C, EASE, FONT_UI } from './learnTheme'
 import { createLearnVoice, type LearnSpeak } from './learnVoice'
 import { fetchVoiceRule, readChildMuted, spriteMaySpeak } from './spriteVoice'
+import { SpriteVector } from './SpriteVectorView'
+import type { VectorSpriteDesign } from './spriteVector'
 
 export interface KidNestProps {
   /** Base of the tutor proxy, e.g. '/api/tutor'. */
@@ -32,6 +34,8 @@ export interface KidNestProps {
   onOpenGame?: (game: string) => void
   /** How often My day is re-read while the Nest is on screen (ms). */
   refreshMs?: number
+  /** The child's own Sprite design (sprites-v2); unset draws their starter creature. */
+  sprite?: VectorSpriteDesign | null
 }
 
 interface Step { sid: string; text: string; icon: string; done: boolean }
@@ -158,7 +162,7 @@ function sayOf(data: unknown): string {
   return ''
 }
 
-export default function KidNest({ apiBase, extraHeaders = {}, onOpenGame, refreshMs = 4000 }: KidNestProps) {
+export default function KidNest({ apiBase, extraHeaders = {}, onOpenGame, refreshMs = 4000, sprite = null }: KidNestProps) {
   const headersRef = useRef(extraHeaders)
   headersRef.current = extraHeaders
   const speakRef = useRef<LearnSpeak>(() => {})
@@ -260,7 +264,7 @@ export default function KidNest({ apiBase, extraHeaders = {}, onOpenGame, refres
   return (
     <section data-testid="kid-nest" aria-label="My Nest" style={CARD}>
       <style>{NEST_CSS}</style>
-      <SpriteBubble text={bubble || day.greeting} onSpeak={() => speakRef.current(bubble || day.greeting)} />
+      <SpriteBubble sprite={sprite} text={bubble || day.greeting} onSpeak={() => speakRef.current(bubble || day.greeting)} />
       {view === 'home' && (
         <>
           <button type="button" className="al-focus kn-breathe" data-testid="nest-today"
@@ -337,13 +341,12 @@ const OPENERS: Record<string, string> = {
 type Call = (path: string, method?: string, body?: object) => Promise<{ ok: boolean; status: number; data: unknown }>
 type Say = (line: string, speak?: boolean) => void
 
-function SpriteBubble({ text, onSpeak }: { text: string; onSpeak: () => void }) {
+function SpriteBubble({ sprite, text, onSpeak }: { sprite: VectorSpriteDesign | null; text: string; onSpeak: () => void }) {
   return (
     <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
-      <div aria-hidden className="kn-breathe" style={{
-        width: 84, height: 84, minWidth: 84, borderRadius: '50%', background: `radial-gradient(circle at 35% 30%, ${C.accentGlow}, ${C.accentWash})`,
-        border: `1px solid ${C.hairline}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 44,
-      }}>🪺</div>
+      <div aria-hidden data-testid="nest-sprite" className="kn-breathe" style={{ width: 84, height: 84, minWidth: 84, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <SpriteVector design={sprite || { species: 'sprout' }} expression="happy" size={84} shadow={false} />
+      </div>
       <div data-testid="nest-bubble" role="status" aria-live="polite" style={{
         flex: 1, fontSize: 22, lineHeight: 1.35, padding: '12px 16px', borderRadius: 22, background: C.surface,
         border: `1px solid ${C.hairline}`,
@@ -577,7 +580,7 @@ function GiftView({ gift, onBack, speak, onGame, onStory }: {
         </>
       )}
       {gift.type === 'art' && <p style={{ fontSize: 22, margin: 0 }}>{gift.prompt}</p>}
-      <button type="button" className="al-focus" style={BIG} onClick={onBack}>🪺 Back to my Nest</button>
+      <button type="button" className="al-focus" style={BIG} onClick={onBack}>Back to my Nest</button>
     </div>
   )
 }

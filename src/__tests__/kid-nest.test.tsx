@@ -90,6 +90,14 @@ describe('KidNest', () => {
     assertCalm(container)
   })
 
+  it("draws the child's own sprites-v2 Sprite by the bubble, never the old nest emoji", async () => {
+    installFetch((url) => (url.includes('/me/nest/day') ? { status: 200, body: DAY } : undefined))
+    const { container } = render(<KidNest apiBase="/api/tutor" refreshMs={0} sprite={{ species: 'fox' }} />)
+    expect(await screen.findByTestId('kid-nest')).toBeTruthy()
+    expect(screen.getByTestId('nest-sprite').querySelector('svg')).toBeTruthy()
+    expect(container.textContent || '').not.toContain(String.fromCodePoint(0x1faba))
+  })
+
   it('announces a gift that arrives while the Nest is open, then unwraps it', async () => {
     jest.useFakeTimers()
     let withGift = false
