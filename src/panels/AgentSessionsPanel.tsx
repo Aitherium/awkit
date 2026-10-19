@@ -18,6 +18,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AGENT_HARNESSES,
+  AUTO_ACCEPT_HARNESSES,
   QUICK_REPLIES,
   agentStatus,
   agoLabel,
@@ -26,6 +27,7 @@ import {
   lastLine,
   mergeLines,
   needsYouCount,
+  offersQuickReplies,
   sessionName,
   startableMachines,
   type AgentListResult,
@@ -48,6 +50,8 @@ export interface AgentSessionsPanelProps {
   title?: string
   /** Px kept clear under the composer for a host's floating button (Veil's chat FAB on a phone). */
   bottomInset?: number
+  /** True while the host hides the panel (a background tab): polling stops. */
+  paused?: boolean
 }
 
 const C = {
@@ -97,34 +101,47 @@ type View = { kind: 'list' } | { kind: 'session'; key: string; fallback?: AgentS
 
 const keyOf = (s: Pick<AgentSession, 'nodeId' | 'id'>) => `${s.nodeId}/${s.id}`
 
+/** Transcript lines kept on screen (and in memory) per open session. */
+const MAX_LINES = 200
+
 export function AgentSessionsPanel({
   transport,
   listEveryMs = 10_000,
   readEveryMs = 2_500,
   title = 'Agents',
   bottomInset = 0,
+  paused = false,
 }: AgentSessionsPanelProps) {
   const [view, setView] = useState<View>({ kind: 'list' })
   const [list, setList] = useState<AgentListResult | null>(null)
   const [listError, setListError] = useState('')
 
+  // One list read at a time: a sleeping machine can hold a read for minutes, and a slow
+  // old answer must never land over a newer one.
+  const inFlight = useRef(false)
   const refresh = useCallback(async (signal?: AbortSignal) => {
+    if (inFlight.current) return
+    inFlight.current = true
     try {
       const next = await transport.list(signal)
+      if (signal?.aborted) return
       setList(next)
       setListError('')
     } catch (err) {
       if (signal?.aborted) return
       setListError(err instanceof Error ? err.message : 'Could not read your sessions.')
+    } finally {
+      inFlight.current = false
     }
   }, [transport])
 
   useEffect(() => {
+    if (paused) return
     const ctl = new AbortController()
     void refresh(ctl.signal)
     const id = setInterval(() => void refresh(ctl.signal), listEveryMs)
-    return () => { ctl.abort(); clearInterval(id) }
-  }, [refresh, listEveryMs])
+    return () => { ctl.abort(); clearInterval(id); inFlight.current = false }
+  }, [refresh, listEveryMs, paused])
 
   const sessions = useMemo(() => glanceOrder(list?.sessions || []), [list])
   const open = view.kind === 'session' ? sessions.find((s) => keyOf(s) === view.key) || view.fallback || null : null
@@ -161,6 +178,7 @@ export function AgentSessionsPanel({
           session={open}
           readEveryMs={readEveryMs}
           bottomInset={bottomInset}
+          paused={paused}
           onBack={() => setView({ kind: 'list' })}
         />
       </div>
@@ -177,7 +195,7 @@ export function AgentSessionsPanel({
         <div style={{ flex: 1, minWidth: 0 }}>
           {title && <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>{title}</h2>}
           <p style={{ margin: 0, fontSize: 13, color: waiting ? TONE.attention.fg : C.dim }} aria-live="polite">
-            {!list && !listError ? 'Looking…' : waiting ? `${waiting} need${waiting === 1 ? 's' : ''} you` : `${live} running`}
+            {listError && !list ? 'Could not look' : !list ? 'Looking…' : waiting ? `${waiting} need${waiting === 1 ? 's' : ''} you` : `${live} running`}
           </p>
         </div>
         <button
@@ -235,8 +253,8 @@ export function AgentSessionsPanel({
             )
           })}
         </ul>
-        {(list?.errors || []).map((e) => (
-          <Note key={e.machine}>{e.machine}: {e.detail}</Note>
+        {(list?.errors || []).map((e, i) => (
+          <Note key={`${e.nodeId || e.machine}-${i}`}>{e.machine}: {e.detail}</Note>
         ))}
       </div>
     </div>
@@ -257,12 +275,13 @@ const ROLE_STYLE: Record<AgentTranscriptLine['role'], React.CSSProperties> = {
 }
 
 function SessionView({
-  transport, session, readEveryMs, bottomInset, onBack,
+  transport, session, readEveryMs, bottomInset, paused, onBack,
 }: {
   transport: AgentSessionsTransport
   session: AgentSession | null
   readEveryMs: number
   bottomInset: number
+  paused: boolean
   onBack: () => void
 }) {
   const [lines, setLines] = useState<AgentTranscriptLine[]>([])
@@ -274,29 +293,44 @@ function SessionView({
   const tail = useRef<HTMLDivElement | null>(null)
   const sid = session ? keyOf(session) : ''
 
+  // A new session starts a fresh transcript; a pause only stops the clock.
   useEffect(() => {
-    if (!session) return
     cursor.current = undefined
     setLines([])
     setUnavailable('')
+  }, [sid])
+
+  useEffect(() => {
+    if (!session || paused) return
     const ctl = new AbortController()
     let stop = false
+    let failures = 0
+    let busy = false
     const tick = async () => {
+      if (busy) return
+      busy = true
       try {
         const r = await transport.read(session, cursor.current, ctl.signal)
         if (stop) return
+        failures = 0
         cursor.current = r.cursor
         if (r.unavailable) { setUnavailable(r.unavailable); stop = true; return }
-        if (r.lines.length) setLines((prev) => mergeLines(prev, r.lines))
-      } catch {
-        // transient; the next tick retries
+        if (r.lines.length) setLines((prev) => mergeLines(prev, r.lines).slice(-MAX_LINES))
+      } catch (err) {
+        // One miss is weather; three in a row is a fact the owner should see.
+        failures += 1
+        if (!stop && failures >= 3) {
+          setUnavailable(err instanceof Error ? err.message : 'Could not read this session.')
+        }
+      } finally {
+        busy = false
       }
     }
     void tick()
     const id = setInterval(() => { if (!stop) void tick() }, readEveryMs)
     return () => { stop = true; ctl.abort(); clearInterval(id) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sid, transport, readEveryMs])
+  }, [sid, transport, readEveryMs, paused])
 
   useEffect(() => {
     const el = tail.current
@@ -345,9 +379,9 @@ function SessionView({
       >
         {lines.length === 0 && !unavailable && <Note>{lastLine(session, 400) || 'Nothing to read yet.'}</Note>}
         {unavailable && <Note>{unavailable}</Note>}
-        {lines.slice(-200).map((l, i) => (
+        {lines.map((l, i) => (
           <div
-            key={`${l.seq}-${i}`}
+            key={l.seq ? `s${l.seq}` : `i${i}`}
             data-role={l.role}
             style={{ maxWidth: '88%', padding: '6px 10px', borderRadius: 10, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 14, ...ROLE_STYLE[l.role] }}
           >
@@ -356,7 +390,7 @@ function SessionView({
         ))}
       </div>
       <footer style={{ borderTop: C.line, padding: 10, paddingBottom: 10 + bottomInset, display: 'grid', gap: 8 }}>
-        {waiting && session.canMessage && (
+        {waiting && session.canMessage && offersQuickReplies(session.status) && (
           <div style={{ display: 'flex', gap: 8 }} aria-label="Quick answers">
             {QUICK_REPLIES.map((q) => (
               <button key={q} type="button" style={{ ...BTN, flex: 1 }} disabled={sending} onClick={() => void send(q)}>
@@ -482,6 +516,7 @@ function StartSheet({
             style={{ borderRadius: 12, border: C.line, background: 'transparent', color: C.ink, padding: 12, fontSize: 16, resize: 'vertical' }}
           />
         </section>
+        {AUTO_ACCEPT_HARNESSES.includes(harness) && <Note>It accepts file edits on its own; you can still stop it.</Note>}
         {error && <Note>{error}</Note>}
       </div>
       <footer style={{ borderTop: C.line, padding: 12 }}>

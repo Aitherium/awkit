@@ -59,7 +59,7 @@ export interface AgentListResult {
   sessions: AgentSession[]
   machines: AgentMachine[]
   /** Machines that were asked and could not answer — shown, never swallowed. */
-  errors: Array<{ machine: string; detail: string }>
+  errors: Array<{ machine: string; nodeId?: string; detail: string }>
 }
 
 export interface AgentReadResult {
@@ -106,7 +106,8 @@ export const AGENT_HARNESSES: ReadonlyArray<{ id: string; label: string }> = [
   { id: 'aither', label: 'Aither' },
 ]
 
-/** One-tap answers offered on a row that is waiting on the owner. */
+/** One-tap answers offered on a session waiting for INPUT. Not on waiting-permission: a
+ *  harness permission menu takes its own keys, and a typed "yes" may select nothing. */
 export const QUICK_REPLIES: readonly string[] = ['yes', 'no', 'continue']
 
 export type AgentTone = 'attention' | 'working' | 'idle' | 'ended'
@@ -132,6 +133,15 @@ export function glanceOrder(sessions: readonly AgentSession[]): AgentSession[] {
 }
 
 /** How many rows are waiting on the owner — the number the header leads with. */
+/** Whether the one-tap answers fit this session's wait. */
+export function offersQuickReplies(status?: string): boolean {
+  const s = (status || '').toLowerCase()
+  return s === 'waiting-input' || s === 'blocked?'
+}
+
+/** Harnesses whose Start turns on auto-accepted file edits (the Start sheet says so). */
+export const AUTO_ACCEPT_HARNESSES: readonly string[] = ['claude', 'gemini']
+
 export function needsYouCount(sessions: readonly AgentSession[]): number {
   return (sessions || []).filter((s) => agentStatus(s.status).tone === 'attention').length
 }
@@ -189,7 +199,7 @@ export function startBody(request: AgentStartRequest): Record<string, unknown> {
     throw new Error(`unknown harness: ${harness || '(none)'}`)
   }
   const body: Record<string, unknown> = { harness, cwd: (request.cwd || '').trim() }
-  if (harness === 'claude' || harness === 'gemini') body.permission_mode = 'acceptEdits'
+  if (AUTO_ACCEPT_HARNESSES.includes(harness)) body.permission_mode = 'acceptEdits'
   return body
 }
 

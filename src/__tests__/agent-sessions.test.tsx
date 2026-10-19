@@ -93,7 +93,7 @@ function fakeTransport(list: AgentListResult) {
 const LIST: AgentListResult = {
   sessions: [
     row({ id: 'busy', name: 'refactor auth', status: 'working', last_activity_summary: 'editing lib/auth.ts', last_activity_at: NOW }),
-    row({ id: 'ask', name: 'deploy veil', status: 'waiting-permission', last_activity_summary: 'wants to run fleet-deploy', last_activity_at: NOW - 60 }),
+    row({ id: 'ask', name: 'deploy veil', status: 'waiting-input', last_activity_summary: 'wants to run fleet-deploy', last_activity_at: NOW - 60 }),
   ],
   machines: [{ nodeId: 'n1', label: 'desk', online: true, canStart: true }],
   errors: [{ machine: 'laptop', detail: 'node_unreachable' }],
@@ -168,5 +168,17 @@ describe('AgentSessionsPanel', () => {
     render(<AgentSessionsPanel transport={fakeTransport({ sessions: [], machines: [], errors: [] }).t} listEveryMs={60_000} />)
     expect(await screen.findByText(/Run `awsh rc` on a computer/)).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Start' })).toBeDisabled()
+  })
+
+  it('a permission prompt gets the composer, not a typed Yes; a failed first read says "Could not look"', async () => {
+    const f = fakeTransport({ ...LIST, sessions: [row({ id: 'p', name: 'perm', status: 'waiting-permission' })] })
+    const { unmount } = render(<AgentSessionsPanel transport={f.t} listEveryMs={60_000} readEveryMs={60_000} />)
+    fireEvent.click((await screen.findByText('perm')).closest('button')!)
+    expect(await screen.findByLabelText('Message')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Yes' })).toBeNull()
+    unmount()
+    const bad: AgentSessionsTransport = { ...fakeTransport(LIST).t, list: jest.fn(async () => { throw new Error('HTTP 502') }) }
+    render(<AgentSessionsPanel transport={bad} listEveryMs={60_000} />)
+    expect(await screen.findByText('Could not look')).toBeTruthy()
   })
 })
