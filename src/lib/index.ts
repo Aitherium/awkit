@@ -5,3 +5,4 @@ export * from './brandTokens';
 export * from './telemetry';
 export * from './errorReporter';
 export * from './agentSessions';
+export * from './workspaceSessionsTransport';

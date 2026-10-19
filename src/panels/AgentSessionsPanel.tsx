@@ -30,6 +30,8 @@ import {
   mergeLines,
   needsYouCount,
   offersQuickReplies,
+  safeRemoteUrl,
+  tokensText,
   sessionName,
   startableMachines,
   type AgentDecision,
@@ -303,7 +305,7 @@ export function AgentSessionsPanel({
                     <Chip tone={st.tone} label={st.label} />
                   </span>
                   <span style={{ fontSize: 12, color: C.faint }}>
-                    {s.machine}{agoLabel(s.last_activity_at) ? ` · ${agoLabel(s.last_activity_at)}` : ''}
+                    {s.machine}{agoLabel(s.last_activity_at) ? ` · ${agoLabel(s.last_activity_at)}` : ''}{tokensText(s.tokens) ? ` · ${tokensText(s.tokens)}` : ''}
                   </span>
                   {line && (
                     <span style={{ fontSize: 13, color: C.dim, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -439,10 +441,37 @@ function SessionView({
 
   const st = agentStatus(session.status)
   const waiting = st.tone === 'attention'
+  const remote = safeRemoteUrl(session.remoteUrl)
+  const canStop = !!transport.interrupt && !!session.canInterrupt && st.tone !== 'ended'
+  const stop = async () => {
+    if (!transport.interrupt) return
+    setNotice('')
+    try {
+      const r = await transport.interrupt(session)
+      setNotice(r.ok ? 'Stopped.' : `Not stopped: ${r.detail}`)
+    } catch (err) {
+      setNotice(`Not stopped: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
 
   return (
     <>
       <BackBar onBack={onBack} title={sessionName(session)} sub={session.machine} chip={<Chip tone={st.tone} label={st.label} />} />
+      {(remote || canStop) && (
+        <div style={{ display: 'flex', gap: 8, padding: '6px 12px', borderBottom: C.line }}>
+          {canStop && (
+            <button type="button" style={{ ...BTN, minHeight: 36 }} disabled={sending} onClick={() => void stop()}>
+              Stop
+            </button>
+          )}
+          {remote && (
+            <a href={remote} target="_blank" rel="noopener noreferrer"
+              style={{ ...BTN, minHeight: 36, display: 'inline-flex', alignItems: 'center', textDecoration: 'none' }}>
+              Open in claude.ai
+            </a>
+          )}
+        </div>
+      )}
       <div
         ref={tail}
         aria-label="Transcript"

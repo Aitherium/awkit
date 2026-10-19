@@ -211,4 +211,57 @@ describe('AgentSessionsPanel', () => {
     await waitFor(() => expect(f.sent).toEqual([{ id: 'ask', text: 'yes' }]))
     expect(document.querySelector('[data-view="list"]')).toBeTruthy()
   })
+
+  it('keeps every verb the old lists had: Stop, Open in claude.ai (https claude.ai only), spend', async () => {
+    const f = fakeTransport({
+      ...LIST,
+      sessions: [
+        row({ id: 'r', name: 'remote one', status: 'working', canInterrupt: true, tokens: 12_345,
+          remoteUrl: 'https://claude.ai/code/session_abc' }),
+        row({ id: 'evil', name: 'evil one', status: 'working', remoteUrl: 'javascript:alert(1)' }),
+      ],
+    })
+    const stopped: string[] = []
+    f.t.interrupt = jest.fn(async (s) => { stopped.push(s.id); return { ok: true, detail: '' } })
+    render(<AgentSessionsPanel transport={f.t} listEveryMs={60_000} readEveryMs={60_000} />)
+    expect(await screen.findByText(/12\.3k tokens/)).toBeTruthy()
+    fireEvent.click(screen.getByText('remote one').closest('button')!)
+    expect(screen.getByText('Open in claude.ai').closest('a')).toHaveAttribute('href', 'https://claude.ai/code/session_abc')
+    fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
+    await waitFor(() => expect(stopped).toEqual(['r']))
+    fireEvent.click(screen.getByLabelText('Back'))
+    fireEvent.click((await screen.findByText('evil one')).closest('button')!)
+    expect(screen.queryByText('Open in claude.ai')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull()
+  })
 })
+
+describe('workspaceSessionsTransport (the tenant portal `sessions` panel)', () => {
+  it('lists, reads, sends a full turn, stops and starts through the workspace router only', async () => {
+    const calls: Array<[string, string, unknown]> = []
+    const doFetch = jest.fn(async (url: string, init?: RequestInit) => {
+      calls.push([url, init?.method || 'GET', init?.body ? JSON.parse(String(init.body)) : undefined])
+      const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response
+      if (url === '/w/sessions' && !init?.method) return ok({ sessions: [{ id: 's1', title: 'build', status: 'working', last_activity_at: '2026-10-18T00:00:00Z' }] })
+      if (url.startsWith('/w/sessions/s1/events')) return ok({ events: [{ kind: 'text.delta', seq: 4, text: 'hi' }], last_seq: 4 })
+      if (url === '/w/sessions' && init?.method === 'POST') return ok({ id: 's2' })
+      return ok({})
+    })
+    const { workspaceSessionsTransport } = await import('../lib/workspaceSessionsTransport')
+    const t = workspaceSessionsTransport('/w', doFetch)
+    const list = await t.list()
+    expect(list.sessions[0]).toMatchObject({ id: 's1', nodeId: 'workspace', canMessage: true, canInterrupt: true })
+    expect(list.machines).toEqual([{ nodeId: 'workspace', label: 'This workspace', online: true, canStart: true }])
+    expect((await t.read(list.sessions[0], undefined)).lines).toEqual([{ seq: 4, role: 'agent', text: 'hi' }])
+    await t.send(list.sessions[0], 'go')
+    await t.interrupt!(list.sessions[0])
+    const started = await t.start({ nodeId: 'workspace', harness: 'claude', prompt: 'fix it' })
+    expect(started.session?.id).toBe('s2')
+    expect(calls.slice(2)).toEqual([
+      ['/w/sessions/s1/input', 'POST', { text: 'go', submit: true }],
+      ['/w/sessions/s1/interrupt', 'POST', undefined],
+      ['/w/sessions', 'POST', { harness: 'claude', prompt: 'fix it' }],
+    ])
+  })
+})
+

@@ -35,6 +35,12 @@ export interface AgentSession {
   /** False when the daemon said this row takes no message; `whyNot` says why. */
   canMessage: boolean
   whyNot?: string
+  /** The daemon says this session takes an interrupt (stop the current turn). */
+  canInterrupt?: boolean
+  /** A claude.ai remote-control address; rendered only if `safeRemoteUrl` passes it. */
+  remoteUrl?: string
+  /** Tokens spent so far; null/absent while the daemon is still counting. */
+  tokens?: number | null
 }
 
 /** A machine the owner can see, and whether a session can be started on it. */
@@ -109,6 +115,8 @@ export interface AgentSessionsTransport {
   read(session: AgentSession, cursor: unknown, signal?: AbortSignal): Promise<AgentReadResult>
   send(session: AgentSession, text: string): Promise<AgentActionResult>
   start(request: AgentStartRequest): Promise<AgentStartResult>
+  /** Stop the session's current turn. Hosts whose daemon has no interrupt omit it. */
+  interrupt?(session: AgentSession): Promise<AgentActionResult>
   /** Answer a decision card in place. Hosts without decisions omit it. */
   answer?(decision: AgentDecision, key: string): Promise<AgentActionResult>
 }
@@ -132,6 +140,23 @@ export function ageLabel(seconds?: number): string {
   if (seconds < 3600) return `${Math.round(seconds / 60)}m ago`
   if (seconds < 86400) return `${Math.round(seconds / 3600)}h ago`
   return `${Math.round(seconds / 86400)}d ago`
+}
+
+/**
+ * A remote-control link only when it is https on claude.ai. The row comes from somebody's
+ * machine; an href built from it unchecked is a `javascript:` URL one bad write away.
+ */
+export function safeRemoteUrl(url?: string): string {
+  if (!url) return ''
+  let u: URL
+  try {
+    u = new URL(url)
+  } catch {
+    return ''
+  }
+  if (u.protocol !== 'https:') return ''
+  const h = u.hostname.toLowerCase()
+  return h === 'claude.ai' || h.endsWith('.claude.ai') ? u.toString() : ''
 }
 
 /** The harnesses offered in Start, most-used first. Ids match awdk `harnesses/registry.py`. */
@@ -200,6 +225,14 @@ export function lastLine(
   const raw = (session.last_activity_summary || session.last_prompt || '').replace(/\s+/g, ' ').trim()
   if (raw.length <= max) return raw
   return `${raw.slice(0, Math.max(1, max - 1)).trimEnd()}…`
+}
+
+/** "12.3k tokens", or '' when the daemon has not counted yet. */
+export function tokensText(tokens?: number | null): string {
+  if (typeof tokens !== 'number' || !Number.isFinite(tokens) || tokens <= 0) return ''
+  if (tokens < 1000) return `${tokens} tokens`
+  if (tokens < 1_000_000) return `${(tokens / 1000).toFixed(1)}k tokens`
+  return `${(tokens / 1_000_000).toFixed(1)}M tokens`
 }
 
 /** "3m ago" from epoch SECONDS. */
