@@ -1072,6 +1072,21 @@ const CREATIVE_APPS: AitherApp[] = [
         keywords: ['learn', 'tutor', 'family', 'child', 'kids', 'homework', 'practice', 'parent', 'guardian'],
     },
     {
+        // Family Quest (docs/plans/2026-10-17-family-quest.md): a guardian hosts a G-rated
+        // story adventure, their kids join on their phones. Hearth serves it; a child page.
+        id: 'family-quest',
+        name: 'Family Quest',
+        description: 'Story adventures for the whole family: a grown-up starts one, the kids join on their phones, and an AI storyteller reads it aloud.',
+        icon: 'gamepad-2',
+        route: '/learn/family-quest',
+        category: 'social',
+        status: 'beta',
+        requiresAuth: true,
+        availability: 'gateway',
+        showInNav: false,
+        keywords: ['story', 'adventure', 'quest', 'family', 'kids', 'game', 'dice', 'reading', 'storyteller'],
+    },
+    {
         id: 'darkmatters',
         name: 'Dark Matters',
         description: 'Play The Lattice Realm — a dark-fantasy RPG. Your private world, your saves, your engine on the fleet, opened here.',

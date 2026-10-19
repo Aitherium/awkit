@@ -1,0 +1,496 @@
+'use client'
+
+/**
+ * AgentSessionsPanel — my running agents, on every machine, from one screen.
+ *
+ * Three jobs, each a short tap path (phone-first, 390 px):
+ *   (a) see my sessions and talk to one   list -> tap a row -> type -> Send
+ *   (b) start an agent on a chosen machine  Start -> pick machine -> Start
+ *   (c) answer an agent that is waiting    "needs you" rows sort first -> tap -> Yes/No
+ *
+ * The panel does no I/O of its own: the host passes an `AgentSessionsTransport`
+ * (lib/agentSessions.ts). Veil's goes through its authenticated harness proxy;
+ * any other React host (the desk, a WebView page) supplies its own. Failure is
+ * a rendered sentence, never an empty list — "could not look" and "nothing is
+ * running" must not read the same.
+ */
+
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  AGENT_HARNESSES,
+  QUICK_REPLIES,
+  agentStatus,
+  agoLabel,
+  defaultMachine,
+  glanceOrder,
+  lastLine,
+  mergeLines,
+  needsYouCount,
+  sessionName,
+  startableMachines,
+  type AgentListResult,
+  type AgentSession,
+  type AgentSessionsTransport,
+  type AgentTone,
+  type AgentTranscriptLine,
+} from '../lib/agentSessions'
+
+// One import path for hosts: the panel AND its rules (Veil aliases this file, not lib/).
+export * from '../lib/agentSessions'
+
+export interface AgentSessionsPanelProps {
+  transport: AgentSessionsTransport
+  /** List refresh, ms. */
+  listEveryMs?: number
+  /** Open-session refresh, ms. */
+  readEveryMs?: number
+  /** Header title; hosts that already title the window pass ''. */
+  title?: string
+  /** Px kept clear under the composer for a host's floating button (Veil's chat FAB on a phone). */
+  bottomInset?: number
+}
+
+const C = {
+  ink: 'var(--text-primary, #EDEFF5)',
+  dim: 'var(--text-secondary, rgba(237,239,245,.62))',
+  faint: 'var(--text-muted, rgba(237,239,245,.42))',
+  line: '1px solid var(--glass-border, rgba(237,239,245,.10))',
+  card: 'var(--bg-elevated, rgba(255,255,255,.04))',
+  accent: 'var(--accent, #5EC9CC)',
+}
+
+const TONE: Record<AgentTone, { fg: string; bg: string }> = {
+  attention: { fg: '#FCD34D', bg: 'rgba(251,191,36,.14)' },
+  working: { fg: '#6EE7B7', bg: 'rgba(16,185,129,.14)' },
+  idle: { fg: 'rgba(237,239,245,.62)', bg: 'rgba(237,239,245,.06)' },
+  ended: { fg: 'rgba(237,239,245,.42)', bg: 'rgba(237,239,245,.04)' },
+}
+
+const BTN: React.CSSProperties = {
+  minHeight: 44,
+  padding: '0 16px',
+  borderRadius: 12,
+  border: C.line,
+  background: 'transparent',
+  color: C.ink,
+  fontSize: 15,
+  cursor: 'pointer',
+}
+const PRIMARY: React.CSSProperties = { ...BTN, background: C.accent, color: '#06121A', border: 'none', fontWeight: 600 }
+
+function Chip({ tone, label }: { tone: AgentTone; label: string }) {
+  return (
+    <span
+      data-tone={tone}
+      style={{
+        fontSize: 12, fontWeight: 600, padding: '2px 8px', borderRadius: 999,
+        color: TONE[tone].fg, background: TONE[tone].bg, whiteSpace: 'nowrap',
+      }}
+    >
+      {label}
+    </span>
+  )
+}
+
+/** `fallback` carries a just-started session until the next list read includes it. */
+type View = { kind: 'list' } | { kind: 'session'; key: string; fallback?: AgentSession } | { kind: 'start' }
+
+const keyOf = (s: Pick<AgentSession, 'nodeId' | 'id'>) => `${s.nodeId}/${s.id}`
+
+export function AgentSessionsPanel({
+  transport,
+  listEveryMs = 10_000,
+  readEveryMs = 2_500,
+  title = 'Agents',
+  bottomInset = 0,
+}: AgentSessionsPanelProps) {
+  const [view, setView] = useState<View>({ kind: 'list' })
+  const [list, setList] = useState<AgentListResult | null>(null)
+  const [listError, setListError] = useState('')
+
+  const refresh = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const next = await transport.list(signal)
+      setList(next)
+      setListError('')
+    } catch (err) {
+      if (signal?.aborted) return
+      setListError(err instanceof Error ? err.message : 'Could not read your sessions.')
+    }
+  }, [transport])
+
+  useEffect(() => {
+    const ctl = new AbortController()
+    void refresh(ctl.signal)
+    const id = setInterval(() => void refresh(ctl.signal), listEveryMs)
+    return () => { ctl.abort(); clearInterval(id) }
+  }, [refresh, listEveryMs])
+
+  const sessions = useMemo(() => glanceOrder(list?.sessions || []), [list])
+  const open = view.kind === 'session' ? sessions.find((s) => keyOf(s) === view.key) || view.fallback || null : null
+
+  const root: React.CSSProperties = {
+    display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, width: '100%',
+    color: C.ink, fontFamily: 'inherit', fontSize: 15,
+  }
+
+  if (view.kind === 'start') {
+    return (
+      <div style={root} data-awkit="agent-sessions" data-view="start">
+        <StartSheet
+          transport={transport}
+          list={list}
+          onCancel={() => setView({ kind: 'list' })}
+          onStarted={(s) => {
+            void refresh()
+            if (!s) { setView({ kind: 'list' }); return }
+            const label = list?.machines.find((m) => m.nodeId === s.nodeId)?.label
+            const fallback = label ? { ...s, machine: label } : s
+            setView({ kind: 'session', key: keyOf(s), fallback })
+          }}
+        />
+      </div>
+    )
+  }
+
+  if (view.kind === 'session') {
+    return (
+      <div style={root} data-awkit="agent-sessions" data-view="session">
+        <SessionView
+          transport={transport}
+          session={open}
+          readEveryMs={readEveryMs}
+          bottomInset={bottomInset}
+          onBack={() => setView({ kind: 'list' })}
+        />
+      </div>
+    )
+  }
+
+  const waiting = needsYouCount(sessions)
+  const live = sessions.filter((s) => agentStatus(s.status).tone !== 'ended').length
+  const canStart = startableMachines(list?.machines || []).length > 0
+
+  return (
+    <div style={root} data-awkit="agent-sessions" data-view="list">
+      <header style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: C.line }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {title && <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>{title}</h2>}
+          <p style={{ margin: 0, fontSize: 13, color: waiting ? TONE.attention.fg : C.dim }} aria-live="polite">
+            {!list && !listError ? 'Looking…' : waiting ? `${waiting} need${waiting === 1 ? 's' : ''} you` : `${live} running`}
+          </p>
+        </div>
+        <button
+          type="button"
+          style={canStart ? PRIMARY : { ...BTN, opacity: 0.5 }}
+          disabled={!canStart}
+          title={canStart ? 'Start an agent' : 'No machine can start one right now'}
+          onClick={() => setView({ kind: 'start' })}
+        >
+          Start
+        </button>
+      </header>
+
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '8px 12px 16px' }}>
+        {listError && <Note>{listError}</Note>}
+        {list && sessions.length === 0 && !listError && (
+          <Note>
+            {list.machines.length === 0
+              ? 'No machines yet. Run `awsh rc` on a computer to add it.'
+              : 'Nothing running. Tap Start.'}
+          </Note>
+        )}
+        <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 8 }} aria-label="Sessions">
+          {sessions.map((s) => {
+            const st = agentStatus(s.status)
+            const line = lastLine(s)
+            return (
+              <li key={keyOf(s)}>
+                <button
+                  type="button"
+                  data-session={s.id}
+                  onClick={() => setView({ kind: 'session', key: keyOf(s) })}
+                  style={{
+                    width: '100%', textAlign: 'left', padding: '12px 14px', borderRadius: 14,
+                    border: st.tone === 'attention' ? `1px solid ${TONE.attention.fg}` : C.line,
+                    background: C.card, color: C.ink, cursor: 'pointer', display: 'grid', gap: 4,
+                  }}
+                >
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ flex: 1, minWidth: 0, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {sessionName(s)}
+                    </span>
+                    <Chip tone={st.tone} label={st.label} />
+                  </span>
+                  <span style={{ fontSize: 12, color: C.faint }}>
+                    {s.machine}{agoLabel(s.last_activity_at) ? ` · ${agoLabel(s.last_activity_at)}` : ''}
+                  </span>
+                  {line && (
+                    <span style={{ fontSize: 13, color: C.dim, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {line}
+                    </span>
+                  )}
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+        {(list?.errors || []).map((e) => (
+          <Note key={e.machine}>{e.machine}: {e.detail}</Note>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function Note({ children }: { children: React.ReactNode }) {
+  return <p role="status" style={{ margin: '8px 4px', fontSize: 13, color: C.dim }}>{children}</p>
+}
+
+const ROLE_STYLE: Record<AgentTranscriptLine['role'], React.CSSProperties> = {
+  you: { alignSelf: 'flex-end', background: 'rgba(94,201,204,.16)' },
+  agent: { alignSelf: 'flex-start', background: 'rgba(255,255,255,.05)' },
+  thinking: { alignSelf: 'flex-start', color: 'rgba(237,239,245,.42)', fontStyle: 'italic' },
+  tool: { alignSelf: 'flex-start', color: 'rgba(237,239,245,.42)', fontFamily: 'ui-monospace, monospace', fontSize: 12 },
+  system: { alignSelf: 'center', color: 'rgba(237,239,245,.42)', fontSize: 12 },
+  error: { alignSelf: 'flex-start', color: '#FCA5A5' },
+}
+
+function SessionView({
+  transport, session, readEveryMs, bottomInset, onBack,
+}: {
+  transport: AgentSessionsTransport
+  session: AgentSession | null
+  readEveryMs: number
+  bottomInset: number
+  onBack: () => void
+}) {
+  const [lines, setLines] = useState<AgentTranscriptLine[]>([])
+  const [unavailable, setUnavailable] = useState('')
+  const [draft, setDraft] = useState('')
+  const [notice, setNotice] = useState('')
+  const [sending, setSending] = useState(false)
+  const cursor = useRef<unknown>(undefined)
+  const tail = useRef<HTMLDivElement | null>(null)
+  const sid = session ? keyOf(session) : ''
+
+  useEffect(() => {
+    if (!session) return
+    cursor.current = undefined
+    setLines([])
+    setUnavailable('')
+    const ctl = new AbortController()
+    let stop = false
+    const tick = async () => {
+      try {
+        const r = await transport.read(session, cursor.current, ctl.signal)
+        if (stop) return
+        cursor.current = r.cursor
+        if (r.unavailable) { setUnavailable(r.unavailable); stop = true; return }
+        if (r.lines.length) setLines((prev) => mergeLines(prev, r.lines))
+      } catch {
+        // transient; the next tick retries
+      }
+    }
+    void tick()
+    const id = setInterval(() => { if (!stop) void tick() }, readEveryMs)
+    return () => { stop = true; ctl.abort(); clearInterval(id) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sid, transport, readEveryMs])
+
+  useEffect(() => {
+    const el = tail.current
+    if (el && typeof el.scrollTo === 'function') el.scrollTo({ top: el.scrollHeight })
+  }, [lines])
+
+  const send = useCallback(async (text: string) => {
+    const t = text.trim()
+    if (!session || !t || sending) return
+    setSending(true)
+    setNotice('')
+    try {
+      const r = await transport.send(session, t)
+      if (r.ok) {
+        setDraft('')
+        setNotice(r.detail || 'Sent.')
+      } else {
+        setNotice(`Not sent: ${r.detail}`)
+      }
+    } catch (err) {
+      setNotice(`Not sent: ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setSending(false)
+    }
+  }, [session, sending, transport])
+
+  if (!session) {
+    return (
+      <>
+        <BackBar onBack={onBack} title="Session" />
+        <Note>This session is gone from the list.</Note>
+      </>
+    )
+  }
+
+  const st = agentStatus(session.status)
+  const waiting = st.tone === 'attention'
+
+  return (
+    <>
+      <BackBar onBack={onBack} title={sessionName(session)} sub={session.machine} chip={<Chip tone={st.tone} label={st.label} />} />
+      <div
+        ref={tail}
+        aria-label="Transcript"
+        style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 6 }}
+      >
+        {lines.length === 0 && !unavailable && <Note>{lastLine(session, 400) || 'Nothing to read yet.'}</Note>}
+        {unavailable && <Note>{unavailable}</Note>}
+        {lines.slice(-200).map((l, i) => (
+          <div
+            key={`${l.seq}-${i}`}
+            data-role={l.role}
+            style={{ maxWidth: '88%', padding: '6px 10px', borderRadius: 10, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 14, ...ROLE_STYLE[l.role] }}
+          >
+            {l.text}
+          </div>
+        ))}
+      </div>
+      <footer style={{ borderTop: C.line, padding: 10, paddingBottom: 10 + bottomInset, display: 'grid', gap: 8 }}>
+        {waiting && session.canMessage && (
+          <div style={{ display: 'flex', gap: 8 }} aria-label="Quick answers">
+            {QUICK_REPLIES.map((q) => (
+              <button key={q} type="button" style={{ ...BTN, flex: 1 }} disabled={sending} onClick={() => void send(q)}>
+                {q[0].toUpperCase() + q.slice(1)}
+              </button>
+            ))}
+          </div>
+        )}
+        {session.canMessage ? (
+          <form
+            style={{ display: 'flex', gap: 8 }}
+            onSubmit={(e) => { e.preventDefault(); void send(draft) }}
+          >
+            <input
+              aria-label="Message"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="Message"
+              style={{ flex: 1, minHeight: 44, borderRadius: 12, border: C.line, background: 'transparent', color: C.ink, padding: '0 12px', fontSize: 16 }}
+            />
+            <button type="submit" style={PRIMARY} disabled={sending || !draft.trim()}>Send</button>
+          </form>
+        ) : (
+          <Note>{session.whyNot || 'This session does not take messages.'}</Note>
+        )}
+        {notice && <Note>{notice}</Note>}
+      </footer>
+    </>
+  )
+}
+
+function BackBar({ onBack, title, sub, chip }: { onBack: () => void; title: string; sub?: string; chip?: React.ReactNode }) {
+  return (
+    <header style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderBottom: C.line }}>
+      <button type="button" aria-label="Back" onClick={onBack} style={{ ...BTN, padding: '0 12px' }}>‹</button>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p style={{ margin: 0, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</p>
+        {sub && <p style={{ margin: 0, fontSize: 12, color: C.faint }}>{sub}</p>}
+      </div>
+      {chip}
+    </header>
+  )
+}
+
+function StartSheet({
+  transport, list, onCancel, onStarted,
+}: {
+  transport: AgentSessionsTransport
+  list: AgentListResult | null
+  onCancel: () => void
+  onStarted: (session: AgentSession | undefined) => void
+}) {
+  const machines = startableMachines(list?.machines || [])
+  const [nodeId, setNodeId] = useState(() => defaultMachine(list?.machines || []))
+  const [harness, setHarness] = useState(AGENT_HARNESSES[0].id)
+  const [cwd, setCwd] = useState('')
+  const [prompt, setPrompt] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  const pill = (on: boolean): React.CSSProperties => ({
+    ...BTN, borderRadius: 999, minHeight: 40,
+    background: on ? 'rgba(94,201,204,.18)' : 'transparent',
+    border: on ? `1px solid ${C.accent}` : C.line,
+  })
+
+  const go = async () => {
+    if (!nodeId || busy) return
+    setBusy(true)
+    setError('')
+    try {
+      const r = await transport.start({ nodeId, harness, cwd, prompt })
+      if (r.ok) onStarted(r.session)
+      else setError(r.detail || 'The machine refused.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const label: React.CSSProperties = { margin: '0 0 6px', fontSize: 12, color: C.faint, textTransform: 'uppercase', letterSpacing: '.08em' }
+
+  return (
+    <>
+      <BackBar onBack={onCancel} title="Start an agent" />
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 16, display: 'grid', gap: 18, alignContent: 'start' }}>
+        <section aria-label="Machine">
+          <p style={label}>Machine</p>
+          {machines.length === 0 && <Note>No machine can start one right now.</Note>}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {machines.map((m) => (
+              <button key={m.nodeId} type="button" aria-pressed={nodeId === m.nodeId} style={pill(nodeId === m.nodeId)} onClick={() => setNodeId(m.nodeId)}>
+                {m.label}
+              </button>
+            ))}
+          </div>
+        </section>
+        <section aria-label="Agent">
+          <p style={label}>Agent</p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {AGENT_HARNESSES.map((h) => (
+              <button key={h.id} type="button" aria-pressed={harness === h.id} style={pill(harness === h.id)} onClick={() => setHarness(h.id)}>
+                {h.label}
+              </button>
+            ))}
+          </div>
+        </section>
+        <section style={{ display: 'grid', gap: 8 }}>
+          <input
+            aria-label="Folder"
+            value={cwd}
+            onChange={(e) => setCwd(e.target.value)}
+            placeholder="Folder (optional)"
+            style={{ minHeight: 44, borderRadius: 12, border: C.line, background: 'transparent', color: C.ink, padding: '0 12px', fontSize: 16 }}
+          />
+          <textarea
+            aria-label="First message"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder="What should it do? (optional)"
+            rows={3}
+            style={{ borderRadius: 12, border: C.line, background: 'transparent', color: C.ink, padding: 12, fontSize: 16, resize: 'vertical' }}
+          />
+        </section>
+        {error && <Note>{error}</Note>}
+      </div>
+      <footer style={{ borderTop: C.line, padding: 12 }}>
+        <button type="button" style={{ ...PRIMARY, width: '100%', opacity: nodeId ? 1 : 0.5 }} disabled={!nodeId || busy} onClick={() => void go()}>
+          {busy ? 'Starting…' : 'Start'}
+        </button>
+      </footer>
+    </>
+  )
+}
+
+export default AgentSessionsPanel

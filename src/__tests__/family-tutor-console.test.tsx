@@ -223,39 +223,35 @@ describe('FamilyTutorConsolePanel redesign', () => {
     expect(screen.queryByText(/new pair code/i)).toBeNull()
   })
 
-  it('Connect a phone opens the QR sheet with the real countdown, and the link never reaches the console', async () => {
-    const spies = (['log', 'info', 'warn', 'error', 'debug'] as const).map((m) => jest.spyOn(console, m).mockImplementation(() => {}))
-    const url = 'https://aitherium.com/learn/connect#t=SECRET-TICKET'
+  it("Connect a phone asks for the code on THAT child's phone and approves it for that child; no QR or link exists", async () => {
     const calls = installFetch((u, init) => {
       if (u.endsWith('/family/learners')) {
-        return { status: 200, body: [{ lid: 'l-a', alias: 'Athena', display_name: 'Athena Parkhurst', grade: 1, age_band: '6-7', claimed: true, user_id: 'u-a' }] }
+        return { status: 200, body: [
+          { lid: 'l-a', alias: 'Athena', display_name: 'Athena Parkhurst', grade: 1, age_band: '6-7', claimed: true, user_id: 'u-a' },
+          { lid: 'l-x', alias: 'Alexander', grade: 2, age_band: '8-9', claimed: true, user_id: 'u-x' },
+        ] }
       }
-      if (u.endsWith('/family/learners/l-a/connect-link') && init?.method === 'POST') {
-        return { status: 200, body: { connect: { url, expires_in: 900, qr_svg_data_uri: 'data:image/svg+xml;base64,PHN2Zy8+' } } }
-      }
+      if (u.endsWith('/family/learners/l-a/approve-device') && init?.method === 'POST') return { status: 200, body: { approved: true } }
       return undefined
     })
     render(<FamilyTutorConsolePanel apiBase="/api/tutor" />)
     await screen.findByText('Athena')
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Connect a phone' })) })
+    await act(async () => { fireEvent.click(screen.getByTestId('connect-phone-l-a')) })
     const card = await screen.findByTestId('connect-phone-card')
-    expect(screen.getByTestId('connect-countdown').textContent).toMatch(/scan with athena's phone · 1[45]:\d\d/)
-    expect(screen.getByTestId('connect-url').textContent).toBe(url)
-    expect(card.querySelector('img')?.getAttribute('src')).toContain('data:image/svg+xml')
-    expect(card.textContent).not.toMatch(/pair code/i)
-
-    // "New code" mints a fresh link with the same call.
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'New code' })) })
-    expect(calls.filter((c) => c.url.endsWith('/connect-link')).length).toBe(2)
-
-    for (const s of spies) {
-      for (const args of s.mock.calls) expect(JSON.stringify(args)).not.toContain('SECRET-TICKET')
-      s.mockRestore()
-    }
-    expect(JSON.stringify({ ...window.localStorage })).not.toContain('SECRET-TICKET')
+    expect(card.textContent).toContain("Type the code shown on Athena's phone")
+    expect(card.querySelector('img')).toBeNull()
+    expect(screen.queryByTestId('connect-url')).toBeNull()
+    // The retired grown-up link is never minted.
+    expect(calls.some((c) => c.url.includes('/connect-link'))).toBe(false)
+    fireEvent.change(screen.getByTestId('kid-phone-code'), { target: { value: 'rldc jpj8' } })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: "Connect Athena's phone" })) })
+    const post = calls.find((c) => c.url.endsWith('/approve-device'))
+    expect(post?.url).toBe('/api/tutor/family/learners/l-a/approve-device')
+    expect(JSON.parse(String(post?.init?.body))).toEqual({ user_code: 'RLDC-JPJ8' })
+    expect((await screen.findByTestId('kid-phone-connect-note')).textContent).toMatch(/Athena's phone signs in by itself/)
   })
 
-  it('Add a child is a guided sheet: name and email, grade, consent, then the QR', async () => {
+  it("Add a child is a guided sheet: name and email, grade, consent, then their phone's code", async () => {
     const calls = installFetch((url, init) => {
       if (url.endsWith('/family/learners') && (!init?.method || init.method === 'GET')) return { status: 200, body: [] }
       if (url.endsWith('/family/children')) {
@@ -282,7 +278,9 @@ describe('FamilyTutorConsolePanel redesign', () => {
     fireEvent.click(screen.getByLabelText('child consent'))
     expect(add.disabled).toBe(false)
     await act(async () => { fireEvent.click(add) })
-    expect((await screen.findByTestId('connect-url')).textContent).toBe('https://x/learn/connect#t=T')
+    // Genesis' legacy `connect` link is never shown: the next step asks for Nova's phone's code.
+    expect((await screen.findByTestId('connect-phone-card')).textContent).toContain("Type the code shown on Nova's phone")
+    expect(screen.queryByTestId('connect-url')).toBeNull()
     const post = calls.find((c) => c.url.endsWith('/family/children'))
     expect(JSON.parse(String(post?.init?.body))).toEqual({
       full_name: 'Nova Parkhurst', email: 'nova@example.com', grade: 3, guardian_consent: true,
@@ -334,5 +332,30 @@ describe('FamilyTutorConsolePanel co-guardians', () => {
     expect(screen.queryByTestId('co-guardians')).toBeNull()
     expect(screen.queryByTestId('remove-learner')).toBeNull()
     expect(calls.some((c) => c.url.endsWith('/co-guardians'))).toBe(false)
+  })
+
+  it('onlyLid: one child learning links, no header, no Connect, no Advanced', async () => {
+    const two = [...LEARNERS, { lid: 'l-y', alias: 'Y', grade: 1, age_band: '6-7', claimed: true }]
+    installFetch((url) => {
+      if (url.endsWith('/family/learners')) return { status: 200, body: two }
+      if (url.endsWith('/report')) return { status: 200, body: REPORT }
+      return undefined
+    })
+    render(<FamilyTutorConsolePanel apiBase="/api/tutor" onlyLid="l-y" />)
+    expect(await screen.findByTestId('learner-l-y')).toBeTruthy()
+    expect(screen.queryByTestId('learner-l-x')).toBeNull()
+    expect(screen.queryByTestId('family-summary')).toBeNull()
+    expect(screen.queryByTestId('connect-phone-l-y')).toBeNull()
+    expect(screen.queryByRole('button', { name: /Advanced/ })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Weekly report' })).toBeTruthy()
+  })
+
+  it('hideLearners: the family-wide header and Advanced, no child tiles', async () => {
+    installFetch((url) => (url.endsWith('/family/learners') ? { status: 200, body: LEARNERS } : undefined))
+    render(<FamilyTutorConsolePanel apiBase="/api/tutor" hideLearners />)
+    expect(await screen.findByTestId('family-summary')).toHaveTextContent('1 child')
+    expect(screen.queryByTestId('learner-l-x')).toBeNull()
+    expect(screen.getByRole('button', { name: /Advanced/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Add a child' })).toBeTruthy()
   })
 })

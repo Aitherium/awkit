@@ -19,7 +19,7 @@ import { C, FONT_UI, LEARN_CSS, LearnModeSwitch } from './learnTheme'
 import { Skel, help, mono, primary, quiet } from './learnParts'
 import ClassroomNoticesBell from './ClassroomNoticesBell'
 import {
-  CLASSROOM_API, CLASSROOM_CSS, classroomFetch, cs, cseg, describeEvent, materialDownloadHref, openClassroomStream, pct, send, useClassroomSurface,
+  CLASSROOM_API, CLASSROOM_CSS, classroomFetch, cs, cseg, describeEvent, groupMaterials, materialDownloadHref, openClassroomStream, pct, send, useClassroomSurface,
   type ClassEvent, type Insight, type ParentChild, type ParentProgress, type RoomMessage, type RoomState, type StreamStatus,
 } from './classroomApi'
 
@@ -194,14 +194,31 @@ function ChildView({ child, apiBase, extraHeaders, live }: { child: ParentChild;
                 {room.materials && room.materials.status === 'ok' && room.materials.items.length > 0 && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }} data-testid="parent-materials">
                     <span style={{ ...mono, letterSpacing: '.08em' }}>from the teacher</span>
-                    <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
-                      {room.materials.items.map((m) => (
-                        <li key={m.id} style={cs.row}>
-                          <a href={materialDownloadHref(apiBase, child.class_id, m.id)} className="al-quiet al-focus" style={{ ...quiet, color: C.accent }}
-                            target="_blank" rel="noopener noreferrer" data-testid="parent-material">{m.title || 'Material'}</a>
-                        </li>
-                      ))}
-                    </ul>
+                    {groupMaterials(room.materials.items).map((g, gi) => {
+                      const list = (
+                        <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
+                          {g.items.map((m) => (
+                            <li key={m.id} style={cs.row}>
+                              <a href={materialDownloadHref(apiBase, child.class_id, m.id)} className="al-quiet al-focus" style={{ ...quiet, color: C.accent }}
+                                target="_blank" rel="noopener noreferrer" data-testid="parent-material">{m.title || 'Material'}</a>
+                            </li>
+                          ))}
+                        </ul>
+                      )
+                      const head = g.topic || (gi === 0 ? 'Latest lesson' : 'Earlier lesson')
+                      // The newest lesson is open; every earlier one is one tap away, never a second copy.
+                      return gi === 0 ? (
+                        <div key={g.key} data-testid="parent-lesson">
+                          <span style={{ color: C.ink, fontFamily: FONT_UI }}>{head}</span>
+                          {list}
+                        </div>
+                      ) : (
+                        <details key={g.key} data-testid="parent-lesson">
+                          <summary style={{ cursor: 'pointer', minHeight: 44, display: 'flex', alignItems: 'center', color: C.dim }}>{head}</summary>
+                          {list}
+                        </details>
+                      )
+                    })}
                   </div>
                 )}
                 {!thread ? <p style={help}>The thread opens once the class room is set up.</p> : (
@@ -223,10 +240,13 @@ function ThreadBox({ apiBase, classId, memberId, msgs, status, extraHeaders, onS
 }) {
   const [text, setText] = useState('')
   const [err, setErr] = useState<string | null>(null)
+  // The teacher is in quiet hours: their auto-reply (the message itself WAS delivered).
+  const [quietNote, setQuietNote] = useState<{ auto_reply: string; back_at?: string } | null>(null)
   const go = async (e: FormEvent) => {
-    e.preventDefault(); setErr(null)
+    e.preventDefault(); setErr(null); setQuietNote(null)
     try {
-      await send(apiBase, `/classes/${cseg(classId)}/room/threads/${cseg(memberId)}/messages`, 'POST', { text: text.trim() }, extraHeaders)
+      const r = await send<{ quiet?: { auto_reply?: string; back_at?: string } }>(apiBase, `/classes/${cseg(classId)}/room/threads/${cseg(memberId)}/messages`, 'POST', { text: text.trim() }, extraHeaders)
+      if (r?.quiet?.auto_reply) setQuietNote({ auto_reply: r.quiet.auto_reply, back_at: r.quiet.back_at })
       setText(''); onSent()
     } catch (ex) { setErr(ex instanceof Error ? ex.message : 'Not sent.') }
   }
@@ -244,6 +264,11 @@ function ThreadBox({ apiBase, classId, memberId, msgs, status, extraHeaders, onS
         <button type="submit" className="al-quiet al-focus" style={{ ...quiet, color: C.accent }} disabled={!text.trim()}>Send</button>
       </form>
       {err && <span role="alert" style={{ ...help, color: C.amber }}>{err}</span>}
+      {quietNote && (
+        <p role="status" style={{ ...help, margin: 0 }} data-testid="parent-quiet-reply">
+          {quietNote.auto_reply}{quietNote.back_at ? ` (Back ${new Date(quietNote.back_at).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}.)` : ''}
+        </p>
+      )}
     </div>
   )
 }

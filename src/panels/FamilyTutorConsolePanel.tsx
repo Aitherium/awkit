@@ -6,8 +6,8 @@
  * (anyone else gets 404), so this panel holds no authorization logic of its own.
  *
  * The screen: the family at a glance (one tile per child: Sprite, level, this
- * week's real minutes), ONE primary action per child ("Connect a phone", a sheet
- * with a large QR and the real expiry counting down), "Add a child" as a guided
+ * week's real minutes), ONE primary action per child ("Connect a phone": a sheet that
+ * asks for the code shown on THAT child's phone, ./KidPhoneConnect), "Add a child" as a guided
  * three-step sheet, every other tool a quiet link that opens a sheet, and the
  * legacy paths (terminal, pair code) collapsed under Advanced.
  *
@@ -15,8 +15,9 @@
  * - Reports are worded as observations, never as diagnoses or grades.
  * - The transcript is read-only: there is no delete control, by design.
  * - "Add child" creates the child's OWN account (no password anyone types) and a
- *   learner already bound to it; "Connect a phone" then shows a one-time QR/link
- *   (single use, ~15 min). The link lives only in component state, never storage.
+ *   learner already bound to it; "Connect a phone" then asks for the code the kid's
+ *   phone shows and approves it for that child. No grown-up-made QR or link exists any
+ *   more (2026-10-17: opened on the guardian's own phone, it signed HIM in as the child).
  * - A failed load is retried once after 3 s, then shown as offline with "Try again".
  */
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
@@ -33,12 +34,22 @@ import { LearnerSpriteButton, SpriteOfferCard, type KidSprite } from './LearnerS
 import { SpriteFace } from './spriteLook'
 import { C, EASE, FONT_MONO, FONT_UI, LEARN_CSS, LearnModeSwitch, learnVars, useLearnMode } from './learnTheme'
 import { CheckRow, Field, SelectBox, Sheet, SheetHeading, Skel, fieldBox, help, mono, primary, quiet } from './learnParts'
+import KidPhoneConnect, { KID_CONNECT_BUTTON } from './KidPhoneConnect'
 
 export interface FamilyTutorConsolePanelProps {
   /** Base of the tutor proxy, e.g. '/api/tutor'. */
   apiBase: string
   /** Headers the host app adds (its bearer). */
   extraHeaders?: Record<string, string>
+  /**
+   * One child's learning tools only (the host already shows the child's card, Sprite and
+   * "Connect a phone"): their week at a glance and the quiet links (progress, report,
+   * focus, level, messages, transcript, settings, practice, Space). No header, no
+   * Academy row, no Advanced.
+   */
+  onlyLid?: string
+  /** The family-wide tools only (header, "Add a child", Academy, Advanced): no child tiles. */
+  hideLearners?: boolean
 }
 
 interface LearnerSettings {
@@ -63,15 +74,8 @@ interface Learner {
   guardian_role?: 'primary' | 'co'
 }
 
-/** One-time phone link from Genesis (connect object of the family contract). */
-interface ConnectLink {
-  url: string
-  expires_at?: string | number
-  expires_in?: number
-  qr_svg_data_uri?: string | null
-}
-
-interface ConnectState { lid: string; name: string; link: ConnectLink }
+/** The child a "Connect a phone" sheet approves for. */
+interface PhoneFor { lid: string; name: string }
 
 const GRADES: Array<[number, string]> = [
   [0, 'Kindergarten'], [1, '1st grade'], [2, '2nd grade'], [3, '3rd grade'],
@@ -91,104 +95,26 @@ function possessive(name: string): string {
   return n ? `${n}'s` : 'their'
 }
 
-function expiryMs(link: ConnectLink, issuedAt: number): number {
-  const v = link.expires_at
-  if (typeof v === 'number') return v < 1e12 ? v * 1000 : v
-  if (typeof v === 'string' && v.trim() !== '') {
-    const n = Number(v)
-    if (!Number.isNaN(n)) return n < 1e12 ? n * 1000 : n
-    const d = Date.parse(v)
-    if (!Number.isNaN(d)) return d
-  }
-  return issuedAt + (link.expires_in ?? 900) * 1000
-}
-
 /** Text on the QR field (black in both modes): the paper colour, dimmed. */
 const onQr = (alpha: number): CSSProperties => ({ color: C.qrPaper, opacity: alpha })
 
-/** The QR, the real countdown and the fallback link. Lives in a sheet. */
-function ConnectBody({ state, onRenew, onClose }: {
-  state: ConnectState
-  onRenew: () => void
+/** "Connect a phone" for one child: the code their phone shows, approved for them. */
+function PhoneSheetBody({ who, apiBase, headers, onClose }: {
+  who: PhoneFor
+  apiBase: string
+  headers: Record<string, string>
   onClose: () => void
 }) {
-  const [issuedAt] = useState(() => Date.now())
-  const deadline = expiryMs(state.link, issuedAt)
-  const [now, setNow] = useState(() => Date.now())
-  const [copied, setCopied] = useState(false)
-
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(t)
-  }, [])
-
-  const left = Math.max(0, Math.floor((deadline - now) / 1000))
-  const expired = left <= 0
-  const mm = Math.floor(left / 60)
-  const ss = String(left % 60).padStart(2, '0')
-  const who = possessive(state.name).toLowerCase()
-  const first = firstName(state.name) || 'your child'
-
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(state.link.url)
-      setCopied(true)
-    } catch {
-      setCopied(false)
-    }
-  }
-
+  const first = firstName(who.name) || 'your child'
   return (
     <div data-testid="connect-phone-card" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-      <SheetHeading label={`connect · ${first.toLowerCase()}`} title={`Connect ${possessive(state.name)} phone`} />
-      <div style={{
-        background: C.qrField, borderRadius: 16, padding: 'clamp(20px, 6vw, 36px)', display: 'flex',
-        flexDirection: 'column', alignItems: 'center', gap: 16, border: `1px solid ${C.hairline}`,
-      }}>
-        {expired ? (
-          <div data-testid="connect-expired" style={{ minHeight: 200, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, textAlign: 'center' }}>
-            <span style={{ ...mono, ...onQr(0.55) }}>expired</span>
-            <span style={{ font: `300 22px/1.3 ${FONT_UI}`, letterSpacing: '-0.02em', ...onQr(0.92) }}>This code has run out</span>
-          </div>
-        ) : state.link.qr_svg_data_uri ? (
-          <img src={state.link.qr_svg_data_uri} alt={`QR code that signs ${first} in on their phone`}
-            className="al-in"
-            style={{ display: 'block', width: 'min(280px, 64vw)', height: 'auto', aspectRatio: '1 / 1', background: C.qrPaper, padding: 12, borderRadius: 14, boxSizing: 'border-box' }} />
-        ) : (
-          <span style={{ ...mono, ...onQr(0.55), padding: '40px 0' }}>no qr · use the link below</span>
-        )}
-        {!expired && (
-          <div data-testid="connect-countdown" style={{ ...mono, ...onQr(0.72), fontVariantNumeric: 'tabular-nums', textAlign: 'center' }}>
-            scan with {who} phone · {mm}:{ss}
-          </div>
-        )}
-      </div>
-
-      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-        <button type="button" onClick={onRenew} className="al-quiet al-focus" style={{ ...quiet, color: C.accent }}>New code</button>
-        {!expired && (
-          <span style={help}>Works once, for {Math.max(1, Math.round((deadline - issuedAt) / 60000))} minutes.</span>
-        )}
-      </div>
-
+      <SheetHeading label={`connect · ${first.toLowerCase()}`} title={`Connect ${possessive(who.name)} phone`} />
       <ol style={{ margin: 0, paddingLeft: 20, color: C.dim, font: `400 15px/1.6 ${FONT_UI}` }}>
-        <li>On {possessive(state.name)} phone, open the camera.</li>
-        <li>Point it at the code and tap the link.</li>
-        <li>Tap Continue. That&apos;s it.</li>
+        <li>On {possessive(who.name)} phone, open the Aither app or app.aitherium.com/learn.</li>
+        <li>It says &quot;Ask your grown-up to connect this phone&quot; and shows a code.</li>
+        <li>Type that code here.</li>
       </ol>
-
-      {!expired && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, borderTop: `1px solid ${C.hairline}`, paddingTop: 14 }}>
-          <span style={mono}>or send this link to their phone</span>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            <code data-testid="connect-url" style={{ flex: '1 1 220px', minWidth: 0, wordBreak: 'break-all', font: `400 12px/1.5 ${FONT_MONO}`, color: C.dim }}>
-              {state.link.url}
-            </code>
-            <button type="button" onClick={copy} className="al-quiet al-focus" style={quiet}>{copied ? 'Copied' : 'Copy'}</button>
-          </div>
-        </div>
-      )}
-
+      <KidPhoneConnect apiBase={apiBase} extraHeaders={headers} lid={who.lid} name={who.name} />
       <div>
         <button type="button" onClick={onClose} className="al-quiet al-focus" style={quiet}>Done</button>
       </div>
@@ -332,7 +258,7 @@ function ReportList({ title, items }: { title: string; items: string[] }) {
   )
 }
 
-export default function FamilyTutorConsolePanel({ apiBase, extraHeaders = {} }: FamilyTutorConsolePanelProps) {
+export default function FamilyTutorConsolePanel({ apiBase, extraHeaders = {}, onlyLid, hideLearners = false }: FamilyTutorConsolePanelProps) {
   const headersRef = useRef(extraHeaders)
   headersRef.current = extraHeaders
   const rootRef = useRef<HTMLDivElement>(null)
@@ -359,7 +285,7 @@ export default function FamilyTutorConsolePanel({ apiBase, extraHeaders = {} }: 
   const [noticeRead, setNoticeRead] = useState(false)
   const [consent, setConsent] = useState(false)
 
-  // add-child sheet (creates the child's own account): three steps, then the QR
+  // add-child sheet (creates the child's own account): three steps, then their phone's code
   const [addOpen, setAddOpen] = useState(false)
   const [addStep, setAddStep] = useState<1 | 2 | 3 | 4>(1)
   const [addErr, setAddErr] = useState<string | null>(null)
@@ -368,7 +294,8 @@ export default function FamilyTutorConsolePanel({ apiBase, extraHeaders = {} }: 
   const [childGrade, setChildGrade] = useState(1)
   const [childConsent, setChildConsent] = useState(false)
   const [childBusy, setChildBusy] = useState(false)
-  const [connect, setConnect] = useState<ConnectState | null>(null)
+  // "Connect a phone": the child the code is FOR (from their card, or the child just added).
+  const [phoneFor, setPhoneFor] = useState<PhoneFor | null>(null)
   const [spaceFor, setSpaceFor] = useState<{ lid: string; name: string } | null>(null)
   const [spriteOffer, setSpriteOffer] = useState<{ lid: string; name: string } | null>(null)
 
@@ -410,13 +337,16 @@ export default function FamilyTutorConsolePanel({ apiBase, extraHeaders = {} }: 
       const r = await call('/family/learners')
       const list = Array.isArray(r.data) ? r.data
         : (r.data && Array.isArray((r.data as { learners?: unknown }).learners) ? (r.data as { learners: Learner[] }).learners : null)
-      if (r.ok && list) { setLearners(list as Learner[]); setLoadState('ready'); return 'ok' }
+      if (r.ok && list) {
+        setLearners(onlyLid ? (list as Learner[]).filter((l) => l.lid === onlyLid) : list as Learner[])
+        setLoadState('ready'); return 'ok'
+      }
       if (r.status === 403) { setLoadState('forbidden'); return 'forbidden' }
       return 'fail'
     } catch {
       return 'fail'
     }
-  }, [call])
+  }, [call, onlyLid])
 
   const load = useCallback(async () => { await fetchLearners() }, [fetchLearners])
 
@@ -458,11 +388,11 @@ export default function FamilyTutorConsolePanel({ apiBase, extraHeaders = {} }: 
   const canAddChild = childNameOk && childEmailOk && childConsent && !childBusy
 
   const openAdd = () => {
-    setAddErr(null); setAddStep(1); setConnect(null); setSpriteOffer(null); setAddOpen(true)
+    setAddErr(null); setAddStep(1); setPhoneFor(null); setSpriteOffer(null); setAddOpen(true)
   }
   const closeAdd = () => {
     setAddOpen(false)
-    if (addStep === 4) { setConnect(null); setSpriteOffer(null) }
+    if (addStep === 4) { setPhoneFor(null); setSpriteOffer(null) }
   }
 
   const addChild = async () => {
@@ -477,9 +407,10 @@ export default function FamilyTutorConsolePanel({ apiBase, extraHeaders = {} }: 
       guardian_consent: true,
     }).catch(() => null)
     setChildBusy(false)
-    const d = (r?.data || {}) as { learner?: Learner; connect?: ConnectLink; detail?: unknown; sprite_offer?: boolean }
-    if (r?.ok && d.learner && d.connect?.url) {
-      setConnect({ lid: d.learner.lid, name, link: d.connect })
+    // Genesis still answers a `connect` link for older clients; it is never shown.
+    const d = (r?.data || {}) as { learner?: Learner; detail?: unknown; sprite_offer?: boolean }
+    if (r?.ok && d.learner) {
+      setPhoneFor({ lid: d.learner.lid, name: d.learner.alias || name })
       if (d.sprite_offer) setSpriteOffer({ lid: d.learner.lid, name: d.learner.alias || name })
       setChildName(''); setChildEmail(''); setChildConsent(false)
       setAddOpen(true); setAddStep(4)
@@ -498,15 +429,6 @@ export default function FamilyTutorConsolePanel({ apiBase, extraHeaders = {} }: 
     if (addStep === 1) { if (childNameOk && childEmailOk) setAddStep(2); return }
     if (addStep === 2) { setAddStep(3); return }
     if (addStep === 3) void addChild()
-  }
-
-  const connectPhone = async (lid: string, name: string) => {
-    setNote(null)
-    const r = await call(`/family/learners/${encodeURIComponent(lid)}/connect-link`, 'POST', {}).catch(() => null)
-    const d = (r?.data || {}) as { connect?: ConnectLink }
-    if (r?.ok && d.connect?.url) setConnect({ lid, name, link: d.connect })
-    else if (r?.status === 409) setNote('This child has no sign-in of their own yet. Open Advanced to use a one-time code.')
-    else setNote('Could not make a phone code. Try again in a moment.')
   }
 
   const approveDevice = async (e: FormEvent) => {
@@ -609,14 +531,18 @@ export default function FamilyTutorConsolePanel({ apiBase, extraHeaders = {} }: 
     <button type="button" onClick={onClick} className="al-quiet al-focus" style={{ ...quiet, ...extra }}>{label}</button>
   )
   const showFamily = loadState === 'ready' && learners.length > 0
+  const single = !!onlyLid
+  const rootStyle: CSSProperties = single || hideLearners
+    ? { ...S.root, background: 'transparent', minHeight: 0, padding: 0 }
+    : S.root
 
   return (
-    <div ref={rootRef} style={{ ...learnVars(mode), ...S.root }} data-learn-theme={mode} data-testid="family-tutor-console">
+    <div ref={rootRef} style={{ ...learnVars(mode), ...rootStyle }} data-learn-theme={mode} data-testid="family-tutor-console">
       <style>{LEARN_CSS + CONSOLE_CSS}</style>
-      <div style={S.column}>
+      <div style={single || hideLearners ? { ...S.column, gap: 16 } : S.column}>
 
         {/* Header */}
-        <header className="al-head al-in">
+        {!single && <header className="al-head al-in">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <span style={mono}>aither learn · family</span>
             <h1 style={{ margin: 0, font: `300 clamp(32px, 6vw, 46px)/1.05 ${FONT_UI}`, letterSpacing: '-0.02em', color: C.ink }}>
@@ -632,7 +558,7 @@ export default function FamilyTutorConsolePanel({ apiBase, extraHeaders = {} }: 
             {showFamily && linkBtn('Add a child', openAdd, { color: C.accent })}
             <LearnModeSwitch pref={pref} onChange={setPref} />
           </div>
-        </header>
+        </header>}
 
         {/* The family */}
         <section aria-label="Your children" aria-busy={loadState === 'loading'}>
@@ -660,7 +586,7 @@ export default function FamilyTutorConsolePanel({ apiBase, extraHeaders = {} }: 
             </div>
           )}
 
-          {loadState === 'ready' && learners.length === 0 && (
+          {loadState === 'ready' && learners.length === 0 && !single && (
             <div data-testid="learners-empty" className="al-in" style={{ ...S.section, padding: 'clamp(24px, 5vw, 44px)', display: 'flex', flexDirection: 'column', gap: 14, alignItems: 'flex-start' }}>
               <span style={mono}>no children yet</span>
               <h2 style={{ margin: 0, font: `300 28px/1.15 ${FONT_UI}`, letterSpacing: '-0.02em' }}>Add your first child</h2>
@@ -671,16 +597,16 @@ export default function FamilyTutorConsolePanel({ apiBase, extraHeaders = {} }: 
             </div>
           )}
 
-          {showFamily && (
-            <div className="al-grid">
+          {showFamily && !hideLearners && (
+            <div className={single ? undefined : 'al-grid'}>
               {learners.map((l, i) => {
                 const g = glance[l.lid]
                 const more = moreFor === l.lid
                 const name = l.display_name || l.alias
                 return (
                   <article key={l.lid} className="al-tile al-in" data-testid={`learner-${l.lid}`}
-                    style={{ ...S.tile, animationDelay: `${Math.min(i, 6) * 60}ms` }}>
-                    <div style={{ display: 'flex', gap: 16, alignItems: 'center', minWidth: 0 }}>
+                    style={single ? { ...S.tile, padding: 0, border: 'none', background: 'transparent', gap: 12 } : { ...S.tile, animationDelay: `${Math.min(i, 6) * 60}ms` }}>
+                    {!single && <div style={{ display: 'flex', gap: 16, alignItems: 'center', minWidth: 0 }}>
                       <Avatar sprite={l.sprite} name={l.alias} />
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
                         <h3 style={S.h3}>{l.alias}</h3>
@@ -690,7 +616,7 @@ export default function FamilyTutorConsolePanel({ apiBase, extraHeaders = {} }: 
                           <LearnerSpriteButton call={call} lid={l.lid} sprite={l.sprite} onDone={() => load()} />
                         </div>
                       </div>
-                    </div>
+                    </div>}
 
                     <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', minHeight: 50 }} data-testid={`glance-${l.lid}`}>
                       {g === undefined ? (
@@ -706,12 +632,13 @@ export default function FamilyTutorConsolePanel({ apiBase, extraHeaders = {} }: 
                       )}
                     </div>
 
-                    <button type="button" className="al-primary al-focus al-primary-wide" style={primary}
-                      onClick={() => (l.user_id ? connectPhone(l.lid, name) : newCode(l))}>
-                      Connect a phone
-                    </button>
+                    {!single && <button type="button" className="al-primary al-focus al-primary-wide" style={primary}
+                      data-testid={`connect-phone-${l.lid}`}
+                      onClick={() => (l.user_id ? setPhoneFor({ lid: l.lid, name }) : newCode(l))}>
+                      {KID_CONNECT_BUTTON}
+                    </button>}
 
-                    <nav aria-label={`More for ${l.alias}`} style={{ borderTop: `1px solid ${C.hairline}`, marginTop: -4 }}>
+                    <nav aria-label={single ? `Learning for ${l.alias}` : `More for ${l.alias}`} style={{ borderTop: single ? 'none' : `1px solid ${C.hairline}`, marginTop: single ? 0 : -4 }}>
                       <div style={S.links}>
                         {linkBtn('Progress', () => setView({ kind: 'progress', lid: l.lid }))}
                         {linkBtn('Weekly report', () => openReport(l.lid))}
@@ -740,10 +667,10 @@ export default function FamilyTutorConsolePanel({ apiBase, extraHeaders = {} }: 
         </section>
 
         {/* Academy: one quiet row */}
-        {showFamily && <AcademyMirrorCard call={call} />}
+        {showFamily && !single && <AcademyMirrorCard call={call} />}
 
         {/* Advanced: the terminal and the legacy code path */}
-        <section style={{ borderTop: `1px solid ${C.hairline}`, paddingTop: 8 }}>
+        {!single && <section style={{ borderTop: `1px solid ${C.hairline}`, paddingTop: 8 }}>
           <button type="button" aria-expanded={advanced} onClick={() => setAdvanced(!advanced)}
             className="al-quiet al-focus" style={{ ...quiet, ...mono, minHeight: 44 }}>
             {advanced ? '▾' : '▸'} Advanced
@@ -819,7 +746,7 @@ export default function FamilyTutorConsolePanel({ apiBase, extraHeaders = {} }: 
               </form>
             </div>
           )}
-        </section>
+        </section>}
 
         {note && (
           <div role="status" className="al-in" style={{
@@ -915,10 +842,7 @@ export default function FamilyTutorConsolePanel({ apiBase, extraHeaders = {} }: 
             </form>
           ) : (
             <div style={S.formCol}>
-              {connect && (
-                <ConnectBody key={`${connect.lid}:${connect.link.url}`} state={connect}
-                  onRenew={() => connectPhone(connect.lid, connect.name)} onClose={closeAdd} />
-              )}
+              {phoneFor && <PhoneSheetBody who={phoneFor} apiBase={apiBase} headers={headersRef.current} onClose={closeAdd} />}
               {spriteOffer && (
                 <SpriteOfferCard call={call} lid={spriteOffer.lid} name={spriteOffer.name} onClose={() => { setSpriteOffer(null); load() }} />
               )}
@@ -927,10 +851,9 @@ export default function FamilyTutorConsolePanel({ apiBase, extraHeaders = {} }: 
         </Sheet>
       )}
 
-      {connect && !addOpen && (
-        <Sheet mode={mode} host={sheetHost} label="Connect a phone" onClose={() => setConnect(null)}>
-          <ConnectBody key={`${connect.lid}:${connect.link.url}`} state={connect}
-            onRenew={() => connectPhone(connect.lid, connect.name)} onClose={() => setConnect(null)} />
+      {phoneFor && !addOpen && (
+        <Sheet mode={mode} host={sheetHost} label={KID_CONNECT_BUTTON} onClose={() => setPhoneFor(null)}>
+          <PhoneSheetBody key={phoneFor.lid} who={phoneFor} apiBase={apiBase} headers={headersRef.current} onClose={() => setPhoneFor(null)} />
         </Sheet>
       )}
 

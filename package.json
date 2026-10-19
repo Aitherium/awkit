@@ -34,6 +34,10 @@
       "types": "./src/panels/learnTheme.tsx",
       "import": "./src/panels/learnTheme.tsx"
     },
+    "./panels/KidPhoneConnect": {
+      "types": "./src/panels/KidPhoneConnect.tsx",
+      "import": "./src/panels/KidPhoneConnect.tsx"
+    },
     "./panels/learnParts": {
       "types": "./src/panels/learnParts.tsx",
       "import": "./src/panels/learnParts.tsx"
@@ -41,6 +45,14 @@
     "./panels/academyApi": {
       "types": "./src/panels/academyApi.ts",
       "import": "./src/panels/academyApi.ts"
+    },
+    "./panels/FamilyQuestPanel": {
+      "types": "./src/panels/FamilyQuestPanel.tsx",
+      "import": "./src/panels/FamilyQuestPanel.tsx"
+    },
+    "./panels/familyQuestApi": {
+      "types": "./src/panels/familyQuestApi.ts",
+      "import": "./src/panels/familyQuestApi.ts"
     },
     "./panels/KidQuestPanel": {
       "types": "./src/panels/KidQuestPanel.tsx",
@@ -306,6 +318,10 @@
         "types": "./dist/panels/learnTheme.d.ts",
         "import": "./dist/panels/learnTheme.js"
       },
+      "./panels/KidPhoneConnect": {
+        "types": "./dist/panels/KidPhoneConnect.d.ts",
+        "import": "./dist/panels/KidPhoneConnect.js"
+      },
       "./panels/learnParts": {
         "types": "./dist/panels/learnParts.d.ts",
         "import": "./dist/panels/learnParts.js"
@@ -313,6 +329,14 @@
       "./panels/academyApi": {
         "types": "./dist/panels/academyApi.d.ts",
         "import": "./dist/panels/academyApi.js"
+      },
+      "./panels/FamilyQuestPanel": {
+        "types": "./dist/panels/FamilyQuestPanel.d.ts",
+        "import": "./dist/panels/FamilyQuestPanel.js"
+      },
+      "./panels/familyQuestApi": {
+        "types": "./dist/panels/familyQuestApi.d.ts",
+        "import": "./dist/panels/familyQuestApi.js"
       },
       "./panels/KidQuestPanel": {
         "types": "./dist/panels/KidQuestPanel.d.ts",

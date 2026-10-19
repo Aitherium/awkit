@@ -268,6 +268,23 @@ export interface RoomMessage { id?: string; nick?: string; content?: string; tim
 export interface RoomThread { member_id: string; alias: string; parents?: number; messages?: RoomMessage[]; status?: string }
 export interface Announcement { id?: string; text: string; created_at?: string }
 export interface MaterialItem { id: string; lesson_id?: string; kind?: string; tier?: string | null; title?: string; topic?: string; download_url?: string }
+/** Materials grouped by lesson, in the order the server sent them (newest lesson first), each
+ *  title once per lesson. Without this, two lessons with the same five handouts read as one
+ *  list printed twice ("Lesson plan, Tier A..., Lesson plan, Tier A...": owner, 2026-10-18). */
+export interface MaterialLesson { key: string; topic: string; items: MaterialItem[] }
+export function groupMaterials(items: MaterialItem[]): MaterialLesson[] {
+  const out: MaterialLesson[] = []
+  const byKey = new Map<string, MaterialLesson>()
+  for (const m of items || []) {
+    const key = m.lesson_id || m.topic || '_'
+    let g = byKey.get(key)
+    if (!g) { g = { key, topic: (m.topic || '').trim(), items: [] }; byKey.set(key, g); out.push(g) }
+    const t = (m.title || 'Material').trim().toLowerCase()
+    if (!g.items.some((x) => (x.title || 'Material').trim().toLowerCase() === t)) g.items.push(m)
+    if (!g.topic && m.topic) g.topic = m.topic.trim()
+  }
+  return out
+}
 /** The link the HOST serves for a material. Never the server's `download_url`: that is the Genesis path, which a
  *  browser cannot reach and which would skip the proxy's attachment / nosniff / sandbox headers. */
 export function materialDownloadHref(apiBase: string, classId: string, materialId: string): string {

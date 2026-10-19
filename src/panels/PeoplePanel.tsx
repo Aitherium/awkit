@@ -31,6 +31,8 @@ interface PeopleData {
   workspace_users: WorkspaceUser[]
   company_staff: StaffMember[]
   counts: { workspace_users: number; company_staff: number }
+  /** Set when the member list could not be loaded: say so, never "nobody". */
+  workspace_users_error?: string | null
 }
 
 export interface PeoplePanelProps {
@@ -67,7 +69,11 @@ export default function PeoplePanel({ apiBase = '/api/people' }: PeoplePanelProp
 
   // Invite form
   const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteRole, setInviteRole] = useState<'member' | 'viewer' | 'admin'>('member')
   const [inviteStatus, setInviteStatus] = useState('')
+  // The invitation link stays on screen until dismissed: it IS the invitation
+  // (works once, for that address), so the inviter can text or paste it anywhere.
+  const [inviteLink, setInviteLink] = useState('')
 
   // Add staff form
   const [showAddStaff, setShowAddStaff] = useState(false)
@@ -97,27 +103,80 @@ export default function PeoplePanel({ apiBase = '/api/people' }: PeoplePanelProp
   const inviteUser = async () => {
     if (!inviteEmail) return
     setInviteStatus('Sending...')
+    setInviteLink('')
     try {
       const r = await fetch(`${apiBase}/invite`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: inviteEmail, role: 'member' }),
+        body: JSON.stringify({ email: inviteEmail.trim(), role: inviteRole }),
       })
+      const d = await r.json().catch(() => ({}))
       if (r.ok) {
-        setInviteStatus('Invitation sent!')
+        const mailed = d.email_status === 'email'
+        setInviteStatus(mailed
+          ? `Invitation emailed to ${inviteEmail.trim()}. You can also share the link below.`
+          : `Invitation created, but the email did not go out. Send ${inviteEmail.trim()} the link below.`)
+        setInviteLink(typeof d.invite_link === 'string' ? d.invite_link : '')
         setInviteEmail('')
-        showToast('Invitation sent')
+        showToast('Invitation created')
       } else {
-        const d = await r.json()
-        setInviteStatus(`Failed: ${d.detail || 'Unknown error'}`)
+        setInviteStatus(d.detail || 'The invitation could not be sent.')
       }
-    } catch { setInviteStatus('Failed to send invite') }
-    setTimeout(() => setInviteStatus(''), 3000)
+    } catch { setInviteStatus('The invitation could not be sent.') }
+  }
+
+  const copyInviteLink = async () => {
+    try {
+      await navigator.clipboard.writeText(inviteLink)
+      showToast('Link copied')
+    } catch { showToast('Select the link and copy it') }
+  }
+
+  // A write the server refused must read as refused: Save, Add and Remove used to
+  // toast success whatever came back, and Save sent nothing at all ("Staff updated
+  // (save pending backend PUT)", live on a customer appliance 2026-10-17).
+  const [staffError, setStaffError] = useState('')
+  const refusal = async (r: Response, fallback: string) => {
+    const d = await r.json().catch(() => ({} as Record<string, unknown>))
+    const detail = (d as { detail?: unknown }).detail
+    return typeof detail === 'string' && detail.trim() ? detail : fallback
+  }
+
+  const saveStaff = async () => {
+    if (!selectedStaff) return
+    setStaffError('')
+    const body = {
+      name: (editForm.name || '').trim(),
+      title: editForm.title || '',
+      location: editForm.location || '',
+      certifications: editForm.certifications || [],
+      specialties: editForm.specialties || [],
+      years_experience: editForm.years_experience ?? null,
+    }
+    if (!body.name) { setStaffError('A staff member needs a name.'); return }
+    try {
+      const r = await fetch(`${apiBase}/staff/${encodeURIComponent(selectedStaff.id)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!r.ok) {
+        setStaffError(await refusal(r, 'The change could not be saved.'))
+        return
+      }
+      setSelectedStaff({ ...selectedStaff, ...body })
+      setEditing(false)
+      showToast('Saved')
+      fetchPeople()
+    } catch {
+      setStaffError('The change could not be saved: the workspace did not answer.')
+    }
   }
 
   const addStaff = async () => {
     if (!newName) return
-    await fetch(`${apiBase}/staff`, {
+    setStaffError('')
+    const r = await fetch(`${apiBase}/staff`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -128,7 +187,12 @@ export default function PeoplePanel({ apiBase = '/api/people' }: PeoplePanelProp
         certifications: newCerts ? newCerts.split(',').map(s => s.trim()).filter(Boolean) : [],
         specialties: newSpecialties ? newSpecialties.split(',').map(s => s.trim()).filter(Boolean) : [],
       }),
-    })
+    }).catch(() => null)
+    if (!r || !r.ok) {
+      showToast(r ? await refusal(r, 'The staff member could not be added.')
+        : 'The staff member could not be added: the workspace did not answer.')
+      return
+    }
     setNewName(''); setNewTitle(''); setNewEmail(''); setNewPhone('')
     setNewLocation(''); setNewCerts(''); setNewSpecialties(''); setNewYears('')
     setShowAddStaff(false)
@@ -138,13 +202,21 @@ export default function PeoplePanel({ apiBase = '/api/people' }: PeoplePanelProp
 
   const removeStaff = async (id: string) => {
     if (!confirm('Remove this staff member?')) return
-    await fetch(`${apiBase}/staff/${id}`, { method: 'DELETE' })
+    setStaffError('')
+    const r = await fetch(`${apiBase}/staff/${encodeURIComponent(id)}`, { method: 'DELETE' })
+      .catch(() => null)
+    if (!r || !r.ok) {
+      setStaffError(r ? await refusal(r, 'The staff member could not be removed.')
+        : 'The staff member could not be removed: the workspace did not answer.')
+      return
+    }
     if (selectedStaff?.id === id) setSelectedStaff(null)
     showToast('Staff member removed')
     fetchPeople()
   }
 
   const startEditStaff = (s: StaffMember) => {
+    setStaffError('')
     setEditForm({
       name: s.name,
       title: s.title,
@@ -285,7 +357,7 @@ export default function PeoplePanel({ apiBase = '/api/people' }: PeoplePanelProp
                     const isSelected = selectedStaff?.id === s.id
                     return (
                       <div key={s.id}
-                        onClick={() => { setSelectedStaff(s); setSelectedUser(null); setEditing(false) }}
+                        onClick={() => { setSelectedStaff(s); setSelectedUser(null); setEditing(false); setStaffError('') }}
                         style={{
                           padding: '0.75rem 1rem',
                           background: 'var(--bg-surface, var(--bg-elevated, #222))',
@@ -336,6 +408,11 @@ export default function PeoplePanel({ apiBase = '/api/people' }: PeoplePanelProp
           {/* Workspace Users */}
           {activeSection === 'users' && (
             <div>
+              {data?.workspace_users_error && (
+                <p role="status" style={{ color: 'var(--text-muted, #888)', fontSize: '0.8rem', margin: '0 0 0.5rem' }}>
+                  {data.workspace_users_error}
+                </p>
+              )}
               {filteredUsers.length === 0 ? (
                 <p style={{ color: 'var(--text-muted, #888)', textAlign: 'center', padding: '2rem' }}>
                   No workspace users found.
@@ -393,19 +470,36 @@ export default function PeoplePanel({ apiBase = '/api/people' }: PeoplePanelProp
               }}>
                 <h3 style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '0.75rem' }}>Invite Workspace User</h3>
                 <p style={{ fontSize: '0.75rem', color: 'var(--text-muted, #888)', marginBottom: '0.75rem' }}>
-                  Send an invite — user gets full workspace access
+                  They get an email with a link. It works once, for that address, and expires in 7 days.
+                  After they join they can open this workspace on their phone or PC and install the app from it.
                 </p>
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
                   <input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)}
-                    placeholder="email@company.com"
+                    placeholder="email@company.com" aria-label="Email to invite"
                     onKeyDown={e => e.key === 'Enter' && inviteUser()}
                     style={{ ...inputStyle, flex: 1 }} />
+                  <select value={inviteRole} aria-label="Role"
+                    onChange={e => setInviteRole(e.target.value as 'member' | 'viewer' | 'admin')}
+                    style={{ ...inputStyle, width: 'auto' }}>
+                    <option value="member">Member</option>
+                    <option value="viewer">Viewer</option>
+                    <option value="admin">Admin</option>
+                  </select>
                   <button onClick={inviteUser} disabled={!inviteEmail} style={{
                     ...btnStyle, background: 'var(--accent-primary, #d97706)', color: 'var(--bg-deep, #111)',
                     opacity: inviteEmail ? 1 : 0.5,
                   }}>Invite</button>
                 </div>
-                {inviteStatus && <p style={{ fontSize: '0.8rem', color: 'var(--accent-green, #22c55e)', marginTop: '0.5rem' }}>{inviteStatus}</p>}
+                {inviteStatus && <p role="status" style={{ fontSize: '0.8rem', color: 'var(--text-muted, #888)', marginTop: '0.5rem' }}>{inviteStatus}</p>}
+                {inviteLink && (
+                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                    <input readOnly value={inviteLink} aria-label="Invitation link"
+                      onFocus={e => e.currentTarget.select()}
+                      style={{ ...inputStyle, flex: 1, fontSize: '0.75rem' }} />
+                    <button onClick={copyInviteLink} style={btnStyle}>Copy link</button>
+                    <button onClick={() => { setInviteLink(''); setInviteStatus('') }} style={btnStyle}>Done</button>
+                  </div>
+                )}
               </div>
 
               {/* Add staff manually */}
@@ -472,6 +566,13 @@ export default function PeoplePanel({ apiBase = '/api/people' }: PeoplePanelProp
               }}>x</button>
             </div>
 
+            {staffError && (
+              <div role="alert" data-testid="people-staff-error" style={{
+                marginBottom: 12, padding: '0.5rem 0.75rem', borderRadius: 6, fontSize: '0.8rem',
+                background: 'rgba(239, 68, 68, 0.12)', color: '#ef4444',
+              }}>{staffError}</div>
+            )}
+
             {/* Action buttons */}
             {!editing && (
               <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
@@ -512,8 +613,8 @@ export default function PeoplePanel({ apiBase = '/api/people' }: PeoplePanelProp
                   <input type="number" value={editForm.years_experience ?? ''} onChange={e => setEditForm({ ...editForm, years_experience: e.target.value ? parseInt(e.target.value) : null })} style={inputStyle} />
                 </div>
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
-                  <button onClick={() => setEditing(false)} style={{ ...btnStyle, background: 'transparent', color: 'var(--text-muted, #888)', border: '1px solid var(--border, #333)' }}>Cancel</button>
-                  <button onClick={() => { setEditing(false); showToast('Staff updated (save pending backend PUT)') }} style={{ ...btnStyle, background: 'var(--accent-primary, #d97706)', color: 'var(--bg-deep, #111)' }}>Save</button>
+                  <button onClick={() => { setEditing(false); setStaffError('') }} style={{ ...btnStyle, background: 'transparent', color: 'var(--text-muted, #888)', border: '1px solid var(--border, #333)' }}>Cancel</button>
+                  <button onClick={saveStaff} style={{ ...btnStyle, background: 'var(--accent-primary, #d97706)', color: 'var(--bg-deep, #111)' }}>Save</button>
                 </div>
               </div>
             ) : (

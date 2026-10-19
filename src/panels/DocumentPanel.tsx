@@ -302,6 +302,16 @@ export default function DocumentPanel() {
 
   useEffect(() => { fetchDocs() }, [])
 
+  // A sign-in (or the desk handing this frame its bearer) after the first load
+  // must clear "Authentication required" -- before this the error never went
+  // away until the window was closed and reopened (2026-10-16, a customer appliance).
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const onAuth = () => fetchDocs()
+    window.addEventListener('aitheros:auth-changed', onAuth)
+    return () => window.removeEventListener('aitheros:auth-changed', onAuth)
+  }, [])
+
   /** Upload one file through /upload; always resolves to a result for that file. */
   const uploadOne = async (file: File, onDuplicate?: DuplicateChoice): Promise<UploadResult> => {
     const form = new FormData()
