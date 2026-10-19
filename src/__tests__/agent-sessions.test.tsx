@@ -142,6 +142,7 @@ describe('AgentSessionsPanel', () => {
     let taps = 0
     fireEvent.click(screen.getByRole('button', { name: 'Start' })); taps++
     expect(screen.getByRole('button', { name: 'desk' })).toHaveAttribute('aria-pressed', 'true')
+    await screen.findByText('This machine did not say what it can run.')   // no harnesses() here
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Start' })); taps++ })
     await waitFor(() => expect(f.started).toEqual([{ nodeId: 'n1', harness: 'claude', cwd: '', prompt: '' }]))
     expect(taps).toBe(2)
@@ -262,6 +263,32 @@ describe('workspaceSessionsTransport (the tenant portal `sessions` panel)', () =
       ['/w/sessions/s1/interrupt', 'POST', undefined],
       ['/w/sessions', 'POST', { harness: 'claude', prompt: 'fix it' }],
     ])
+  })
+})
+
+describe('Start offers only what the chosen machine can run', () => {
+  it('a machine that runs only awdk is never offered Aither, and Start sends awdk', async () => {
+    const f = fakeTransport(LIST)
+    f.t.harnesses = jest.fn(async () => [{ id: 'awdk', label: 'awdk (local agent loop)' }, { id: 'terminal' }])
+    render(<AgentSessionsPanel transport={f.t} listEveryMs={60_000} readEveryMs={60_000} />)
+    await screen.findByText('1 needs you')
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }))
+    expect(await screen.findByRole('button', { name: 'awdk agent' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByRole('button', { name: 'Aither' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Claude Code' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /terminal/i })).toBeNull()   // not an agent
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Start' })) })
+    await waitFor(() => expect(f.started).toEqual([{ nodeId: 'n1', harness: 'awdk', cwd: '', prompt: '' }]))
+  })
+
+  it('a machine that can run no agent says so and cannot be started', async () => {
+    const f = fakeTransport(LIST)
+    f.t.harnesses = jest.fn(async () => [])
+    render(<AgentSessionsPanel transport={f.t} listEveryMs={60_000} readEveryMs={60_000} />)
+    await screen.findByText('1 needs you')
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }))
+    expect(await screen.findByText('This machine has no agent it can start right now.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Start' })).toBeDisabled()
   })
 })
 

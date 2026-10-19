@@ -30,6 +30,7 @@ import {
   mergeLines,
   needsYouCount,
   offersQuickReplies,
+  pickerHarnesses,
   safeRemoteUrl,
   tokensText,
   sessionName,
@@ -546,6 +547,24 @@ function StartSheet({
   const machines = startableMachines(list?.machines || [])
   const [nodeId, setNodeId] = useState(() => defaultMachine(list?.machines || []))
   const [harness, setHarness] = useState(AGENT_HARNESSES[0].id)
+  // What the chosen machine can actually run (the daemon's /sessions/startable).
+  const [offer, setOffer] = useState<{ nodeId: string; harnesses: Array<{ id: string; label: string }>; machineSaid: boolean } | null>(null)
+  useEffect(() => {
+    if (!nodeId) { setOffer(null); return }
+    let off = false
+    const ctl = new AbortController()
+    const ask = transport.harnesses
+      ? transport.harnesses(nodeId, ctl.signal).catch(() => null)
+      : Promise.resolve(null)
+    void ask.then((said) => {
+      if (off) return
+      const next = { nodeId, ...pickerHarnesses(said) }
+      setOffer(next)
+      setHarness((cur) => (next.harnesses.some((h) => h.id === cur) ? cur : next.harnesses[0]?.id || ''))
+    })
+    return () => { off = true; ctl.abort() }
+  }, [nodeId, transport])
+  const offered = offer && offer.nodeId === nodeId ? offer : null
   const [cwd, setCwd] = useState('')
   const [prompt, setPrompt] = useState('')
   const [busy, setBusy] = useState(false)
@@ -557,8 +576,9 @@ function StartSheet({
     border: on ? `1px solid ${C.accent}` : C.line,
   })
 
+  const canGo = !!nodeId && !busy && !!offered && offered.harnesses.some((h) => h.id === harness)
   const go = async () => {
-    if (!nodeId || busy) return
+    if (!canGo) return
     setBusy(true)
     setError('')
     try {
@@ -592,7 +612,12 @@ function StartSheet({
         <section aria-label="Agent">
           <p style={label}>Agent</p>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {AGENT_HARNESSES.map((h) => (
+            {!offered && nodeId && <Note>Asking the machine…</Note>}
+            {offered && offered.machineSaid && offered.harnesses.length === 0 && (
+              <Note>This machine has no agent it can start right now.</Note>
+            )}
+            {offered && !offered.machineSaid && <Note>This machine did not say what it can run.</Note>}
+            {(offered?.harnesses || []).map((h) => (
               <button key={h.id} type="button" aria-pressed={harness === h.id} style={pill(harness === h.id)} onClick={() => setHarness(h.id)}>
                 {h.label}
               </button>
@@ -620,7 +645,7 @@ function StartSheet({
         {error && <Note>{error}</Note>}
       </div>
       <footer style={{ borderTop: C.line, padding: 12 }}>
-        <button type="button" style={{ ...PRIMARY, width: '100%', opacity: nodeId ? 1 : 0.5 }} disabled={!nodeId || busy} onClick={() => void go()}>
+        <button type="button" style={{ ...PRIMARY, width: '100%', opacity: canGo ? 1 : 0.5 }} disabled={!canGo} onClick={() => void go()}>
           {busy ? 'Starting…' : 'Start'}
         </button>
       </footer>

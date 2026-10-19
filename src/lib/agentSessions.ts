@@ -115,6 +115,11 @@ export interface AgentSessionsTransport {
   read(session: AgentSession, cursor: unknown, signal?: AbortSignal): Promise<AgentReadResult>
   send(session: AgentSession, text: string): Promise<AgentActionResult>
   start(request: AgentStartRequest): Promise<AgentStartResult>
+  /**
+   * What `nodeId` can start right now (the daemon's `GET /sessions/startable`), or
+   * null when the machine does not say (an older daemon). Hosts that cannot ask omit it.
+   */
+  harnesses?(nodeId: string, signal?: AbortSignal): Promise<Array<{ id: string; label?: string }> | null>
   /** Stop the session's current turn. Hosts whose daemon has no interrupt omit it. */
   interrupt?(session: AgentSession): Promise<AgentActionResult>
   /** Answer a decision card in place. Hosts without decisions omit it. */
@@ -166,7 +171,25 @@ export const AGENT_HARNESSES: ReadonlyArray<{ id: string; label: string }> = [
   { id: 'gemini', label: 'Gemini' },
   { id: 'opencode', label: 'opencode' },
   { id: 'aither', label: 'Aither' },
+  { id: 'awdk', label: 'awdk agent' },
 ]
+
+/**
+ * The agents Start offers for one machine. `startable` is what the machine said it can
+ * run (null = it did not say): only agent harnesses it named are offered, in its order
+ * (a terminal is not an agent). When it did not say, the full list is offered and the
+ * sheet says so -- the daemon still refuses what it cannot run.
+ */
+export function pickerHarnesses(
+  startable: ReadonlyArray<{ id: string; label?: string }> | null | undefined,
+): { harnesses: Array<{ id: string; label: string }>; machineSaid: boolean } {
+  if (!startable) return { harnesses: [...AGENT_HARNESSES], machineSaid: false }
+  const known = new Map(AGENT_HARNESSES.map((h) => [h.id, h.label]))
+  const harnesses = startable
+    .filter((h) => known.has(h.id))
+    .map((h) => ({ id: h.id, label: known.get(h.id) as string }))
+  return { harnesses, machineSaid: true }
+}
 
 /** One-tap answers offered on a session waiting for INPUT. Not on waiting-permission: a
  *  harness permission menu takes its own keys, and a typed "yes" may select nothing. */
