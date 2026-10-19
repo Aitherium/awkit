@@ -1,7 +1,14 @@
 'use client'
 
 /**
- * Calendar & Drive connectors: Microsoft 365 and Google Workspace, read-only.
+ * Mail, Calendar & Drive connectors: Microsoft 365 and Google Workspace, read-only.
+ *
+ * Every workspace uses ITS OWN app -- there is no platform-owned Microsoft app. For
+ * Microsoft 365 the card shows a complete, customer-followable checklist (single-tenant
+ * app, Web redirect URI with a copy button, delegated permissions incl. Mail.Read,
+ * admin consent, client secret + rotation). Once saved, members click Connect; an admin
+ * can tick "Include directory import" to also request User.Read.All.
+ * Customer guide: awkit-backend/M365_SETUP.md.
  *
  * Self-service. The workspace's own IT registers an OAuth app in THEIR tenant
  * (an Azure AD app registration, or a Google "Internal" OAuth client) and an
@@ -61,18 +68,36 @@ export function connectorConfigBody(provider: ConnectorProvider, form: Connector
   return base
 }
 
-interface Status { configured?: boolean; connected?: boolean }
+interface Status {
+  configured?: boolean
+  connected?: boolean
+  /** M365: this user's grant includes User.Read.All (directory import). */
+  directory?: boolean
+  /** Sentence when the workspace has not registered its app yet. */
+  message?: string
+}
+
+/** What a member sees when the workspace has no Microsoft app yet. Exported for MailPanel + tests. */
+export const M365_ASK_ADMIN = 'Ask your workspace admin to set up Microsoft 365.'
+
+/** Delegated Graph permissions the backend requests (microsoft_graph.M365_SCOPES). Exported for tests. */
+export const M365_DELEGATED = ['openid', 'profile', 'email', 'offline_access', 'User.Read', 'Mail.Read', 'Calendars.Read', 'Files.Read.All']
 
 const META: Record<Provider, { title: string; reads: string; steps: string[] }> = {
   m365: {
     title: 'Microsoft 365',
-    reads: 'Calendar, OneDrive and SharePoint files (read-only)',
+    reads: 'Mail, calendar, OneDrive and SharePoint files (read-only)',
+    // A complete checklist your own IT can follow without us. Keep in step with
+    // awkit-backend/M365_SETUP.md and microsoft_graph.M365_SCOPES.
     steps: [
-      'Azure portal > Microsoft Entra ID > App registrations > New registration.',
-      'Supported account types: "Accounts in this organizational directory only".',
-      'Redirect URI: platform Web, paste the URI below.',
-      'API permissions > Microsoft Graph > Delegated: User.Read, Calendars.Read, Files.Read.All, offline_access. Grant admin consent.',
-      'Certificates & secrets > New client secret. Paste the Application (client) ID, Directory (tenant) ID and the secret value here.',
+      'Sign in to entra.microsoft.com as an admin who can register apps and grant consent. Go to Identity > Applications > App registrations > New registration.',
+      'Name it (e.g. "Workspace mail connector"). Supported account types: "Accounts in this organizational directory only (single tenant)".',
+      'Redirect URI: platform "Web", paste the Redirect URI below (use Copy). Click Register.',
+      'On Overview, copy the Application (client) ID and the Directory (tenant) ID into the fields below.',
+      `API permissions > Add a permission > Microsoft Graph > Delegated permissions: ${M365_DELEGATED.join(', ')}. Optional: User.Read.All (only for importing your staff directory).`,
+      'Click "Grant admin consent for <your organization>" and confirm; every permission should show Granted.',
+      'Certificates & secrets > New client secret. Copy the secret VALUE now (Entra shows it once) and paste it below.',
+      'The secret expires (12-24 months is typical): put the date in your calendar and rotate before then — create a new secret, paste it here, Save, then delete the old one. Mail and calendar stop syncing for everyone when it expires.',
     ],
   },
   google: {
@@ -96,6 +121,12 @@ async function api(path: string, init?: RequestInit): Promise<{ ok: boolean; sta
   })
   const body = await r.json().catch(() => ({}))
   return { ok: r.ok, status: r.status, body }
+}
+
+/** The consent URL for a provider; `directory` asks Microsoft for User.Read.All. Exported for tests. */
+export function connectUrl(base: string, provider: ConnectorProvider, directory = false): string {
+  const q = provider === 'm365' && directory ? '?directory=1' : ''
+  return `${base}/api/auth/${provider}/login${q}`
 }
 
 /** A readable sentence for a refused call. Exported for tests. */
@@ -190,10 +221,17 @@ function ConnectorCard({ provider, isAdmin }: { provider: Provider; isAdmin: boo
     setMsg('Removed.'); void load()
   }
 
+  const [withDirectory, setWithDirectory] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const copyRedirect = async () => {
+    try { await navigator.clipboard.writeText(cfg?.redirect_uri || ''); setCopied(true) } catch { setCopied(false) }
+  }
+
   const dot = status.connected ? '#4ade80' : status.configured ? '#fbbf24' : '#888'
   const line = status.connected ? `Connected: ${meta.reads}`
     : status.configured ? 'Ready. Connect your account to start reading.'
-      : isAdmin ? 'Not set up yet. Register your app below.' : 'Not set up yet. Ask a workspace admin.'
+      : isAdmin ? 'Not set up yet. Register your organization\'s app with the checklist below.'
+        : provider === 'm365' ? M365_ASK_ADMIN : 'Not set up yet. Ask a workspace admin.'
 
   return (
     <div style={box} data-testid={`connector-${provider}`}>
@@ -205,11 +243,20 @@ function ConnectorCard({ provider, isAdmin }: { provider: Provider; isAdmin: boo
         </div>
         {status.configured && (
           <button style={btn(!status.connected)}
-            onClick={() => { window.location.href = `${getApiBase()}/api/auth/${provider}/login` }}>
+            onClick={() => { window.location.href = connectUrl(getApiBase(), provider, withDirectory) }}>
             {status.connected ? 'Reconnect' : 'Connect'}
           </button>
         )}
       </div>
+
+      {provider === 'm365' && isAdmin && status.configured && (
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.72rem' }}>
+          <input type="checkbox" aria-label="m365 include directory" checked={withDirectory}
+            onChange={(e) => setWithDirectory(e.target.checked)} />
+          Include directory import (User.Read.All — needs your Entra admin to approve for the organization)
+          {status.directory ? ' · granted' : ''}
+        </label>
+      )}
 
       {isAdmin && cfg && (cfg.configured && !editing ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
@@ -228,8 +275,12 @@ function ConnectorCard({ provider, isAdmin }: { provider: Provider; isAdmin: boo
           <ol style={{ margin: 0, paddingLeft: '1.1rem', fontSize: '0.72rem', color: 'var(--text-muted, #999)', lineHeight: 1.5 }}>
             {meta.steps.map((s) => <li key={s}>{s}</li>)}
           </ol>
-          <label style={{ fontSize: '0.72rem' }}>Redirect URI to register
-            <input style={input} readOnly value={cfg.redirect_uri || ''} onFocus={(e) => e.currentTarget.select()} />
+          <label style={{ fontSize: '0.72rem' }}>Redirect URI to register (platform: Web)
+            <span style={{ display: 'flex', gap: '0.4rem' }}>
+              <input style={input} readOnly value={cfg.redirect_uri || ''} onFocus={(e) => e.currentTarget.select()} />
+              <button type="button" style={btn(false)} aria-label={`${provider} copy redirect uri`}
+                onClick={() => { void copyRedirect() }}>{copied ? 'Copied' : 'Copy'}</button>
+            </span>
           </label>
           <label style={{ fontSize: '0.72rem' }}>Client ID
             <input style={input} aria-label={`${provider} client id`} value={form.client_id}
@@ -237,7 +288,7 @@ function ConnectorCard({ provider, isAdmin }: { provider: Provider; isAdmin: boo
           </label>
           {provider === 'm365' && (
             <label style={{ fontSize: '0.72rem' }}>Directory (tenant) ID
-              <input style={input} aria-label="m365 tenant id" value={form.tenant_id} placeholder="organizations"
+              <input style={input} aria-label="m365 tenant id" value={form.tenant_id} placeholder="00000000-0000-0000-0000-000000000000"
                 onChange={(e) => setForm({ ...form, tenant_id: e.target.value })} />
             </label>
           )}
@@ -265,7 +316,7 @@ export default function ConnectorsPanel() {
   return (
     <div style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.85rem', overflowY: 'auto', height: '100%' }}>
       <div>
-        <div style={{ fontSize: '1rem', fontWeight: 600 }}>Calendar & Drive connectors</div>
+        <div style={{ fontSize: '1rem', fontWeight: 600 }}>Mail, Calendar & Drive connectors</div>
         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted, #888)' }}>
           Read-only. The briefing and document tools read what each person connects; nothing is written back.
         </div>

@@ -12,6 +12,10 @@ interface CalendarEvent {
   attendees?: string[]
   status?: string
   recurrence?: string
+  /** "microsoft365" = from the user's connected Microsoft 365 calendar. */
+  source?: string
+  /** Provider events are shown, not edited here. */
+  read_only?: boolean
 }
 
 interface AgendaDay {
@@ -63,6 +67,8 @@ export default function CalendarPanel({ apiBase = '/api/calendar' }: CalendarPan
   }, [resetForm])
 
   const openEdit = useCallback((evt: CalendarEvent) => {
+    // A Microsoft 365 event is read-only here (the connector is read-only).
+    if (evt.read_only) return
     setEditingId(evt.event_id)
     setNewTitle(evt.title || '')
     const s = evt.start_time || ''

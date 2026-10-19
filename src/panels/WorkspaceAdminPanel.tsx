@@ -637,6 +637,31 @@ export default function WorkspaceAdminPanel({ apiBase = '/api/platform' }: Props
               </div>
             ) : (
               <div>
+                {importSource === 'microsoft' && (
+                  <div style={{ marginBottom: '0.75rem' }}>
+                    {/* No pasted secret: the backend reads Entra users with YOUR Microsoft 365
+                        sign-in (User.Read.All, approved by an Entra admin). */}
+                    <button onClick={async () => {
+                      setImportStatus('Importing...')
+                      try {
+                        const r = await fetch(`${getApiBase()}/api/directory/members/import-external`, {
+                          method: 'POST', headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ source: 'microsoft_graph', credentials_json: '', default_role: 'member' }),
+                        })
+                        const d = await r.json()
+                        setImportStatus(r.ok ? `Imported ${d.imported || 0} of ${d.total_found || 0} users` : d.detail || 'Failed')
+                        if (r.ok) fetchDirectory()
+                      } catch { setImportStatus('Import failed') }
+                      setTimeout(() => setImportStatus(''), 8000)
+                    }} style={{
+                      padding: '0.5rem 1rem', background: 'var(--accent-primary, #5EC9CC)', color: 'var(--bg-deep, #000)',
+                      borderRadius: 'var(--radius, 6px)', fontSize: '0.8rem', fontWeight: 600,
+                    }}>Import with my Microsoft 365 sign-in</button>
+                    <p style={{ fontSize: '0.7rem', color: 'var(--text-muted, #888)', marginTop: '0.4rem' }}>
+                      First time: <a href={`${getApiBase()}/api/auth/m365/login?directory=1`}>connect Microsoft 365 with directory access</a> (an Entra admin approves it once). Or paste app credentials below.
+                    </p>
+                  </div>
+                )}
                 <p style={{ fontSize: '0.75rem', color: 'var(--text-muted, #888)', marginBottom: '0.5rem' }}>
                   {importSource === 'google' ? 'Paste Google Workspace service account JSON:' : 'Paste Microsoft Graph app credentials JSON:'}
                 </p>

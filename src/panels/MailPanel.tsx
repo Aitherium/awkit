@@ -1,6 +1,9 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { useAuth } from '../hooks/useAuth'
+import { getApiBase } from '../lib/apiBase'
+import { M365_ASK_ADMIN } from './ConnectorsPanel'
 
 /* ── Types ─────────────────────────────────────────────────────────── */
 
@@ -12,7 +15,36 @@ interface MailAccount {
   status?: string
   last_sync_at?: string | null
   last_error?: string | null
+  /** "oauth" = Microsoft 365 / Gmail read with a sign-in, no password stored. */
+  auth?: string
 }
+
+/** /api/auth/{m365|google}/status */
+export interface OAuthStatus {
+  configured?: boolean
+  connected?: boolean
+  app?: string
+  message?: string
+  /** google only: the workspace opted into gmail.readonly */
+  gmail?: boolean
+}
+
+export type OAuthMailProvider = 'm365' | 'google'
+
+/** Provider picks that must sign in with Microsoft instead of an IMAP password.
+ *  Microsoft retired basic auth for Exchange Online, so a password can never work. */
+const MICROSOFT_PICKS = new Set(['outlook', 'office365', 'microsoft', 'm365', 'exchange', 'hotmail'])
+
+/** True when this provider choice routes to Microsoft sign-in. Exported for tests. */
+export function isMicrosoftProvider(id: string): boolean {
+  return MICROSOFT_PICKS.has((id || '').trim().toLowerCase())
+}
+
+/** Survives the round trip to Microsoft/Google: the Mail panel asked for a mailbox. */
+export const OAUTH_PENDING_KEY = 'awkit.mail.oauthPending'
+
+/** Full-page navigation to the provider's consent screen (swappable in tests: jsdom cannot navigate). */
+export const mailNav = { go: (url: string) => { window.location.href = url } }
 
 interface ProviderPreset {
   id: string
@@ -65,7 +97,14 @@ interface DirectoryContact {
 
 export interface MailPanelProps {
   apiBase?: string
+  /** Opens Settings > Connectors > Microsoft 365 in the host shell. Without it the
+   *  panel navigates to CONNECTORS_ROUTE. */
+  onOpenConnectors?: () => void
 }
+
+/** Where an admin registers the workspace's Microsoft app (the `?panel=` route the
+ *  apps manifest uses). Exported for tests. */
+export const CONNECTORS_ROUTE = '/?panel=connectors'
 
 /* ── Styles ────────────────────────────────────────────────────────── */
 
@@ -90,7 +129,7 @@ const sCard: React.CSSProperties = {
 
 /* ── Component ─────────────────────────────────────────────────────── */
 
-export default function MailPanel({ apiBase = '/api/mail' }: MailPanelProps) {
+export default function MailPanel({ apiBase = '/api/mail', onOpenConnectors }: MailPanelProps) {
   const [accounts, setAccounts] = useState<MailAccount[]>([])
   const [activeAccount, setActiveAccount] = useState<string | null>(null)
   const [folders, setFolders] = useState<MailFolder[]>([])
@@ -128,6 +167,15 @@ export default function MailPanel({ apiBase = '/api/mail' }: MailPanelProps) {
   const [cSmtpPort, setCSmtpPort] = useState('')
   const [connecting, setConnecting] = useState(false)
   const [connectError, setConnectError] = useState<string | null>(null)
+
+  // One-click OAuth mailboxes (Microsoft 365 / Gmail): no password ever typed.
+  const [oauth, setOauth] = useState<Record<OAuthMailProvider, OAuthStatus>>({ m365: {}, google: {} })
+  const [oauthBusy, setOauthBusy] = useState<OAuthMailProvider | null>(null)
+  const [oauthNote, setOauthNote] = useState<string | null>(null)
+  const [m365SetupShown, setM365SetupShown] = useState(false)
+  const { user } = useAuth()
+  const role = (user as { role?: string } | null)?.role
+  const isAdmin = role === 'admin' || role === 'owner' || role === 'workspace_admin'
 
   /* ── Data fetching ────────────────────────────────────────────── */
 
@@ -201,6 +249,96 @@ export default function MailPanel({ apiBase = '/api/mail' }: MailPanelProps) {
       .then(d => { if (d?.providers) setProviders(d.providers) })
       .catch(() => {})
   }, [showConnect, providers.length, apiBase])
+
+  /* ── One-click OAuth mailboxes ────────────────────────────────── */
+
+  // `/api/mail` -> `/api/auth` (same derivation the directory lookup uses).
+  const authBase = apiBase.replace(/\/mail$/, '/auth')
+
+  const addOAuthMailbox = useCallback(async (provider: OAuthMailProvider): Promise<boolean> => {
+    setOauthBusy(provider); setOauthNote(null)
+    try {
+      const resp = await fetch(`${apiBase}/accounts/connect-oauth`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider }),
+      })
+      const body = await resp.json().catch(() => ({}))
+      if (resp.status === 409) return false // not connected yet -> caller signs in
+      if (!resp.ok) {
+        const d = body?.detail
+        setOauthNote(typeof d === 'string' ? d : d?.message || `Could not add the mailbox (${resp.status}).`)
+        return true
+      }
+      setShowConnect(false)
+      await fetchAccounts(); await fetchFolders(); await fetchMessages()
+      return true
+    } catch (e) {
+      setOauthNote(e instanceof Error ? e.message : String(e))
+      return true
+    } finally {
+      setOauthBusy(null)
+    }
+  }, [apiBase, fetchAccounts, fetchFolders, fetchMessages])
+  // The status effect below runs once per authBase; it reaches the latest callback
+  // through a ref so a re-created callback does not re-fetch both statuses.
+  const addOAuthRef = useRef(addOAuthMailbox)
+  addOAuthRef.current = addOAuthMailbox
+
+  // Status of both providers, and finish a connect that left for Microsoft/Google.
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      const next: Record<OAuthMailProvider, OAuthStatus> = { m365: {}, google: {} }
+      for (const p of ['m365', 'google'] as OAuthMailProvider[]) {
+        try {
+          const r = await fetch(`${authBase}/${p}/status`, { credentials: 'include' })
+          if (r.ok) next[p] = await r.json()
+        } catch { /* status unknown -> button explains on click */ }
+      }
+      if (!alive) return
+      setOauth(next)
+      let pending: string | null = null
+      try { pending = window.sessionStorage.getItem(OAUTH_PENDING_KEY) } catch { /* no storage */ }
+      if ((pending === 'm365' || pending === 'google') && next[pending].connected) {
+        try { window.sessionStorage.removeItem(OAUTH_PENDING_KEY) } catch { /* no storage */ }
+        await addOAuthRef.current(pending)
+      }
+    })()
+    return () => { alive = false }
+  }, [authBase])
+
+  /** The one button: add the mailbox now if signed in, else go sign in first. */
+  const connectOAuth = async (provider: OAuthMailProvider) => {
+    // Ask fresh on click: a click before the mount-time status landed must not read
+    // as "not enabled", and a connect finished in another tab should be seen.
+    let st: OAuthStatus = oauth[provider] || {}
+    try {
+      const r = await fetch(`${authBase}/${provider}/status`, { credentials: 'include' })
+      if (r.ok) {
+        st = await r.json()
+        setOauth(prev => ({ ...prev, [provider]: st }))
+      }
+    } catch { /* keep the last known status */ }
+    if (st.connected && await addOAuthMailbox(provider)) return
+    if (!st.configured) {
+      // Microsoft: the role-aware setup notice below says what to do; Google: a line.
+      setOauthNote(provider === 'm365' ? null : 'Google sign-in is not set up for this workspace yet.')
+      setM365SetupShown(provider === 'm365')
+      return
+    }
+    try { window.sessionStorage.setItem(OAUTH_PENDING_KEY, provider) } catch { /* no storage */ }
+    const nav = /^https?:/.test(authBase) ? authBase : `${getApiBase()}${authBase}`
+    mailNav.go(`${nav}/${provider}/login`)
+  }
+
+  const googleMail = !!(oauth.google.configured && oauth.google.gmail)
+  // Known not set up (status answered configured:false) or the user just clicked.
+  const m365NotSetUp = oauth.m365.configured === false || m365SetupShown
+
+  const openConnectors = () => {
+    if (onOpenConnectors) { onOpenConnectors(); return }
+    mailNav.go(CONNECTORS_ROUTE)
+  }
 
   /* ── Actions ──────────────────────────────────────────────────── */
 
@@ -285,6 +423,11 @@ export default function MailPanel({ apiBase = '/api/mail' }: MailPanelProps) {
   }
 
   const handleConnect = async () => {
+    if (isMicrosoftProvider(cProvider)) {
+      // Never send a Microsoft password: Exchange Online refuses basic auth.
+      await connectOAuth('m365')
+      return
+    }
     if (!cEmail || !cPassword) {
       setConnectError('Email and password are required.')
       return
@@ -806,6 +949,50 @@ export default function MailPanel({ apiBase = '/api/mail' }: MailPanelProps) {
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {/* One click, no password: sign in with Microsoft (or Google). */}
+              <div data-testid="mail-oauth-connect" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <button
+                  onClick={() => { void connectOAuth('m365') }}
+                  disabled={oauthBusy !== null}
+                  style={{ ...sBtn(true), padding: '10px 14px', fontSize: '0.85rem' }}
+                >
+                  {oauthBusy === 'm365' ? 'Adding your mailbox...' : 'Connect Microsoft 365 / Outlook'}
+                </button>
+                {googleMail && (
+                  <button
+                    onClick={() => { void connectOAuth('google') }}
+                    disabled={oauthBusy !== null}
+                    style={{ ...sBtn(), padding: '8px 14px' }}
+                  >
+                    {oauthBusy === 'google' ? 'Adding your mailbox...' : 'Connect Gmail (Google sign-in)'}
+                  </button>
+                )}
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                  Sign in with your work account. Read-only; your password is never typed here or stored.
+                </div>
+                {oauthNote && (
+                  <div role="status" style={{ fontSize: '0.75rem', padding: 8, background: 'rgba(245,158,11,0.1)', borderRadius: 4 }}>
+                    {oauthNote}
+                  </div>
+                )}
+                {m365NotSetUp && (
+                  <div data-testid="mail-m365-setup" role="status" style={{ fontSize: '0.75rem', padding: 8, background: 'rgba(245,158,11,0.1)', borderRadius: 4 }}>
+                    {isAdmin ? (
+                      <>
+                        Microsoft 365 isn&apos;t set up for this workspace yet. Register your organization&apos;s app once (about 10 minutes):{' '}
+                        <a href={CONNECTORS_ROUTE} onClick={(e) => { e.preventDefault(); openConnectors() }}>
+                          Settings &gt; Connectors &gt; Microsoft 365
+                        </a>{' '}— the setup steps are there.
+                      </>
+                    ) : M365_ASK_ADMIN}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+                Or connect any other mailbox over IMAP:
+              </div>
+
               <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                 Provider
                 <select
@@ -817,11 +1004,21 @@ export default function MailPanel({ apiBase = '/api/mail' }: MailPanelProps) {
                     ? providers.map(p => p.id)
                     : ['gmail', 'outlook', 'protonmail', 'fastmail', 'yahoo', 'icloud', 'imap']
                   ).map(id => (
-                    <option key={id} value={id}>{id}</option>
+                    <option key={id} value={id}>{isMicrosoftProvider(id) ? `${id} (Microsoft sign-in)` : id}</option>
                   ))}
                 </select>
               </label>
 
+              {isMicrosoftProvider(cProvider) ? (
+                <div data-testid="mail-microsoft-route" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', padding: 8, background: 'rgba(59,130,246,0.1)', borderRadius: 4 }}>
+                    Microsoft no longer accepts mailbox passwords. Sign in with Microsoft instead — nothing to type here.
+                  </div>
+                  <button onClick={() => { void connectOAuth('m365') }} disabled={oauthBusy !== null} style={sBtn(true)}>
+                    Sign in with Microsoft
+                  </button>
+                </div>
+              ) : (<>
               {cProvider === 'gmail' && (
                 <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', padding: 8, background: 'rgba(245,158,11,0.1)', borderRadius: 4 }}>
                   Use a Google App Password (not your account password). Enable 2FA, then create one at myaccount.google.com/apppasswords.
@@ -892,6 +1089,7 @@ export default function MailPanel({ apiBase = '/api/mail' }: MailPanelProps) {
                   Cancel
                 </button>
               </div>
+              </>)}
 
               {accounts.length > 0 && (
                 <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
@@ -902,7 +1100,7 @@ export default function MailPanel({ apiBase = '/api/mail' }: MailPanelProps) {
                       padding: '6px 8px', borderRadius: 4, background: 'var(--bg-deep)', marginBottom: 4,
                     }}>
                       <span style={{ fontSize: '0.75rem' }}>
-                        {a.email} <span style={{ color: 'var(--text-muted)' }}>({a.provider})</span>
+                        {a.email} <span style={{ color: 'var(--text-muted)' }}>({a.auth === 'oauth' ? `${a.provider}, signed in` : a.provider})</span>
                       </span>
                       <button onClick={() => disconnectAccount(a.id)} style={{ ...sBtn(), fontSize: '0.65rem', padding: '3px 8px' }}>
                         Disconnect

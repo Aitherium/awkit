@@ -5,12 +5,14 @@
  * and secret to the backend, and never put a stored secret back into the form.
  */
 import React from 'react'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
 let mockRole = 'admin'
 jest.mock('../../hooks/useAuth', () => ({ useAuth: () => ({ user: { role: mockRole } }) }))
 
-import ConnectorsPanel, { connectorConfigBody, explainConnectorError } from '../ConnectorsPanel'
+import ConnectorsPanel, {
+  M365_ASK_ADMIN, M365_DELEGATED, connectUrl, connectorConfigBody, explainConnectorError,
+} from '../ConnectorsPanel'
 
 const REDIRECT = 'https://tenant-api.example/api/auth/m365/callback'
 
@@ -39,7 +41,7 @@ describe('ConnectorsPanel', () => {
   it('lets an admin register the Microsoft app and shows the redirect URI', async () => {
     const calls = mockFetch(null)
     render(<ConnectorsPanel />)
-    expect((await screen.findAllByDisplayValue(REDIRECT)).length).toBeGreaterThan(0)
+    expect((await screen.findAllByDisplayValue(REDIRECT)).length).toBe(2)
     fireEvent.change(screen.getByLabelText('m365 client id'), { target: { value: 'cid' } })
     fireEvent.change(screen.getByLabelText('m365 tenant id'), { target: { value: 'contoso' } })
     fireEvent.change(screen.getByLabelText('m365 client secret'), { target: { value: 'shh' } })
@@ -105,6 +107,45 @@ describe('ConnectorsPanel', () => {
     expect(screen.queryByLabelText('m365 client id')).toBeNull()
     expect(calls.some((c) => c.url.includes('/api/connectors/'))).toBe(false)
     expect(screen.queryByLabelText('google cli tokens')).toBeNull()
+  })
+
+  it('gives an admin a complete Microsoft checklist with a copyable redirect URI', async () => {
+    mockFetch(null)
+    const writeText = jest.fn(async () => undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+    render(<ConnectorsPanel />)
+    const card = within(await screen.findByTestId('connector-m365'))
+    await card.findByDisplayValue(REDIRECT)
+    expect(card.getByText(/single tenant/)).toBeTruthy()
+    expect(card.getByText(/platform "Web"/)).toBeTruthy()
+    expect(card.getByText(/openid, profile, email, offline_access, User\.Read, Mail\.Read, Calendars\.Read, Files\.Read\.All/)).toBeTruthy()
+    expect(card.getByText(/Optional: User\.Read\.All/)).toBeTruthy()
+    expect(card.getByText(/Grant admin consent/)).toBeTruthy()
+    expect(card.getByText(/secret expires .* rotate/)).toBeTruthy()
+    expect(M365_DELEGATED).toContain('Mail.Read')
+    fireEvent.click(card.getByLabelText('m365 copy redirect uri'))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(REDIRECT))
+    expect(await card.findByText('Copied')).toBeTruthy()
+  })
+
+  it('offers directory consent to admins once the app is saved', async () => {
+    mockFetch({ client_id: 'cid', tenant_id: 'contoso', has_secret: true, configured: true })
+    render(<ConnectorsPanel />)
+    expect(await screen.findByLabelText('m365 include directory')).toBeTruthy()
+  })
+
+  it('tells a member to ask their admin when Microsoft 365 is not set up', async () => {
+    mockRole = 'member'
+    mockFetch(null)
+    render(<ConnectorsPanel />)
+    expect(await screen.findByText(M365_ASK_ADMIN)).toBeTruthy()
+    expect(screen.queryByLabelText('m365 include directory')).toBeNull()
+  })
+
+  it('builds the consent URL, with directory only for Microsoft', () => {
+    expect(connectUrl('https://api.x', 'm365')).toBe('https://api.x/api/auth/m365/login')
+    expect(connectUrl('https://api.x', 'm365', true)).toBe('https://api.x/api/auth/m365/login?directory=1')
+    expect(connectUrl('https://api.x', 'google', true)).toBe('https://api.x/api/auth/google/login')
   })
 
   it('explains refusals in words', () => {
