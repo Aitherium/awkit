@@ -92,6 +92,21 @@ describe('runCraftOp resolves refusals with the server words', () => {
     expect(outcomeText(r)).toMatch(/Check your library/)
   })
 
+  it('a run that never answers ends at its deadline as a transport failure, never a spinner forever', async () => {
+    let seenSignal: AbortSignal | undefined
+    ;(global as any).fetch = jest.fn((_url: string, init?: RequestInit) => new Promise((_res, rej) => {
+      seenSignal = init?.signal ?? undefined
+      init?.signal?.addEventListener('abort', () => rej(Object.assign(new Error('aborted'), { name: 'AbortError' })))
+    }))
+    const r = await runCraftOp(o, 'txt2img', { prompt: 'x' }, null, { timeoutMs: 20 })
+    expect(seenSignal).toBeDefined()
+    expect(r.ok).toBe(false)
+    expect(r.transport).toBe(true)
+    expect(r.error_code).toBe('timeout')
+    expect(r.error).toMatch(/did not answer in time/)
+    expect(outcomeText(r)).not.toMatch(/Nothing was charged/)
+  })
+
   it('reports what WAS charged when the server says so', () => {
     const r: CraftOpResult = { ok: false, error: 'partial', credits_charged: 150, media: [] }
     expect(outcomeText(r)).toBe('partial 150 credits were charged.')

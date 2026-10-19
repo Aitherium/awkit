@@ -133,7 +133,7 @@ export function serverWords(body: unknown, status: number): string {
   return `The studio answered HTTP ${status}.`
 }
 
-async function call(o: CraftClientOptions, path: string, init: { method?: string; body?: unknown } = {}
+async function call(o: CraftClientOptions, path: string, init: { method?: string; body?: unknown; signal?: AbortSignal } = {}
 ): Promise<{ status: number; body: unknown }> {
   const res = await fetch(`${root(o)}${path}`, {
     method: init.method ?? 'GET',
@@ -142,6 +142,7 @@ async function call(o: CraftClientOptions, path: string, init: { method?: string
       : { Accept: 'application/json', 'Content-Type': 'application/json' },
     body: init.body === undefined ? undefined : JSON.stringify(init.body),
     credentials: 'same-origin',
+    signal: init.signal,
   })
   let body: unknown = null
   try {
@@ -214,24 +215,44 @@ export async function estimate(o: CraftClientOptions, op: string, params: Record
   return b
 }
 
-/** Run ONE op. Never throws: a refusal or failure resolves with the server's own words. */
+/**
+ * Run ONE op. Never throws: a refusal or failure resolves with the server's own words.
+ * With `timeoutMs` the request is abandoned at that deadline and resolves as a transport
+ * failure (`error_code: 'timeout'`): the studio stops waiting, and does not claim nothing
+ * was charged, because the engine may still finish the job.
+ */
 export async function runCraftOp(
   o: CraftClientOptions,
   op: string,
   params: Record<string, unknown>,
   folderId: string | null = null,
+  run: { timeoutMs?: number } = {},
 ): Promise<CraftOpResult> {
   let r: { status: number; body: unknown }
+  const ctl = run.timeoutMs && run.timeoutMs > 0 && typeof AbortController !== 'undefined' ? new AbortController() : null
+  let timedOut = false
+  const timer = ctl ? setTimeout(() => { timedOut = true; ctl.abort() }, run.timeoutMs) : null
   try {
     r = await call(o, `/op/${encodeURIComponent(op)}`, {
       method: 'POST',
       body: folderId ? { params, folder_id: folderId } : { params },
+      signal: ctl?.signal,
     })
   } catch (e) {
+    if (timedOut) {
+      const mins = Math.max(1, Math.round((run.timeoutMs ?? 0) / 60_000))
+      return {
+        ok: false, transport: true, error_code: 'timeout', credits_charged: 0, media: [],
+        error: `The image service did not answer in time (${mins} min). It may be busy or offline; `
+          + 'check your images before running it again.',
+      }
+    }
     return {
       ok: false, transport: true, credits_charged: 0, media: [],
       error: `The request did not complete (${String(e)}). Check your library before running it again.`,
     }
+  } finally {
+    if (timer) clearTimeout(timer)
   }
   const b = (r.body && typeof r.body === 'object' ? r.body : {}) as Partial<CraftOpResult>
   const ok = b.ok === true && r.status >= 200 && r.status < 300

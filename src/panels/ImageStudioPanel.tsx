@@ -20,8 +20,16 @@
  * Touch and pen (awkit/drawing): a pen draws with pressure; once a pen has been seen,
  * fingers only pan and pinch-zoom (palm rejection), unless "Finger draws" is turned on.
  * Before any pen, one finger paints and two fingers pinch. A two-finger tap undoes, a
- * three-finger tap redoes. Under 768 px of panel width the library and run box become
- * sheets over a full-height canvas with a bottom tool bar of 44 px targets.
+ * three-finger tap redoes.
+ *
+ * On a phone (under 768 px wide, or under 500 px tall) the studio opens on ONE job, Create:
+ * a full-width grid of your images and, in the thumb zone, a prompt and one Generate button
+ * that ride above the on-screen keyboard. Every other knob (size, count, model, steps, seed,
+ * LoRA, ...) is behind one Options sheet at the server's defaults (creative/studio-mobile.ts).
+ * Tapping an image opens it full screen with Save / Share / Edit / Use as avatar; Edit opens
+ * the canvas editor (library and run box as sheets, a bottom tool bar of 44 px targets) and
+ * Back returns. A run has a deadline, and an offline or busy image service is SAID, with
+ * Generate given back — never a spinner forever. The wide layout is unchanged.
  *
  * The mask contract with /craft is unchanged: the mask canvas is the image's natural size,
  * and maskDataUrl() still sends alphaToMask() of it (any painted alpha -> white). Pressure
@@ -35,17 +43,33 @@ import {
   type Rect, type Stamp, type StrokeSample,
 } from '../drawing'
 import {
-  STUDIO_ACTIONS, alphaToMask, buildActionParams, costLine, createCharacter, createFolder,
+  CraftError, STUDIO_ACTIONS, alphaToMask, buildActionParams, costLine, createCharacter, createFolder,
   deleteFolder, estimate, getLibrary, listCraftOps, maskCoverage, mediaInFolder, mediaSrc,
   moveMedia, outcomeText, runCraftOp,
-  type CraftCatalogue, type CraftEstimate, type CraftLibrary, type StudioAction,
+  type CraftCatalogue, type CraftEstimate, type CraftLibrary, type CraftOpResult, type LibraryMedia,
+  type StudioAction,
 } from './creative/craft-client'
+import {
+  buildGenerateParams, gridColumns, keyboardInset, optionFields, optionsSummary, saveName,
+  serviceStatus, shortCost, sizePresets, sizeValues, type OptionField,
+} from './creative/studio-mobile'
 
 export interface ImageStudioPanelProps {
   /** '' for same-origin (the host serves /api/iris/craft/*). */
   apiBase?: string
   className?: string
+  /**
+   * The host's "Use as avatar": receives the image bytes, resolves a short success line
+   * (or throws with the reason). Absent = the action is not offered.
+   */
+  onUseAsAvatar?: (image: Blob, media: LibraryMedia) => Promise<string | void>
+  /** How long one phone Generate may take before the studio says the service did not answer. */
+  generateTimeoutMs?: number
 }
+
+/** A heavy txt2img on a busy GPU takes a few minutes; past this the studio says so. */
+const GENERATE_TIMEOUT_MS = 5 * 60_000
+type View = 'create' | 'edit'
 
 const EMPTY_LIBRARY: CraftLibrary = { media: [], folders: [], characters: [] }
 const UNFILED = '__unfiled__'
@@ -77,12 +101,16 @@ function useBoxSize(ref: React.RefObject<HTMLElement | null>, key?: unknown): Si
   return box
 }
 
-export default function ImageStudioPanel({ apiBase = '', className = '' }: ImageStudioPanelProps) {
+export default function ImageStudioPanel({
+  apiBase = '', className = '', onUseAsAvatar, generateTimeoutMs = GENERATE_TIMEOUT_MS,
+}: ImageStudioPanelProps) {
   const opts = useMemo(() => ({ apiBase }), [apiBase])
 
   const [catalogue, setCatalogue] = useState<CraftCatalogue | null>(null)
   const [library, setLibrary] = useState<CraftLibrary>(EMPTY_LIBRARY)
   const [loadError, setLoadError] = useState<string | null>(null)
+  /** A sign-in refusal is about the caller, not the image service being down. */
+  const [loadIsAuth, setLoadIsAuth] = useState(false)
   const [folder, setFolder] = useState<string>(UNFILED)
   const [selected, setSelected] = useState<number | null>(null)
   const [action, setAction] = useState<StudioAction>('inpaint')
@@ -99,6 +127,18 @@ export default function ImageStudioPanel({ apiBase = '', className = '' }: Image
   const [canUndo, setCanUndo] = useState(false)
   const [canRedo, setCanRedo] = useState(false)
   const [sheet, setSheet] = useState<Sheet>(null)
+  // ── the phone's Create surface ──
+  const [view, setView] = useState<View>('create')
+  const [prompt, setPrompt] = useState('')
+  const [options, setOptions] = useState<Record<string, unknown>>({})
+  const [optionsOpen, setOptionsOpen] = useState(false)
+  const [viewing, setViewing] = useState<number | null>(null)
+  const [viewerNote, setViewerNote] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null)
+  const [viewerBusy, setViewerBusy] = useState(false)
+  const [lastResult, setLastResult] = useState<CraftOpResult | null>(null)
+  const [createQuote, setCreateQuote] = useState<CraftEstimate | null>(null)
+  const [elapsed, setElapsed] = useState(0)
+  const [kbInset, setKbInset] = useState(0)
 
   const root = useRef<HTMLDivElement | null>(null)
   const viewport = useRef<HTMLDivElement | null>(null)
@@ -125,6 +165,7 @@ export default function ImageStudioPanel({ apiBase = '', className = '' }: Image
       setLoadError(null)
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : String(e))
+      setLoadIsAuth(e instanceof CraftError && (e.status === 401 || e.status === 403))
     }
   }, [opts])
 
@@ -132,7 +173,11 @@ export default function ImageStudioPanel({ apiBase = '', className = '' }: Image
     let alive = true
     listCraftOps(opts, 'image-studio')
       .then(c => { if (alive) setCatalogue(c) })
-      .catch(e => { if (alive) setLoadError(e instanceof Error ? e.message : String(e)) })
+      .catch(e => {
+        if (!alive) return
+        setLoadError(e instanceof Error ? e.message : String(e))
+        setLoadIsAuth(e instanceof CraftError && (e.status === 401 || e.status === 403))
+      })
     void refresh()
     return () => { alive = false }
   }, [opts, refresh])
@@ -145,6 +190,10 @@ export default function ImageStudioPanel({ apiBase = '', className = '' }: Image
   const shown = folder === UNFILED ? mediaInFolder(library, null)
     : folder === '' ? library.media : mediaInFolder(library, folder)
   const imgSrc = selectedMedia ? mediaSrc(opts, selectedMedia) : null
+  const creating = compact && view === 'create'
+  const genSpec = catalogue?.ops.find(o => o.name === 'txt2img') ?? null
+  const service = serviceStatus(catalogue, loadIsAuth ? null : loadError, lastResult)
+  const viewingMedia = viewing == null ? null : library.media.find(m => m.id === viewing) ?? null
 
   // ── the mask ─────────────────────────────────────────────────────────────
   const recountMask = useCallback(() => {
@@ -342,6 +391,127 @@ export default function ImageStudioPanel({ apiBase = '', className = '' }: Image
     }
   }
 
+  // ── the phone's Create surface ───────────────────────────────────────────
+  // The price of a Generate, before the tap. The prompt never changes the price, so only the
+  // options re-ask.
+  useEffect(() => {
+    setCreateQuote(null)
+    if (!creating || !genSpec || service.state === 'offline') return
+    const built = buildGenerateParams('x', options, genSpec)
+    if ('refusal' in built) return
+    const t = setTimeout(() => {
+      estimate(opts, 'txt2img', built.params).then(setCreateQuote).catch(() => setCreateQuote(null))
+    }, 350)
+    return () => clearTimeout(t)
+  }, [opts, creating, genSpec, options, service.state])
+
+  // A visible clock while a run is out: the person can see it is alive, and for how long.
+  useEffect(() => {
+    if (!busy) { setElapsed(0); return }
+    const started = Date.now()
+    const t = setInterval(() => setElapsed(Math.round((Date.now() - started) / 1000)), 1000)
+    return () => clearInterval(t)
+  }, [busy])
+
+  // iOS keeps the layout height when the keyboard opens; lift the dock by what it covers.
+  // (Android resizes the layout itself — the inset is then 0.)
+  useEffect(() => {
+    const vv = typeof window !== 'undefined' ? window.visualViewport : null
+    if (!creating || !vv) { setKbInset(0); return }
+    const update = () => {
+      const bottom = root.current?.getBoundingClientRect().bottom ?? window.innerHeight
+      setKbInset(keyboardInset(bottom, vv.height, vv.offsetTop))
+    }
+    update()
+    vv.addEventListener('resize', update)
+    vv.addEventListener('scroll', update)
+    return () => {
+      vv.removeEventListener('resize', update)
+      vv.removeEventListener('scroll', update)
+    }
+  }, [creating])
+
+  const generate = async () => {
+    if (busy) return
+    setNotice(null)
+    const built = buildGenerateParams(prompt, options, genSpec)
+    if ('refusal' in built) {
+      setNotice({ tone: 'error', text: built.refusal })
+      return
+    }
+    setBusy(true)
+    try {
+      const result = await runCraftOp(opts, 'txt2img', built.params, null, { timeoutMs: generateTimeoutMs })
+      setLastResult(result)
+      setNotice({ tone: result.ok ? 'ok' : 'error', text: outcomeText(result) })
+      if (result.ok) await refresh()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const imageBlob = async (m: LibraryMedia): Promise<Blob> => {
+    const src = mediaSrc(opts, m)
+    if (!src) throw new Error('This image has no file to read.')
+    const res = await fetch(src, { credentials: 'same-origin' })
+    if (!res.ok) throw new Error(`The studio answered HTTP ${res.status}.`)
+    return res.blob()
+  }
+
+  const viewerAction = async (fn: () => Promise<string | void>, fallback: string) => {
+    setViewerNote(null)
+    setViewerBusy(true)
+    try {
+      const said = await fn()
+      setViewerNote({ tone: 'ok', text: said || fallback })
+    } catch (e) {
+      if (e instanceof Error && e.name === 'AbortError') return   // the person closed the share sheet
+      setViewerNote({ tone: 'error', text: e instanceof Error ? e.message : String(e) })
+    } finally {
+      setViewerBusy(false)
+    }
+  }
+
+  const saveImage = (m: LibraryMedia) => viewerAction(async () => {
+    const blob = await imageBlob(m)
+    if (typeof URL.createObjectURL !== 'function') throw new Error('This browser cannot save files.')
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = saveName(m, blob.type)
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 30_000)
+  }, 'Saved to your downloads.')
+
+  const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function'
+  const shareImage = (m: LibraryMedia) => viewerAction(async () => {
+    const blob = await imageBlob(m)
+    const file = new File([blob], saveName(m, blob.type), { type: blob.type || 'image/png' })
+    const data: ShareData = { files: [file], title: `Image ${m.id}` }
+    if (typeof navigator.canShare === 'function' && !navigator.canShare(data)) {
+      throw new Error('This device cannot share image files. Use Save instead.')
+    }
+    await navigator.share(data)
+  }, 'Shared.')
+
+  const setAsAvatar = (m: LibraryMedia) => viewerAction(async () => {
+    if (!onUseAsAvatar) return
+    return onUseAsAvatar(await imageBlob(m), m)
+  }, 'Profile picture updated.')
+
+  const openViewer = (id: number) => { setViewerNote(null); setViewing(id) }
+  const closeViewer = () => { setViewing(null); setViewerNote(null) }
+
+  const editImage = (id: number) => {
+    closeViewer()
+    pick(id)
+    setView('edit')
+  }
+
+  const setOption = (name: string, value: unknown) => setOptions(o => ({ ...o, [name]: value }))
+
   const pick = (id: number | null) => {
     setSelected(id)
     clearMask()
@@ -526,25 +696,244 @@ export default function ImageStudioPanel({ apiBase = '', className = '' }: Image
   )
   const sheetClass = 'flex flex-col gap-3 overflow-auto border border-slate-800 bg-slate-950 p-3 shadow-2xl'
 
-  return (
-    <div ref={root} data-testid="image-studio" data-layout={compact ? (landscape ? 'compact-landscape' : 'compact-portrait') : 'wide'} onKeyDown={onKeyDown}
-      className={`relative flex h-full min-h-0 flex-col bg-slate-950 text-slate-100 ${className}`}>
-      <header className={`flex items-center border-b border-slate-800 ${compact ? 'gap-2 px-3 py-1.5' : 'gap-3 px-4 py-2'}`}>
-        <h2 className="truncate font-mono text-sm tracking-wide">{catalogue?.craft.name ?? 'Image Studio'}</h2>
-        {!compact && <span className="text-xs text-slate-500">your images, edited on the hosted studio, paid with credits</span>}
-        {catalogue?.buy_url && (
-          <a className="ml-auto text-xs text-cyan-300 underline" href={catalogue.buy_url} target="_blank" rel="noreferrer">Buy credits</a>
-        )}
-      </header>
+  // ── the phone's Create surface: one prompt, one Generate, your images ────
+  const presets = sizePresets(genSpec)
+  const fields = optionFields(genSpec)
+  const sizeNow = presets.find(p => p.width === (options.width ?? presets[0]?.width) && p.height === (options.height ?? presets[0]?.height))?.id ?? null
+  const genDisabled = busy || service.state === 'offline'
+  const cost = service.state === 'offline' ? '' : shortCost(createQuote, genSpec?.credits ?? null)
+  const cols = gridColumns(box.w)
+  const summary = optionsSummary(options, genSpec)
+  const banner = (service.state === 'offline' || service.state === 'busy') && (
+    <div role="alert" data-testid="service-banner"
+      className={`mx-3 mt-2 rounded-lg border px-3 py-2 text-sm ${service.state === 'offline' ? 'border-red-900 bg-red-950/50 text-red-200' : 'border-amber-800 bg-amber-950/40 text-amber-200'}`}>
+      {service.text}
+      {service.state === 'busy' && notice?.tone === 'error' && (
+        <p data-testid="service-detail" className="mt-1 text-xs opacity-80">{notice.text}</p>
+      )}
+    </div>
+  )
 
-      {loadError && (
+  const optionControl = (f: OptionField) => {
+    const value = options[f.name] ?? f.default
+    const fieldStyle: React.CSSProperties = { minHeight: TARGET, fontSize: 16 }
+    if (f.name === 'count' && f.kind === 'number') {
+      const max = Math.min(f.max ?? 4, 4)
+      const counts = [1, 2, 3, 4].filter(n => n <= max && n >= (f.min ?? 1))
+      return (
+        <div key={f.name} className="flex flex-col gap-1">
+          <span className="text-xs text-slate-400" id={`opt-${f.name}`}>{f.label}</span>
+          <div role="radiogroup" aria-labelledby={`opt-${f.name}`} className="flex gap-2">
+            {counts.map(n => (
+              <button key={n} type="button" role="radio" aria-checked={Number(value ?? 1) === n} onClick={() => setOption(f.name, n)}
+                className={`flex-1 rounded-lg border text-base ${Number(value ?? 1) === n ? 'border-cyan-400 bg-cyan-500/15 text-cyan-200' : 'border-slate-700 text-slate-200'}`}
+                style={{ minHeight: TARGET }}>{n}</button>
+            ))}
+          </div>
+        </div>
+      )
+    }
+    if (f.kind === 'choice') {
+      return (
+        <label key={f.name} className="flex flex-col gap-1 text-xs text-slate-400">
+          {f.label}
+          <select aria-label={f.label} value={String(value ?? '')} onChange={e => setOption(f.name, e.target.value)}
+            className="rounded-lg border border-slate-700 bg-slate-900 px-2 text-slate-100" style={fieldStyle}>
+            {f.default === undefined && <option value="">Default</option>}
+            {(f.choices ?? []).map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </label>
+      )
+    }
+    if (f.kind === 'toggle') {
+      return (
+        <label key={f.name} className="flex items-center justify-between gap-2 text-sm text-slate-200" style={{ minHeight: TARGET }}>
+          {f.label}
+          <input type="checkbox" role="switch" aria-label={f.label} checked={value === true} onChange={e => setOption(f.name, e.target.checked)}
+            style={{ width: 24, height: 24 }} />
+        </label>
+      )
+    }
+    return (
+      <label key={f.name} className="flex flex-col gap-1 text-xs text-slate-400">
+        {f.label}
+        <input aria-label={f.label} type={f.kind === 'number' ? 'number' : 'text'} inputMode={f.kind === 'number' ? 'numeric' : undefined}
+          min={f.min} max={f.max} value={options[f.name] == null ? '' : String(options[f.name])}
+          placeholder={f.default != null && f.default !== '' ? String(f.default) : 'Default'}
+          onChange={e => setOption(f.name, f.kind === 'number' && e.target.value !== '' ? Number(e.target.value) : e.target.value)}
+          className="rounded-lg border border-slate-700 bg-slate-900 px-2 text-slate-100" style={fieldStyle} />
+        {f.help && <span className="text-[11px] text-slate-500">{f.help}</span>}
+      </label>
+    )
+  }
+
+  const optionsSheet = optionsOpen && (
+    <>
+      <button type="button" aria-label="Close options" className="absolute inset-0 bg-black/50" style={{ zIndex: 40 }} onClick={() => setOptionsOpen(false)} />
+      <div role="dialog" aria-label="Options" aria-modal="true"
+        className="absolute inset-x-0 bottom-0 flex flex-col gap-3 overflow-auto rounded-t-2xl border-t border-slate-800 bg-slate-950 p-4 shadow-2xl"
+        style={{ zIndex: 41, maxHeight: '85%', paddingBottom: 'max(16px, env(safe-area-inset-bottom))' }}>
+        <span className="mx-auto h-1 w-10 rounded bg-slate-700" aria-hidden="true" />
+        {presets.length > 0 && (
+          <div className="flex flex-col gap-1">
+            <span className="text-xs text-slate-400" id="opt-size">Size</span>
+            <div role="radiogroup" aria-labelledby="opt-size" className="grid grid-cols-3 gap-2">
+              {presets.map(p => (
+                <button key={p.id} type="button" role="radio" aria-checked={sizeNow === p.id} aria-label={p.label}
+                  onClick={() => setOptions(o => ({ ...o, ...sizeValues(p.id, genSpec) }))}
+                  className={`flex flex-col items-center justify-center gap-1 rounded-lg border text-sm ${sizeNow === p.id ? 'border-cyan-400 bg-cyan-500/15 text-cyan-200' : 'border-slate-700 text-slate-200'}`}
+                  style={{ minHeight: 64 }}>
+                  <span aria-hidden="true" className="rounded-sm border-2 border-current"
+                    style={{ width: p.width >= p.height ? 22 : 16, height: p.height >= p.width ? 22 : 16 }} />
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        {fields.map(optionControl)}
+        {presets.length === 0 && fields.length === 0 && (
+          <p className="text-sm text-slate-400">Nothing to set for this studio yet.</p>
+        )}
+        <div className="flex gap-2 pt-1">
+          <button type="button" onClick={() => setOptions({})} className="rounded-lg border border-slate-700 px-4 text-sm text-slate-200" style={{ minHeight: TARGET }}>Reset</button>
+          <button type="button" onClick={() => setOptionsOpen(false)} className="flex-1 rounded-lg bg-cyan-500 text-base font-semibold text-slate-950" style={{ minHeight: TARGET }}>Done</button>
+        </div>
+      </div>
+    </>
+  )
+
+  const viewer = viewingMedia && (() => {
+    const m = viewingMedia
+    const src = mediaSrc(opts, m)
+    const name = `Image ${m.id}`
+    const act = (label: string, glyph: string, onClick: () => void) => (
+      <button type="button" aria-label={label} onClick={onClick} disabled={viewerBusy}
+        className="flex flex-1 flex-col items-center justify-center gap-1 rounded-lg text-xs text-slate-100 disabled:opacity-40"
+        style={{ minHeight: 56, minWidth: TARGET }}>
+        <span aria-hidden="true" style={{ fontSize: 20 }}>{glyph}</span>{label}
+      </button>
+    )
+    return (
+      <div role="dialog" aria-label={name} aria-modal="true" className="absolute inset-0 flex flex-col bg-black" style={{ zIndex: 50 }}>
+        <div className="flex items-center justify-between px-2">
+          <span className="px-2 font-mono text-xs text-slate-400">{name}</span>
+          <button type="button" aria-label="Close" onClick={closeViewer} className="text-xl text-slate-200" style={{ minWidth: TARGET, minHeight: TARGET }}>✕</button>
+        </div>
+        <div className="flex min-h-0 flex-1 items-center justify-center p-2">
+          {src ? <img src={src} alt={name} className="max-h-full max-w-full object-contain" />
+            : <p className="text-sm text-slate-500">This item has no preview.</p>}
+        </div>
+        {viewerNote && (
+          <p role={viewerNote.tone === 'error' ? 'alert' : 'status'}
+            className={`px-4 py-1 text-center text-sm ${viewerNote.tone === 'error' ? 'text-red-300' : 'text-emerald-300'}`}>{viewerNote.text}</p>
+        )}
+        <div className="flex gap-1 border-t border-slate-800 px-2 pt-1" style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom))' }}>
+          {src && act('Save', '⤓', () => void saveImage(m))}
+          {src && canShare && act('Share', '⇪', () => void shareImage(m))}
+          {src && act('Edit', '✎', () => editImage(m.id))}
+          {src && onUseAsAvatar && act('Use as avatar', '☺', () => void setAsAvatar(m))}
+        </div>
+      </div>
+    )
+  })()
+
+  const createSurface = creating && (
+    <div data-testid="studio-create" className="relative flex min-h-0 flex-1 flex-col">
+      {/* The window's title bar already names the studio: one row, only what is actionable. */}
+      <h2 className="sr-only">{catalogue?.craft.name ?? 'Image Studio'}</h2>
+      {catalogue?.buy_url && (
+        <div className="flex justify-end border-b border-slate-800 px-3">
+          <a className="flex items-center text-sm text-cyan-300 underline" style={{ minHeight: TARGET }}
+            href={catalogue.buy_url} target="_blank" rel="noreferrer">Buy credits</a>
+        </div>
+      )}
+      {banner}
+      {loadError && loadIsAuth && (
+        <div role="alert" className="mx-3 mt-2 rounded-lg border border-red-900 bg-red-950/50 px-3 py-2 text-sm text-red-200">{loadError}</div>
+      )}
+
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2">
+        {library.media.length === 0 ? (
+          <p className="px-4 py-10 text-center text-sm text-slate-500">Your images show up here.<br />Type below and tap Generate.</p>
+        ) : (
+          <div role="list" aria-label="Your images" className="grid gap-2" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
+            {library.media.map(m => {
+              const src = mediaSrc(opts, m)
+              return (
+                <button key={m.id} type="button" role="listitem" aria-label={`Image ${m.id}`} data-media-id={m.id}
+                  onClick={() => openViewer(m.id)}
+                  className="aspect-square overflow-hidden rounded-xl border border-slate-800 bg-slate-900" style={{ minHeight: TARGET }}>
+                  {src ? <img src={src} alt="" className="h-full w-full object-cover" loading="lazy" />
+                    : <span className="text-xs text-slate-500">no preview</span>}
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* The thumb zone: it rides above the on-screen keyboard. */}
+      <div data-testid="studio-dock" className="flex flex-col gap-2 border-t border-slate-800 bg-slate-950 px-3 pt-2"
+        style={{ paddingBottom: kbInset > 0 ? kbInset + 8 : 'max(8px, env(safe-area-inset-bottom))' }}>
+        {notice && service.state !== 'busy' && (
+          <p data-testid="studio-status" role={notice.tone === 'error' ? 'alert' : 'status'}
+            className={`text-sm ${notice.tone === 'error' ? 'text-red-300' : 'text-emerald-300'}`}>{notice.text}</p>
+        )}
+        <textarea aria-label="Describe your image" value={prompt} onChange={e => setPrompt(e.target.value)} rows={2}
+          enterKeyHint="go" placeholder="A red fox in the snow, golden light"
+          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void generate() } }}
+          className="w-full resize-none rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100"
+          style={{ fontSize: 16, minHeight: 56, maxHeight: 140 }} />
+        <div className="flex items-stretch gap-2">
+          <button type="button" aria-label={summary === 'Options' ? 'Options' : `Options: ${summary}`} onClick={() => setOptionsOpen(true)}
+            className="flex max-w-[45%] items-center gap-1 truncate rounded-xl border border-slate-700 px-3 text-sm text-slate-200"
+            style={{ minHeight: 52 }}>
+            <span aria-hidden="true">⚙</span>{summary}
+          </button>
+          <button type="button" onClick={() => void generate()} disabled={genDisabled}
+            className="flex flex-1 flex-col items-center justify-center rounded-xl bg-cyan-500 text-base font-semibold text-slate-950 disabled:bg-slate-700 disabled:text-slate-400"
+            style={{ minHeight: 52 }}>
+            {busy ? `Generating… ${elapsed}s` : 'Generate'}
+          </button>
+        </div>
+        {cost && <p className="text-center text-[11px] text-slate-500" data-testid="cost-short">{cost}</p>}
+      </div>
+      {optionsSheet}
+    </div>
+  )
+
+  return (
+    <div ref={root} data-testid="image-studio" data-layout={compact ? (landscape ? 'compact-landscape' : 'compact-portrait') : 'wide'}
+      data-view={compact ? view : 'studio'} onKeyDown={onKeyDown}
+      className={`relative flex h-full min-h-0 flex-col bg-slate-950 text-slate-100 ${className}`}>
+      {createSurface}
+      {viewer}
+
+      {!creating && (
+        <header className={`flex items-center border-b border-slate-800 ${compact ? 'gap-2 px-1' : 'gap-3 px-4 py-2'}`}>
+          {compact && (
+            <button type="button" aria-label="Back to Create" onClick={() => { setSheet(null); setView('create') }}
+              className="text-sm text-cyan-300" style={{ minWidth: TARGET, minHeight: TARGET }}>‹ Create</button>
+          )}
+          <h2 className="truncate font-mono text-sm tracking-wide">{compact ? 'Edit' : (catalogue?.craft.name ?? 'Image Studio')}</h2>
+          {!compact && <span className="text-xs text-slate-500">your images, edited on the hosted studio, paid with credits</span>}
+          {catalogue?.buy_url && (
+            <a className="ml-auto flex items-center text-xs text-cyan-300 underline" style={compact ? { minHeight: TARGET, paddingRight: 8 } : undefined}
+              href={catalogue.buy_url} target="_blank" rel="noreferrer">Buy credits</a>
+          )}
+        </header>
+      )}
+
+      {loadError && !creating && (
         <div role="alert" className="border-b border-red-900 bg-red-950/40 px-4 py-2 text-xs text-red-200">{loadError}</div>
       )}
-      {compact && notice && sheet !== 'run' && (
+      {compact && !creating && notice && sheet !== 'run' && (
         <p role={notice.tone === 'error' ? 'alert' : 'status'} className={`px-3 py-1 text-xs ${notice.tone === 'error' ? 'text-red-300' : 'text-emerald-300'}`}>{notice.text}</p>
       )}
 
-      <div className={`relative flex min-h-0 flex-1 ${compact ? 'flex-col' : 'flex-row'}`}>
+      {/* The editor stays mounted under Create, so the mask and its undo history survive. */}
+      <div className={`relative min-h-0 flex-1 ${compact ? 'flex-col' : 'flex-row'} ${creating ? 'hidden' : 'flex'}`} aria-hidden={creating || undefined}>
         {/* 01 — library (a sheet on a phone) */}
         {(!compact || sheet === 'library') && (
           <aside aria-label="Library" data-testid={compact ? 'sheet-library' : undefined}
@@ -591,7 +980,7 @@ export default function ImageStudioPanel({ apiBase = '', className = '' }: Image
         )}
       </div>
 
-      {compact && (
+      {compact && !creating && (
         <div role="toolbar" aria-label="Studio tools" data-testid="studio-toolbar"
           className="flex flex-col gap-1 border-t border-slate-800 bg-slate-950 px-2 pt-1"
           style={{ paddingBottom: 'max(6px, env(safe-area-inset-bottom))' }}>
