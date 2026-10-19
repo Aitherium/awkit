@@ -22,6 +22,8 @@ import {
   QUICK_REPLIES,
   agentStatus,
   agoLabel,
+  ageLabel,
+  decisionOrder,
   defaultMachine,
   glanceOrder,
   lastLine,
@@ -30,6 +32,7 @@ import {
   offersQuickReplies,
   sessionName,
   startableMachines,
+  type AgentDecision,
   type AgentListResult,
   type AgentSession,
   type AgentSessionsTransport,
@@ -144,6 +147,34 @@ export function AgentSessionsPanel({
   }, [refresh, listEveryMs, paused])
 
   const sessions = useMemo(() => glanceOrder(list?.sessions || []), [list])
+  // Cards answered here vanish at once; the next list read confirms it.
+  const [answered, setAnswered] = useState<Record<string, true>>({})
+  const decisions = useMemo(
+    () => decisionOrder((list?.decisions || []).filter((d) => !answered[`${d.nodeId}/${d.id}`])),
+    [list, answered],
+  )
+  const [rowNote, setRowNote] = useState('')
+  const answer = useCallback(async (d: AgentDecision, key: string) => {
+    if (!transport.answer) return
+    const k = `${d.nodeId}/${d.id}`
+    setAnswered((v) => ({ ...v, [k]: true }))
+    try {
+      const r = await transport.answer(d, key)
+      setRowNote(r.ok ? `Answered: ${d.title}` : `Not answered: ${r.detail}`)
+      if (!r.ok) setAnswered((v) => { const n = { ...v }; delete n[k]; return n })
+    } catch (err) {
+      setRowNote(`Not answered: ${err instanceof Error ? err.message : String(err)}`)
+      setAnswered((v) => { const n = { ...v }; delete n[k]; return n })
+    }
+  }, [transport])
+  const quick = useCallback(async (s: AgentSession, text: string) => {
+    try {
+      const r = await transport.send(s, text)
+      setRowNote(r.ok ? `${sessionName(s)}: ${text}` : `Not sent: ${r.detail}`)
+    } catch (err) {
+      setRowNote(`Not sent: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }, [transport])
   const open = view.kind === 'session' ? sessions.find((s) => keyOf(s) === view.key) || view.fallback || null : null
 
   const root: React.CSSProperties = {
@@ -185,7 +216,7 @@ export function AgentSessionsPanel({
     )
   }
 
-  const waiting = needsYouCount(sessions)
+  const waiting = needsYouCount(sessions) + decisions.length
   const live = sessions.filter((s) => agentStatus(s.status).tone !== 'ended').length
   const canStart = startableMachines(list?.machines || []).length > 0
 
@@ -211,7 +242,38 @@ export function AgentSessionsPanel({
 
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '8px 12px 16px' }}>
         {listError && <Note>{listError}</Note>}
-        {list && sessions.length === 0 && !listError && (
+        {rowNote && <Note>{rowNote}</Note>}
+        {decisions.length > 0 && (
+          <ul style={{ listStyle: 'none', margin: '0 0 8px', padding: 0, display: 'grid', gap: 8 }} aria-label="Waiting on you">
+            {decisions.map((d) => (
+              <li key={`${d.nodeId}/${d.id}`} data-decision={d.id}
+                style={{ padding: '12px 14px', borderRadius: 14, border: `1px solid ${TONE.attention.fg}`, background: C.card, display: 'grid', gap: 6 }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ flex: 1, minWidth: 0, fontWeight: 600 }}>{d.title}</span>
+                  <Chip tone="attention" label="asks you" />
+                </span>
+                <span style={{ fontSize: 12, color: C.faint }}>
+                  {d.machine}{ageLabel(d.age_seconds) ? ` · ${ageLabel(d.age_seconds)}` : ''}
+                </span>
+                {d.description && (
+                  <span style={{ fontSize: 13, color: C.dim, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                    {d.description}
+                  </span>
+                )}
+                <span style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {d.options.map((o) => (
+                    <button key={o.key} type="button" disabled={!transport.answer}
+                      style={o.recommended ? { ...PRIMARY, flex: '1 1 auto' } : { ...BTN, flex: '1 1 auto' }}
+                      onClick={() => void answer(d, o.key)}>
+                      {o.label}
+                    </button>
+                  ))}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {list && sessions.length === 0 && decisions.length === 0 && !listError && (
           <Note>
             {list.machines.length === 0
               ? 'No machines yet. Run `awsh rc` on a computer to add it.'
@@ -249,6 +311,15 @@ export function AgentSessionsPanel({
                     </span>
                   )}
                 </button>
+                {s.canMessage && offersQuickReplies(s.status) && (
+                  <span style={{ display: 'flex', gap: 8, marginTop: 6 }} aria-label={`Answer ${sessionName(s)}`}>
+                    {QUICK_REPLIES.map((q) => (
+                      <button key={q} type="button" style={{ ...BTN, flex: 1, minHeight: 40 }} onClick={() => void quick(s, q)}>
+                        {q[0].toUpperCase() + q.slice(1)}
+                      </button>
+                    ))}
+                  </span>
+                )}
               </li>
             )
           })}

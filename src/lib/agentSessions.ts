@@ -55,9 +55,23 @@ export interface AgentTranscriptLine {
   text: string
 }
 
+/** A decision card an agent raised and is waiting on (awask, the daemon's `/decisions`). */
+export interface AgentDecision {
+  id: string
+  nodeId: string
+  machine: string
+  title: string
+  description?: string
+  urgency?: string
+  options: Array<{ key: string; label: string; recommended?: boolean }>
+  age_seconds?: number
+}
+
 export interface AgentListResult {
   sessions: AgentSession[]
   machines: AgentMachine[]
+  /** Open decision cards on those machines, shown above the sessions. */
+  decisions?: AgentDecision[]
   /** Machines that were asked and could not answer — shown, never swallowed. */
   errors: Array<{ machine: string; nodeId?: string; detail: string }>
 }
@@ -95,6 +109,29 @@ export interface AgentSessionsTransport {
   read(session: AgentSession, cursor: unknown, signal?: AbortSignal): Promise<AgentReadResult>
   send(session: AgentSession, text: string): Promise<AgentActionResult>
   start(request: AgentStartRequest): Promise<AgentStartResult>
+  /** Answer a decision card in place. Hosts without decisions omit it. */
+  answer?(decision: AgentDecision, key: string): Promise<AgentActionResult>
+}
+
+const URGENCY_RANK: Record<string, number> = { critical: 0, high: 1, normal: 2, low: 3 }
+
+/** Most urgent first, then oldest first (the one that has waited longest). Never mutates. */
+export function decisionOrder(decisions: readonly AgentDecision[]): AgentDecision[] {
+  return [...(decisions || [])].sort((a, b) => {
+    const u = (URGENCY_RANK[(a.urgency || 'normal').toLowerCase()] ?? 2)
+      - (URGENCY_RANK[(b.urgency || 'normal').toLowerCase()] ?? 2)
+    if (u !== 0) return u
+    return (b.age_seconds || 0) - (a.age_seconds || 0)
+  })
+}
+
+/** "5m" from seconds, for a card's corner. */
+export function ageLabel(seconds?: number): string {
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < 0) return ''
+  if (seconds < 60) return 'just now'
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m ago`
+  if (seconds < 86400) return `${Math.round(seconds / 3600)}h ago`
+  return `${Math.round(seconds / 86400)}d ago`
 }
 
 /** The harnesses offered in Start, most-used first. Ids match awdk `harnesses/registry.py`. */

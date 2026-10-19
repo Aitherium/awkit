@@ -109,7 +109,7 @@ async function mount(list = LIST) {
 describe('AgentSessionsPanel', () => {
   it('lists every machine\u2019s sessions, needs-you first, with status and last line; shows a failed machine', async () => {
     await mount()
-    const rows = within(screen.getByLabelText('Sessions')).getAllByRole('button')
+    const rows = Array.from(screen.getByLabelText('Sessions').querySelectorAll('[data-session]'))
     expect(rows[0]).toHaveTextContent('deploy veil')
     expect(rows[0]).toHaveTextContent('needs you')
     expect(rows[0]).toHaveTextContent('wants to run fleet-deploy')
@@ -180,5 +180,35 @@ describe('AgentSessionsPanel', () => {
     const bad: AgentSessionsTransport = { ...fakeTransport(LIST).t, list: jest.fn(async () => { throw new Error('HTTP 502') }) }
     render(<AgentSessionsPanel transport={bad} listEveryMs={60_000} />)
     expect(await screen.findByText('Could not look')).toBeTruthy()
+  })
+
+  it('job (c) in 1 tap after opening: a decision card is answered in place, most urgent first', async () => {
+    const answered: Array<[string, string]> = []
+    const f = fakeTransport({
+      ...LIST,
+      decisions: [
+        { id: 'd-low', nodeId: 'n1', machine: 'desk', title: 'Rename the branch?', urgency: 'low', options: [{ key: 'y', label: 'Rename' }] },
+        { id: 'd-hi', nodeId: 'n1', machine: 'desk', title: 'Deploy veil now?', urgency: 'high', age_seconds: 300,
+          options: [{ key: 'go', label: 'Deploy', recommended: true }, { key: 'wait', label: 'Wait' }] },
+      ],
+    })
+    f.t.answer = jest.fn(async (d, key) => { answered.push([d.id, key]); return { ok: true, detail: '' } })
+    render(<AgentSessionsPanel transport={f.t} listEveryMs={60_000} readEveryMs={60_000} />)
+    const cards = within(await screen.findByLabelText('Waiting on you')).getAllByRole('listitem')
+    expect(cards[0]).toHaveTextContent('Deploy veil now?')
+    expect(screen.getByText('3 need you')).toBeTruthy()
+    let taps = 0
+    fireEvent.click(within(cards[0]).getByRole('button', { name: 'Deploy' })); taps++
+    await waitFor(() => expect(answered).toEqual([['d-hi', 'go']]))
+    expect(taps).toBe(1)
+    await waitFor(() => expect(screen.queryByText('Deploy veil now?')).toBeNull())
+  })
+
+  it('job (c) for a session waiting for input: Yes on the row itself, 1 tap after opening', async () => {
+    const f = await mount()
+    const row = screen.getByText('deploy veil').closest('li')!
+    fireEvent.click(within(row).getByRole('button', { name: 'Yes' }))
+    await waitFor(() => expect(f.sent).toEqual([{ id: 'ask', text: 'yes' }]))
+    expect(document.querySelector('[data-view="list"]')).toBeTruthy()
   })
 })
