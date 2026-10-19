@@ -69,6 +69,9 @@ function mockFetch(docs: unknown[] = [], features: string[] = HOST_FEATURES) {
   return { sent, batches }
 }
 
+// The upload project is remembered in localStorage; each test starts clean.
+beforeEach(() => window.localStorage.clear())
+
 async function renderReady() {
   render(<DocumentPanel />)
   await screen.findByText(/PDF, TXT, MP4, up to 90 MB per file/)
@@ -177,9 +180,10 @@ describe('DocumentPanel projects', () => {
   })
 
   it('documentFeatures reads the advertised flags only once config loaded', () => {
-    expect(documentFeatures(HOST_FEATURES)).toEqual({ projects: true, versions: true })
-    expect(documentFeatures(HOST_FEATURES, false)).toEqual({ projects: false, versions: false })
-    expect(documentFeatures(undefined)).toEqual({ projects: false, versions: false })
+    expect(documentFeatures(HOST_FEATURES)).toEqual({ projects: true, versions: true, edit: false })
+    expect(documentFeatures([...HOST_FEATURES, 'document_edit'])).toEqual({ projects: true, versions: true, edit: true })
+    expect(documentFeatures(HOST_FEATURES, false)).toEqual({ projects: false, versions: false, edit: false })
+    expect(documentFeatures(undefined)).toEqual({ projects: false, versions: false, edit: false })
   })
 
   it('filters the list by project chip', async () => {

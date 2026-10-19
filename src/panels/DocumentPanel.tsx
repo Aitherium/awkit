@@ -47,11 +47,36 @@ const BACKGROUND_INGEST_BYTES = 5 * 1024 * 1024
  * Which document features this backend advertises in /api/config/embed
  * `features`. Projects and Replace / Keep both are host-app routes; another
  * tenant's backend would drop the project and answer Replace with the same 409.
+ * `document_edit` = PATCH /api/documents/{id} + POST /api/documents/bulk (move
+ * between projects, tags); without it the panel offers neither.
  */
 export function documentFeatures(features: readonly string[] | undefined, loaded = true) {
   const has = (f: string) => loaded && !!features?.includes(f)
-  return { projects: has('document_projects'), versions: has('document_versions') }
+  return { projects: has('document_projects'), versions: has('document_versions'), edit: has('document_edit') }
 }
+
+/** Where the chosen upload project is remembered (per backend), so the next
+ *  upload -- after a reload, or with the window closed and reopened -- goes to
+ *  the same project instead of silently to none. */
+export const uploadProjectKey = (base: string) => `awkit.documents.uploadProject:${base || 'same-origin'}`
+
+function readStoredProject(): string {
+  try {
+    return (typeof window !== 'undefined' && window.localStorage?.getItem(uploadProjectKey(getApiBase()))) || ''
+  } catch { return '' }
+}
+
+function storeProject(project: string) {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return
+    const key = uploadProjectKey(getApiBase())
+    if (project) window.localStorage.setItem(key, project)
+    else window.localStorage.removeItem(key)
+  } catch { /* private mode: the choice lasts this session only */ }
+}
+
+/** A project or tag name as the backend stores it: whitespace collapsed, capped. */
+export const cleanLabel = (v: string, max = 120) => v.split(/\s+/).filter(Boolean).join(' ').slice(0, max)
 
 /** Ask a versions-capable backend to ingest in the background (202 + job). */
 export const wantsBackgroundIngest = (file: File) =>
@@ -168,12 +193,25 @@ interface Doc {
   chunk_count: number
   /** Production/project tag set at upload, on backends that advertise document_projects. */
   project?: string | null
+  /** Free tags (document_edit backends). */
+  tags?: string[]
 }
 
 /** Distinct project tags in the list, sorted, for the filter chips. */
 export function projectsOf(docs: readonly { project?: string | null }[]): string[] {
   return Array.from(new Set(docs.map(d => d.project).filter((p): p is string => !!p))).sort()
 }
+
+/** Distinct tags in the list, case-insensitively unique and sorted, for the tag chips. */
+export function tagsOf(docs: readonly { tags?: string[] | null }[]): string[] {
+  const seen = new Map<string, string>()
+  for (const d of docs) {
+    for (const t of d.tags || []) if (t && !seen.has(t.toLowerCase())) seen.set(t.toLowerCase(), t)
+  }
+  return Array.from(seen.values()).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+}
+
+const NEW_PROJECT = '__new__'
 
 interface DocChunk {
   text: string
@@ -186,6 +224,11 @@ interface DocContent {
   doc_type: string
   text: string
   chunk_count: number
+  /** 'image': the viewer shows the picture from preview_url. */
+  kind?: string
+  /** For an image: false when only its file name is indexed (no vision description yet). */
+  described?: boolean
+  preview_url?: string
 }
 
 interface FileProgress {
@@ -229,13 +272,24 @@ export default function DocumentPanel() {
   const [listError, setListError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [viewerError, setViewerError] = useState<string | null>(null)
-  const [project, setProject] = useState('')
+  // The upload target. Remembered per backend: before this it lived only in
+  // component state, so reopening the window or reloading sent every later
+  // upload to no project while the list still showed the project's chip.
+  const [project, setProjectState] = useState(readStoredProject)
+  const [newProjectMode, setNewProjectMode] = useState(false)
   const [projectFilter, setProjectFilter] = useState<string | null>(null)
+  const [tagFilter, setTagFilter] = useState<string | null>(null)
+  const [selected, setSelected] = useState<Set<string>>(() => new Set())
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   // Files whose upload hit a same-name 409, kept so Replace / Keep both can resend.
   const pendingDupes = useRef(new Map<string, File>())
   const projectRef = useRef('')
-  projectRef.current = project.trim()
+  projectRef.current = cleanLabel(project)
+  const setProject = (value: string) => {
+    setProjectState(value)
+    storeProject(cleanLabel(value))
+  }
 
   // The accept list and hint come from the backend's /api/config/embed when it is
   // a real extension allowlist (a pack that publishes it); other tenants keep the legacy list and
@@ -251,11 +305,41 @@ export default function DocumentPanel() {
 
   const addResults = (more: UploadResult[]) => setResults(prev => [...prev, ...more])
 
-  const openDoc = async (doc: Doc) => {
-    if (viewDoc?.id === doc.id) { setViewDoc(null); return }
+  // Revoke the previous picture's object URL whenever it changes or the panel closes.
+  useEffect(() => () => {
+    if (previewUrl && typeof URL !== 'undefined' && typeof URL.revokeObjectURL === 'function') {
+      URL.revokeObjectURL(previewUrl)
+    }
+  }, [previewUrl])
+
+  /** Fetch an image's preview through fetch (it carries the session's auth;
+   *  a bare <img src> would not) and show it as an object URL. */
+  const viewIdRef = useRef<string | null>(null)
+  viewIdRef.current = viewDoc?.id ?? null
+  const loadPreview = async (path: string, docId: string) => {
+    if (typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') return
+    try {
+      const r = await fetch(`${getApiBase()}${path}`)
+      if (!r.ok) return
+      const blob = await r.blob()
+      // The user may have opened another document while this one loaded.
+      if (viewIdRef.current === docId) setPreviewUrl(URL.createObjectURL(blob))
+    } catch { /* the viewer still shows the status line */ }
+  }
+
+  const closeViewer = () => {
+    setViewDoc(null)
+    setDocContent(null)
+    setChunks([])
+    setPreviewUrl(null)
+  }
+
+  const openDoc = async (doc: Doc, reload = false) => {
+    if (!reload && viewDoc?.id === doc.id) { closeViewer(); return }
     setViewDoc(doc)
     setDocContent(null)
     setChunks([])
+    setPreviewUrl(null)
     setViewerError(null)
     setLoadingViewer(true)
     setViewMode('content')
@@ -271,6 +355,10 @@ export default function DocumentPanel() {
 
     if (contentRes.status === 'fulfilled' && contentRes.value) {
       setDocContent(contentRes.value)
+      if (contentRes.value.kind === 'image' && contentRes.value.preview_url) {
+        viewIdRef.current = doc.id
+        loadPreview(contentRes.value.preview_url, doc.id)
+      }
     }
     if (chunksRes.status === 'fulfilled' && chunksRes.value) {
       setChunks(chunksRes.value.chunks || chunksRes.value || [])
@@ -488,11 +576,90 @@ export default function DocumentPanel() {
       }
       fetchDocs()
       setConfirmDelete(null)
-      if (viewDoc?.id === id) { setViewDoc(null); setDocContent(null); setChunks([]) }
+      setSelected(prev => { const next = new Set(prev); next.delete(id); return next })
+      if (viewDoc?.id === id) closeViewer()
     } catch (e) {
       setActionError(`Delete failed: ${(e as Error)?.message || 'network error'}`)
     }
   }
+
+  /** Merge returned labels into the list and the open viewer. */
+  const applyLabels = (rows: { id: string; project?: string | null; tags?: string[] }[]) => {
+    const byId = new Map(rows.map(r => [r.id, r]))
+    const merge = (d: Doc): Doc => {
+      const r = byId.get(d.id)
+      return r ? { ...d, project: r.project ?? null, tags: r.tags || [] } : d
+    }
+    setDocs(prev => prev.map(merge))
+    setViewDoc(prev => (prev ? merge(prev) : prev))
+  }
+
+  /** Move one document to a project ("" = none) and/or set its tags. */
+  const patchDoc = async (id: string, body: { project?: string; tags?: string[] }) => {
+    setActionError(null)
+    try {
+      const resp = await fetch(`${getApiBase()}/api/documents/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      })
+      if (!resp.ok) {
+        setActionError(`Could not update the document: ${await errorDetail(resp, 'Update failed')}`)
+        return
+      }
+      applyLabels([await resp.json()])
+    } catch (e) {
+      setActionError(`Could not update the document: ${(e as Error)?.message || 'network error'}`)
+    }
+  }
+
+  /** Move / tag every selected document in one request. */
+  const bulkUpdate = async (body: { project?: string; add_tags?: string[] }) => {
+    const ids = Array.from(selected)
+    if (ids.length === 0) return
+    setActionError(null)
+    try {
+      const resp = await fetch(`${getApiBase()}/api/documents/bulk`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids, ...body }),
+      })
+      if (!resp.ok) {
+        setActionError(`Could not update the selection: ${await errorDetail(resp, 'Update failed')}`)
+        return
+      }
+      const data = await resp.json()
+      applyLabels(data.updated || [])
+      const failed: { filename?: string; detail?: string }[] = data.failed || []
+      if (failed.length > 0) {
+        setActionError(`Not updated: ${failed.map(f => `${f.filename}: ${f.detail}`).join('; ')}`)
+      } else {
+        setSelected(new Set())
+      }
+    } catch (e) {
+      setActionError(`Could not update the selection: ${(e as Error)?.message || 'network error'}`)
+    }
+  }
+
+  /** Re-read an image (or any document) from its stored original. Admin only. */
+  const describeAgain = async (doc: Doc) => {
+    setActionError(null)
+    try {
+      const resp = await fetch(`${getApiBase()}/api/documents/${doc.id}/reindex`, { method: 'POST' })
+      if (!resp.ok) {
+        setActionError(`Could not re-read ${doc.filename}: ${await errorDetail(resp, 'Re-read failed')}`)
+        return
+      }
+      const data = await resp.json()
+      fetchDocs()
+      await openDoc({ ...doc, chunk_count: data.chunks ?? doc.chunk_count }, true)
+    } catch (e) {
+      setActionError(`Could not re-read ${doc.filename}: ${(e as Error)?.message || 'network error'}`)
+    }
+  }
+
+  const toggleSelected = (id: string) => setSelected(prev => {
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    return next
+  })
 
   const statusColor = (status: string) => {
     switch (status) {
@@ -520,7 +687,17 @@ export default function DocumentPanel() {
   }
 
   const projects = projectsOf(docs)
-  const shownDocs = projectFilter ? docs.filter(d => d.project === projectFilter) : docs
+  const tags = tagsOf(docs)
+  const shownDocs = docs.filter(d =>
+    (!projectFilter || d.project === projectFilter)
+    && (!tagFilter || (d.tags || []).some(t => t.toLowerCase() === tagFilter.toLowerCase())))
+  /** A project chip is a folder: opening it also makes it the upload target,
+   *  so files dropped while looking at a project land in it. */
+  const chooseProjectFilter = (p: string | null) => {
+    setProjectFilter(p)
+    if (p) { setProject(p); setNewProjectMode(false) }
+  }
+  const allShownSelected = shownDocs.length > 0 && shownDocs.every(d => selected.has(d.id))
 
   // Reassemble full text from chunks if content endpoint didn't return
   const displayText = docContent?.text
@@ -567,16 +744,22 @@ export default function DocumentPanel() {
           accept={accepted.join(',')}
           onChange={e => { if (e.target.files) handleFiles(e.target.files); e.target.value = '' }} />
 
-        {supports.projects && (<>
-          <input data-testid="document-project-input" value={project} onChange={e => setProject(e.target.value)}
-            placeholder="Project for new uploads (optional)" maxLength={120} list="document-projects"
-            style={{ width: '100%', marginTop: '0.5rem', padding: '0.35rem 0.6rem', fontSize: '0.75rem',
-              background: 'var(--bg-surface, #1a1a2e)', color: 'var(--text-primary, #ddd)',
-              border: '1px solid var(--glass-border, #333)', borderRadius: 'var(--radius, 6px)', boxSizing: 'border-box' }} />
-          <datalist id="document-projects">
-            {projects.map(p => <option key={p} value={p} />)}
-          </datalist>
-        </>)}
+        {supports.projects && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.5rem', fontSize: '0.75rem' }}>
+            <span style={{ color: 'var(--text-secondary, #aaa)', flexShrink: 0 }}>Upload to</span>
+            <ProjectPicker value={project} projects={projects} live
+              creating={newProjectMode || projects.length === 0}
+              onCreating={setNewProjectMode}
+              onCommit={setProject} noneLabel="No project"
+              selectTestId="document-project-select" inputTestId="document-project-input"
+              placeholder="New project name (optional)" />
+          </div>
+        )}
+        {supports.projects && (
+          <div data-testid="document-upload-target" style={{ fontSize: '0.65rem', color: 'var(--text-muted, #666)', marginTop: '0.2rem' }}>
+            {projectRef.current ? `New uploads go to ${projectRef.current}` : 'New uploads go to no project'}
+          </div>
+        )}
 
         {uploadProgress && (
           <div style={{ padding: '0.5rem 0.75rem', marginTop: '0.5rem', background: 'var(--bg-surface, #1a1a2e)',
@@ -692,7 +875,7 @@ export default function DocumentPanel() {
               {projects.length > 0 && (
                 <div data-testid="document-project-filter" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
                   {[null, ...projects].map(p => (
-                    <button key={p ?? '__all'} aria-pressed={projectFilter === p} onClick={() => setProjectFilter(p)} style={{
+                    <button key={p ?? '__all'} aria-pressed={projectFilter === p} onClick={() => chooseProjectFilter(p)} style={{
                       padding: '0.15rem 0.55rem', borderRadius: 999, fontSize: '0.65rem', cursor: 'pointer',
                       background: projectFilter === p ? 'var(--accent-primary, #3b82f6)' : 'var(--bg-elevated, #222)',
                       color: projectFilter === p ? '#fff' : 'var(--text-secondary, #aaa)',
@@ -700,8 +883,27 @@ export default function DocumentPanel() {
                   ))}
                 </div>
               )}
+              {tags.length > 0 && (
+                <div data-testid="document-tag-filter" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
+                  {[null, ...tags].map(t => (
+                    <button key={t ?? '__all'} aria-pressed={tagFilter === t} onClick={() => setTagFilter(t)} style={{
+                      padding: '0.1rem 0.5rem', borderRadius: 4, fontSize: '0.62rem', cursor: 'pointer',
+                      background: tagFilter === t ? 'var(--accent-cyan, #06b6d4)' : 'transparent',
+                      border: '1px solid var(--glass-border, #333)',
+                      color: tagFilter === t ? '#fff' : 'var(--text-secondary, #aaa)',
+                    }}>{t === null ? 'All tags' : `#${t}`}</button>
+                  ))}
+                </div>
+              )}
+              {supports.edit && !viewDoc && shownDocs.length > 0 && (
+                <BulkBar count={selected.size} allSelected={allShownSelected} projects={projects}
+                  onToggleAll={() => setSelected(allShownSelected ? new Set() : new Set(shownDocs.map(d => d.id)))}
+                  onMove={p => bulkUpdate({ project: p })}
+                  onTag={t => bulkUpdate({ add_tags: [t] })}
+                  onClear={() => setSelected(new Set())} />
+              )}
               {shownDocs.map(doc => (
-                <div key={doc.id} onClick={() => openDoc(doc)} style={{
+                <div key={doc.id} data-testid={`document-row-${doc.id}`} onClick={() => openDoc(doc)} style={{
                   display: 'flex', alignItems: 'center', gap: '0.5rem',
                   padding: viewDoc ? '0.5rem 0.6rem' : '0.6rem 0.75rem',
                   background: viewDoc?.id === doc.id ? 'var(--bg-elevated, #2a2a3e)' : 'var(--bg-surface, #1a1a2e)',
@@ -710,6 +912,11 @@ export default function DocumentPanel() {
                   cursor: 'pointer',
                   transition: 'all 0.15s',
                 }}>
+                  {supports.edit && !viewDoc && (
+                    <input type="checkbox" data-testid={`document-select-${doc.id}`} aria-label={`Select ${doc.filename}`}
+                      checked={selected.has(doc.id)} onClick={e => e.stopPropagation()}
+                      onChange={() => toggleSelected(doc.id)} style={{ flexShrink: 0, cursor: 'pointer' }} />
+                  )}
                   {!viewDoc && <span style={{ fontSize: '1rem', flexShrink: 0 }}>{docTypeIcon(doc.doc_type)}</span>}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: viewDoc ? '0.75rem' : '0.85rem', fontWeight: 500, overflow: 'hidden',
@@ -718,6 +925,14 @@ export default function DocumentPanel() {
                       {doc.doc_type}{doc.project ? ` · ${doc.project}` : ''} · {doc.chunk_count} chunk{doc.chunk_count !== 1 ? 's' : ''}
                       {!viewDoc && doc.uploaded_at && ` · ${new Date(doc.uploaded_at).toLocaleDateString()}`}
                     </div>
+                    {(doc.tags || []).length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.2rem', marginTop: '0.2rem' }}>
+                        {(doc.tags || []).map(t => (
+                          <span key={t} style={{ fontSize: '0.6rem', padding: '0 0.35rem', borderRadius: 3,
+                            border: '1px solid var(--glass-border, #333)', color: 'var(--accent-cyan, #06b6d4)' }}>#{t}</span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   {!viewDoc && (
                     confirmDelete === doc.id ? (
@@ -756,7 +971,7 @@ export default function DocumentPanel() {
                   {docTypeIcon(viewDoc.doc_type)} {viewDoc.filename}
                 </div>
                 <div style={{ fontSize: '0.65rem', color: 'var(--text-muted, #666)', marginTop: '0.1rem' }}>
-                  {viewDoc.doc_type} · {viewDoc.chunk_count} chunk{viewDoc.chunk_count !== 1 ? 's' : ''}
+                  {viewDoc.doc_type}{viewDoc.project ? ` · ${viewDoc.project}` : ''} · {viewDoc.chunk_count} chunk{viewDoc.chunk_count !== 1 ? 's' : ''}
                 </div>
               </div>
               <div style={{ display: 'flex', gap: '0.3rem', alignItems: 'center', flexShrink: 0 }}>
@@ -788,13 +1003,30 @@ export default function DocumentPanel() {
                     padding: '0.2rem 0.4rem', background: 'transparent', color: 'var(--text-muted, #666)',
                     fontSize: '0.65rem', cursor: 'pointer' }}>Delete</button>
                 )}
-                <button onClick={() => { setViewDoc(null); setDocContent(null); setChunks([]) }} style={{
+                <button onClick={closeViewer} style={{
                   padding: '0.2rem 0.5rem', background: 'var(--bg-elevated, #222)',
                   color: 'var(--text-secondary, #aaa)', borderRadius: 4, fontSize: '0.7rem', cursor: 'pointer' }}>
                   ✕
                 </button>
               </div>
             </div>
+
+            {/* Project + tags: move the document, tag it */}
+            {supports.edit && (
+              <div data-testid="document-labels-editor" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center',
+                gap: '0.4rem 0.75rem', padding: '0.45rem 1rem', borderBottom: '1px solid var(--glass-border, #333)',
+                fontSize: '0.72rem', flexShrink: 0 }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <span style={{ color: 'var(--text-secondary, #aaa)' }}>Project</span>
+                  <ProjectPicker key={viewDoc.id} value={viewDoc.project || ''} projects={projects}
+                    onCommit={p => patchDoc(viewDoc.id, { project: p })} noneLabel="No project"
+                    selectTestId="document-move-select" inputTestId="document-move-input"
+                    placeholder="New project name" />
+                </span>
+                <TagEditor key={`tags-${viewDoc.id}`} tags={viewDoc.tags || []}
+                  onChange={next => patchDoc(viewDoc.id, { tags: next })} />
+              </div>
+            )}
 
             {/* Viewer body */}
             <div style={{ flex: 1, overflowY: 'auto', padding: '1rem' }}>
@@ -805,6 +1037,32 @@ export default function DocumentPanel() {
               ) : viewerError ? (
                 <div role="alert" style={{ color: 'var(--accent-coral, #ef4444)', fontSize: '0.85rem', padding: '2rem', textAlign: 'center' }}>
                   {viewerError}
+                </div>
+              ) : viewMode === 'content' && docContent?.kind === 'image' ? (
+                <div data-testid="document-image-view">
+                  {previewUrl ? (
+                    <img data-testid="document-image-preview" src={previewUrl} alt={viewDoc.filename}
+                      style={{ display: 'block', maxWidth: '100%', maxHeight: '60vh', margin: '0 auto 0.75rem',
+                        borderRadius: 'var(--radius, 6px)', objectFit: 'contain' }} />
+                  ) : (
+                    <div style={{ color: 'var(--text-muted, #888)', fontSize: '0.8rem', textAlign: 'center', padding: '1rem' }}>
+                      Loading picture...
+                    </div>
+                  )}
+                  {docContent.described ? (
+                    <div style={{ fontSize: '0.82rem', lineHeight: 1.6, whiteSpace: 'pre-wrap', color: 'var(--text-primary, #ddd)' }}>
+                      {displayText}
+                    </div>
+                  ) : (
+                    <div data-testid="document-image-undescribed" style={{ fontSize: '0.78rem', color: 'var(--accent-amber, #f59e0b)', textAlign: 'center' }}>
+                      Not yet described. Only the file name is searchable until the vision model reads this picture.
+                      <div style={{ marginTop: '0.4rem' }}>
+                        <button data-testid="document-describe-again" onClick={() => describeAgain(viewDoc)} style={{
+                          padding: '0.2rem 0.6rem', background: 'var(--bg-elevated, #222)', color: 'var(--text-secondary, #aaa)',
+                          borderRadius: 4, fontSize: '0.7rem', cursor: 'pointer' }}>Describe again</button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : viewMode === 'content' ? (
                 displayText ? (
@@ -860,6 +1118,161 @@ export default function DocumentPanel() {
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+const pickerStyle: React.CSSProperties = {
+  padding: '0.25rem 0.45rem', fontSize: '0.72rem', minWidth: 0,
+  background: 'var(--bg-surface, #1a1a2e)', color: 'var(--text-primary, #ddd)',
+  border: '1px solid var(--glass-border, #333)', borderRadius: 'var(--radius, 6px)',
+}
+const smallButton: React.CSSProperties = {
+  padding: '0.2rem 0.5rem', background: 'var(--bg-elevated, #222)', color: 'var(--text-secondary, #aaa)',
+  borderRadius: 4, fontSize: '0.68rem', cursor: 'pointer', flexShrink: 0,
+}
+
+interface ProjectPickerProps {
+  value: string
+  projects: readonly string[]
+  /** Called with the chosen project ("" = none). */
+  onCommit: (project: string) => void
+  noneLabel: string
+  selectTestId: string
+  inputTestId: string
+  placeholder: string
+  /** Upload target: every keystroke of a new name is the choice (no Create step). */
+  live?: boolean
+  /** Controlled "typing a new name" state; uncontrolled when omitted. */
+  creating?: boolean
+  onCreating?: (creating: boolean) => void
+}
+
+/** Choose an existing project, no project, or type a new one. */
+export function ProjectPicker({
+  value, projects, onCommit, noneLabel, selectTestId, inputTestId, placeholder,
+  live = false, creating: creatingProp, onCreating,
+}: ProjectPickerProps) {
+  const [creatingState, setCreatingState] = useState(false)
+  const creating = creatingProp ?? creatingState
+  const setCreating = (v: boolean) => { setCreatingState(v); onCreating?.(v) }
+  const [draft, setDraft] = useState('')
+  const options = Array.from(new Set([...projects, ...(value ? [value] : [])])).sort()
+  const commitDraft = () => {
+    const name = cleanLabel(draft)
+    if (!name) return
+    onCommit(name)
+    setDraft('')
+    setCreating(false)
+  }
+
+  if (creating) {
+    return (
+      <span style={{ display: 'flex', gap: '0.3rem', alignItems: 'center', flex: 1, minWidth: 0 }}>
+        <input data-testid={inputTestId} value={live ? value : draft}
+          maxLength={120} placeholder={placeholder}
+          onChange={e => (live ? onCommit(e.target.value) : setDraft(e.target.value))}
+          onKeyDown={e => {
+            if (e.key === 'Enter' && !live) commitDraft()
+            if (e.key === 'Escape' && options.length > 0) setCreating(false)
+          }}
+          style={{ ...pickerStyle, flex: 1 }} />
+        {!live && <button data-testid={`${inputTestId}-create`} onClick={commitDraft} style={smallButton}>Create</button>}
+        {options.length > 0 && (
+          <button onClick={() => setCreating(false)} style={smallButton}>{live ? 'Pick existing' : 'Cancel'}</button>
+        )}
+      </span>
+    )
+  }
+  return (
+    <select data-testid={selectTestId} value={value} aria-label="Project"
+      onChange={e => {
+        if (e.target.value === NEW_PROJECT) {
+          setDraft('')
+          if (live) onCommit('')
+          setCreating(true)
+        } else {
+          onCommit(e.target.value)
+        }
+      }}
+      style={{ ...pickerStyle, flex: 1 }}>
+      <option value="">{noneLabel}</option>
+      {options.map(p => <option key={p} value={p}>{p}</option>)}
+      <option value={NEW_PROJECT}>+ New project...</option>
+    </select>
+  )
+}
+
+/** A document's tags: remove with x, add by typing and Enter / Add. */
+export function TagEditor({ tags, onChange }: { tags: readonly string[]; onChange: (next: string[]) => void }) {
+  const [draft, setDraft] = useState('')
+  const add = () => {
+    const t = cleanLabel(draft, 40)
+    if (!t) return
+    setDraft('')
+    if (tags.some(x => x.toLowerCase() === t.toLowerCase())) return
+    onChange([...tags, t])
+  }
+  return (
+    <span data-testid="document-tag-editor" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.25rem' }}>
+      <span style={{ color: 'var(--text-secondary, #aaa)' }}>Tags</span>
+      {tags.map(t => (
+        <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.15rem', padding: '0 0.3rem',
+          borderRadius: 3, border: '1px solid var(--glass-border, #333)', color: 'var(--accent-cyan, #06b6d4)', fontSize: '0.65rem' }}>
+          #{t}
+          <button aria-label={`Remove tag ${t}`} onClick={() => onChange(tags.filter(x => x !== t))} style={{
+            background: 'transparent', color: 'var(--text-muted, #888)', cursor: 'pointer', fontSize: '0.65rem', padding: 0 }}>x</button>
+        </span>
+      ))}
+      <input data-testid="document-tag-input" value={draft} maxLength={40} placeholder="Add tag"
+        onChange={e => setDraft(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') add() }}
+        style={{ ...pickerStyle, width: '6.5rem' }} />
+      <button data-testid="document-tag-add" onClick={add} style={smallButton}>Add</button>
+    </span>
+  )
+}
+
+interface BulkBarProps {
+  count: number
+  allSelected: boolean
+  projects: readonly string[]
+  onToggleAll: () => void
+  onMove: (project: string) => void
+  onTag: (tag: string) => void
+  onClear: () => void
+}
+
+/** Select documents, then move them to a project or tag them in one go. */
+function BulkBar({ count, allSelected, projects, onToggleAll, onMove, onTag, onClear }: BulkBarProps) {
+  const [tag, setTag] = useState('')
+  const addTag = () => {
+    const t = cleanLabel(tag, 40)
+    if (!t) return
+    onTag(t)
+    setTag('')
+  }
+  return (
+    <div data-testid="document-bulk-bar" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.4rem',
+      fontSize: '0.7rem', color: 'var(--text-secondary, #aaa)' }}>
+      <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer' }}>
+        <input type="checkbox" data-testid="document-select-all" checked={allSelected} onChange={onToggleAll} />
+        {count > 0 ? `${count} selected` : 'Select all'}
+      </label>
+      {count > 0 && (<>
+        <span>Move to</span>
+        {/* value "" + a fresh key per selection size: the picker is an action, not a state */}
+        <ProjectPicker key={count} value="" projects={projects} noneLabel="(choose a project)"
+          onCommit={onMove}
+          selectTestId="document-bulk-move" inputTestId="document-bulk-move-input" placeholder="New project name" />
+        <button data-testid="document-bulk-unproject" onClick={() => onMove('')} style={smallButton}>No project</button>
+        <input data-testid="document-bulk-tag" value={tag} maxLength={40} placeholder="Add tag"
+          onChange={e => setTag(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') addTag() }}
+          style={{ ...pickerStyle, width: '6.5rem' }} />
+        <button data-testid="document-bulk-tag-add" onClick={addTag} style={smallButton}>Tag</button>
+        <button onClick={onClear} style={smallButton}>Clear</button>
+      </>)}
     </div>
   )
 }

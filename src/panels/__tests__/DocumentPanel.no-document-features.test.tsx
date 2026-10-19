@@ -18,7 +18,13 @@ function mockFetch() {
     const reply = (status: number, body: unknown) =>
       ({ ok: status >= 200 && status < 300, status, json: async () => body })
     if (u.endsWith('/api/config/embed')) return reply(200, { accepted_types: ['.pdf', '.txt'], features: ['upload', 'chat'] })
-    if (u.endsWith('/api/documents') && method === 'GET') return reply(200, [])
+    if (u.endsWith('/api/documents') && method === 'GET') {
+      return reply(200, [{ id: 'd1', filename: 'Old.pdf', doc_type: 'other', uploaded_at: null, chunk_count: 2 }])
+    }
+    if (u.endsWith('/api/documents/d1/content')) {
+      return reply(200, { id: 'd1', filename: 'Old.pdf', doc_type: 'other', text: 'hello', chunk_count: 2 })
+    }
+    if (u.endsWith('/api/documents/d1/chunks')) return reply(200, { chunks: [] })
     if (u.endsWith('/api/documents/upload')) {
       forms.push(init?.body as FormData)
       return reply(409, { detail: "Document 'Script.pdf' already exists." })
@@ -42,5 +48,16 @@ describe('DocumentPanel on a backend without document features', () => {
     expect(within(results).queryByText('Keep both')).toBeNull()
     expect(forms[0].get('background')).toBeNull()
     expect(forms[0].get('project')).toBeNull()
+  })
+
+  it('offers no move / tag controls without document_edit', async () => {
+    mockFetch()
+    render(<DocumentPanel />)
+    fireEvent.click(await screen.findByText('Old.pdf'))
+    await screen.findByText('hello')
+    expect(screen.queryByTestId('document-select-d1')).toBeNull()
+    expect(screen.queryByTestId('document-bulk-bar')).toBeNull()
+    expect(screen.queryByTestId('document-labels-editor')).toBeNull()
+    expect(screen.queryByTestId('document-project-select')).toBeNull()
   })
 })
