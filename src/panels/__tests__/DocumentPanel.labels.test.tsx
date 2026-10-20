@@ -227,6 +227,22 @@ describe('move and tag', () => {
     expect(screen.getByTestId('document-bulk-bar').textContent).not.toMatch(/selected/)
   })
 
+  it('a near-miss on a checkbox selects; with a selection, a row click selects instead of opening', async () => {
+    mockFetch([yard, loose, pic])
+    await renderReady()
+    await screen.findByText('Budget.pdf')
+    const opens = () => ((global as any).fetch as jest.Mock).mock.calls.filter(([u]) => /\/content$/.test(String(u))).length
+    // The padded zone around the box, not the 13px box itself (customer 10-20).
+    fireEvent.click(screen.getByTestId('document-select-zone-n2'))
+    expect((screen.getByTestId('document-select-n2') as HTMLInputElement).checked).toBe(true)
+    fireEvent.click(screen.getByTestId('document-row-p1'))
+    expect((screen.getByTestId('document-select-p1') as HTMLInputElement).checked).toBe(true)
+    expect(opens()).toBe(0)
+    fireEvent.click(within(screen.getByTestId('document-bulk-bar')).getByText('Clear'))
+    fireEvent.click(screen.getByTestId('document-row-n2'))
+    await waitFor(() => expect(opens()).toBe(1))
+  })
+
   it('tagsOf and cleanLabel match what the backend stores', () => {
     expect(tagsOf([{ tags: ['b', 'A'] }, { tags: ['a', 'c'] }, {}])).toEqual(['A', 'b', 'c'])
     expect(cleanLabel('  Rail   Yard  ')).toBe('Rail Yard')

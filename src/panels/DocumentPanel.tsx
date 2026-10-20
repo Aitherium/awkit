@@ -654,6 +654,13 @@ export default function DocumentPanel() {
     }
   }
 
+  /** While anything is selected the list is in SELECT mode: a row click adds or removes
+   *  that row instead of opening it, so building a selection never opens a file by mistake. */
+  const onRowClick = (doc: Doc) => {
+    if (supports.edit && !viewDoc && selected.size > 0) toggleSelected(doc.id)
+    else openDoc(doc)
+  }
+
   const toggleSelected = (id: string) => setSelected(prev => {
     const next = new Set(prev)
     if (next.has(id)) next.delete(id)
@@ -903,7 +910,7 @@ export default function DocumentPanel() {
                   onClear={() => setSelected(new Set())} />
               )}
               {shownDocs.map(doc => (
-                <div key={doc.id} data-testid={`document-row-${doc.id}`} onClick={() => openDoc(doc)} style={{
+                <div key={doc.id} data-testid={`document-row-${doc.id}`} onClick={() => onRowClick(doc)} style={{
                   display: 'flex', alignItems: 'center', gap: '0.5rem',
                   padding: viewDoc ? '0.5rem 0.6rem' : '0.6rem 0.75rem',
                   background: viewDoc?.id === doc.id ? 'var(--bg-elevated, #2a2a3e)' : 'var(--bg-surface, #1a1a2e)',
@@ -913,9 +920,15 @@ export default function DocumentPanel() {
                   transition: 'all 0.15s',
                 }}>
                   {supports.edit && !viewDoc && (
-                    <input type="checkbox" data-testid={`document-select-${doc.id}`} aria-label={`Select ${doc.filename}`}
-                      checked={selected.has(doc.id)} onClick={e => e.stopPropagation()}
-                      onChange={() => toggleSelected(doc.id)} style={{ flexShrink: 0, cursor: 'pointer' }} />
+                    /* The hit zone is the whole label, not the 13px box: a near-miss on the
+                       bare checkbox landed on the row and OPENED the file (customer report, 10-20). */
+                    <label data-testid={`document-select-zone-${doc.id}`} onClick={e => e.stopPropagation()}
+                      style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                        alignSelf: 'stretch', margin: '-0.6rem 0 -0.6rem -0.75rem', padding: '0 0.6rem 0 0.75rem', cursor: 'pointer' }}>
+                      <input type="checkbox" data-testid={`document-select-${doc.id}`} aria-label={`Select ${doc.filename}`}
+                        checked={selected.has(doc.id)}
+                        onChange={() => toggleSelected(doc.id)} style={{ width: 16, height: 16, cursor: 'pointer' }} />
+                    </label>
                   )}
                   {!viewDoc && <span style={{ fontSize: '1rem', flexShrink: 0 }}>{docTypeIcon(doc.doc_type)}</span>}
                   <div style={{ flex: 1, minWidth: 0 }}>
