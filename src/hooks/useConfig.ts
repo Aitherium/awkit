@@ -25,6 +25,12 @@ export interface AppConfig {
   icon: string
   features: string[]
   accepted_types: string[]
+  /** Largest file a `chunked_upload` backend takes (MB), in resumable pieces. */
+  max_upload_mb?: number
+  /** Largest single-request upload (MB); Cloudflare caps a body at 100 MB. */
+  upload_single_max_mb?: number
+  /** Size of one chunked-upload piece (MB). */
+  upload_chunk_mb?: number
   ui_labels: Record<string, string>
   embed_path: string
   drop_endpoint: string

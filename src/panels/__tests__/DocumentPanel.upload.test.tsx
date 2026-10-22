@@ -13,6 +13,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 
 import DocumentPanel, {
   LEGACY_ACCEPTED_TYPES, MAX_UPLOAD_BYTES, partitionUploads, resolveAcceptedTypes, splitBatches,
+  uploadLimits,
 } from '../DocumentPanel'
 
 const ACCEPTED = ['.pdf', '.docx', '.txt', '.md']
@@ -143,5 +144,24 @@ describe('upload helpers', () => {
     const { ok, rejected } = partitionUploads([new File(['x'], 'A.PDF'), new File(['x'], 'clip.mp4')], ['.pdf'])
     expect(ok.map(f => f.name)).toEqual(['A.PDF'])
     expect(rejected[0].detail).toMatch(/MP4 is not supported/)
+  })
+
+  // 2026-10-21, a customer tenant: the picker hid .zip/.mp4 and refused anything over 90 MB.
+  it('lets zips, drone clips and their .SRT sidecars through, case-insensitively', () => {
+    const { types, enforced } = resolveAcceptedTypes(['.pdf', '.zip', '.mp4', '.mov', '.srt'])
+    expect(enforced).toBe(true)
+    const files = ['Site.ZIP', 'DJI_0004.MP4', 'DJI_0004.SRT', 'Flyover.mov'].map(n => new File(['x'], n))
+    expect(partitionUploads(files, types).ok.map(f => f.name)).toEqual(files.map(f => f.name))
+    expect(LEGACY_ACCEPTED_TYPES).toEqual(expect.arrayContaining(['.zip', '.mp4', '.mov', '.srt']))
+  })
+
+  it('takes multi-GB files when the backend advertises chunked_upload', () => {
+    const chunked = uploadLimits({ loaded: true, features: ['chunked_upload'], max_upload_mb: 8192 })
+    expect(chunked).toEqual({ chunked: true, single: MAX_UPLOAD_BYTES, perFile: 8192 * 1024 * 1024 })
+    const clip = bigFile('animation.mp4', Math.round(6.2 * 1024 ** 3))
+    expect(partitionUploads([clip], ['.mp4'], chunked.perFile).ok).toHaveLength(1)
+    // A backend without it keeps the single-request cap (Cloudflare's 100 MB).
+    expect(uploadLimits({ loaded: true, features: [] }).perFile).toBe(MAX_UPLOAD_BYTES)
+    expect(uploadLimits({ loaded: false, features: ['chunked_upload'] }).chunked).toBe(false)
   })
 })

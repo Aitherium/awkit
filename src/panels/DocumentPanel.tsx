@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { getApiBase } from '../lib/apiBase'
+import { uploadChunked } from '../lib/chunkedUpload'
 import { useConfig } from '../hooks/useConfig'
 
 /**
@@ -11,6 +12,22 @@ import { useConfig } from '../hooks/useConfig'
  * overhead; batches are split so no single POST exceeds it either.
  */
 export const MAX_UPLOAD_BYTES = 90 * 1024 * 1024
+const MB = 1024 * 1024
+
+/**
+ * Per-file limits for this backend. One that advertises `chunked_upload`
+ * (/api/config/embed `features`) takes files past MAX_UPLOAD_BYTES as 32 MB
+ * verified, resumable pieces up to its `max_upload_mb` (a customer's 6 GB
+ * animations and zips); any other backend keeps the single-request cap.
+ */
+export function uploadLimits(config: {
+  features?: readonly string[]; loaded?: boolean; max_upload_mb?: number; upload_single_max_mb?: number
+}) {
+  const chunked = !!config.loaded && !!config.features?.includes('chunked_upload')
+  const single = Math.min(MAX_UPLOAD_BYTES, (config.upload_single_max_mb || 90) * MB)
+  const perFile = chunked ? Math.max(single, (config.max_upload_mb || 2048) * MB) : single
+  return { chunked, single, perFile }
+}
 
 export type UploadResultStatus = 'done' | 'warning' | 'error' | 'rejected' | 'skipped'
 
@@ -82,7 +99,9 @@ export const cleanLabel = (v: string, max = 120) => v.split(/\s+/).filter(Boolea
 export const wantsBackgroundIngest = (file: File) =>
   isMediaUpload(file.name) || fileExt(file.name) === '.pdf' || file.size > BACKGROUND_INGEST_BYTES
 
-const formatMb = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`
+const formatMb = (bytes: number) => (bytes >= 1024 * MB
+  ? `${(bytes / (1024 * MB)).toFixed(bytes % (1024 * MB) === 0 ? 0 : 1)} GB`
+  : `${(bytes / MB).toFixed(bytes < 10 * MB ? 1 : 0)} MB`)
 
 /** Normalise the backend's accepted_types (".PDF", "pdf") to lowercase ".pdf". */
 export function normaliseAcceptedTypes(types: readonly string[] | undefined): string[] {
@@ -94,7 +113,7 @@ export function normaliseAcceptedTypes(types: readonly string[] | undefined): st
 
 /** What the panel offered before accepted_types was wired in; used whenever the
  *  backend's list cannot be trusted as file extensions. */
-export const LEGACY_ACCEPTED_TYPES = ['.pdf', '.docx', '.doc', '.txt', '.xlsx', '.xls', '.md', '.csv', '.zip', '.png', '.jpg', '.jpeg', '.webp']
+export const LEGACY_ACCEPTED_TYPES = ['.pdf', '.docx', '.doc', '.txt', '.xlsx', '.xls', '.md', '.csv', '.zip', '.png', '.jpg', '.jpeg', '.webp', '.mp4', '.mov', '.srt']
 const LEGACY_HINT = 'PDF, DOCX, TXT, XLSX, MD, CSV, images, or ZIP archives'
 
 /** useConfig's DEFAULT_CONFIG.accepted_types: what the hook reports when
@@ -109,7 +128,7 @@ const HOOK_DEFAULT_TYPES = ['.pdf', '.docx', '.doc', '.xlsx', '.txt']
 const KNOWN_FILE_EXTS = new Set([
   '.pdf', '.doc', '.docx', '.odt', '.rtf', '.txt', '.md', '.markdown', '.html', '.htm',
   '.xls', '.xlsx', '.ods', '.csv', '.tsv', '.ppt', '.pptx', '.odp', '.json', '.xml',
-  '.yaml', '.yml', '.log', '.eml', '.msg', '.epub', '.zip',
+  '.yaml', '.yml', '.log', '.eml', '.msg', '.epub', '.zip', '.srt',
   '.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.tif', '.tiff', '.heic', '.svg',
   // Video/audio: a backend with media ingest advertises them; without these an
   // allowlist containing ".mp4" was not enforced and the picker fell back to
@@ -302,6 +321,9 @@ export default function DocumentPanel() {
   const supports = documentFeatures(config.features, config.loaded)
   const supportsRef = useRef(supports)
   supportsRef.current = supports
+  const limits = uploadLimits(config)
+  const limitsRef = useRef(limits)
+  limitsRef.current = limits
 
   const addResults = (more: UploadResult[]) => setResults(prev => [...prev, ...more])
 
@@ -433,6 +455,20 @@ export default function DocumentPanel() {
     }
   }
 
+  /** A file past the single-request cap: verified 32 MB pieces, resumable. */
+  const uploadBig = async (file: File): Promise<UploadResult> => {
+    const result = await uploadChunked(file, {
+      apiBase: getApiBase(),
+      project: supportsRef.current.projects ? projectRef.current : '',
+      onProgress: (sent, total) => setUploadProgress(
+        `Uploading ${file.name}: ${Math.floor((100 * sent) / total)}% of ${formatMb(total)}`),
+    })
+    if (!result.ok) return { filename: file.name, status: 'error', detail: result.detail }
+    setUploadProgress(`Checking and reading ${file.name}...`)
+    return jobResults(await waitForBatchJob(result.jobId), [file])[0]
+      ?? { filename: file.name, status: 'done', detail: 'Uploaded' }
+  }
+
   const uploadSequential = async (fileList: File[]) => {
     for (let i = 0; i < fileList.length; i++) {
       setUploadProgress(`Uploading ${fileList[i].name} (${i + 1}/${fileList.length})...`)
@@ -540,18 +576,22 @@ export default function DocumentPanel() {
   const handleFiles = useCallback(async (fileList: FileList | File[]) => {
     const arr = Array.from(fileList)
     if (arr.length === 0) return
-    const { ok, rejected } = partitionUploads(arr, acceptedRef.current)
+    const { chunked, single, perFile } = limitsRef.current
+    const { ok: accepted, rejected } = partitionUploads(arr, acceptedRef.current, perFile)
     pendingDupes.current.clear()
     setResults(rejected)
     setActionError(null)
-    if (ok.length === 0) return
+    if (accepted.length === 0) return
+    const big = chunked ? accepted.filter(f => f.size > single) : []
+    const ok = accepted.filter(f => !big.includes(f))
     setUploading(true)
     try {
+      for (const f of big) addResults([await uploadBig(f)])
       if (ok.length === 1 && fileExt(ok[0].name) !== '.zip' && !isMediaUpload(ok[0].name)) {
         setUploadProgress(`Uploading ${ok[0].name}...`)
         addResults([await uploadOne(ok[0])])
-      } else {
-        for (const group of splitBatches(ok)) await uploadGroup(group)
+      } else if (ok.length > 0) {
+        for (const group of splitBatches(ok, single)) await uploadGroup(group)
       }
     } finally {
       setUploadProgress(null)
@@ -743,7 +783,7 @@ export default function DocumentPanel() {
             Drop files here or click to browse
           </p>
           <p style={{ color: 'var(--text-muted, #666)', fontSize: '0.65rem', marginTop: '0.2rem', margin: '0.2rem 0 0' }}>
-            {acceptedLabel}, up to {formatMb(MAX_UPLOAD_BYTES)} per file
+            {acceptedLabel}, up to {formatMb(limits.perFile)} per file
           </p>
         </div>
 
