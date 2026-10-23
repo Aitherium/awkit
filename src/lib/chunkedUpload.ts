@@ -111,6 +111,9 @@ export interface ChunkedOptions {
   apiBase: string
   project?: string
   onDuplicate?: string
+  /** The .zip this file came out of when the browser unpacked it (the server
+   *  records it as metadata_json.archive); only sent when set. */
+  archive?: string
   onProgress?: (sentBytes: number, totalBytes: number) => void
   /** The server's id for this upload, once it is known (new or resumed). */
   onStart?: (uploadId: string) => void
@@ -183,6 +186,7 @@ export async function uploadChunked(file: File, opts: ChunkedOptions): Promise<C
       body: JSON.stringify({
         filename: file.name, size: file.size, doc_type: 'other',
         project: opts.project || '', on_duplicate: opts.onDuplicate || 'ask',
+        ...(opts.archive ? { archive: opts.archive } : {}),
       }),
     })
     if (!r.ok) return { ok: false, status: r.status, detail: await detailOf(r, 'Upload refused') }

@@ -90,6 +90,17 @@ describe('uploadChunked', () => {
     expect(JSON.parse(complete.body as string).sha256).toBe(hex(DATA))  // all pieces hashed
   })
 
+  it('names the zip a browser-unpacked member came out of, and nothing when it has none', async () => {
+    const { calls } = server()
+    await uploadChunked(file(DATA, 'flight.mp4'), { apiBase: '', sleep: async () => {}, archive: 'Drone Day.zip' })
+    const init = calls.find(c => c.method === 'POST' && c.url.endsWith('/uploads'))!
+    expect(JSON.parse(init.body as string).archive).toBe('Drone Day.zip')
+    const plain = server()
+    await uploadChunked(file(DATA, 'other.mp4'), { apiBase: '', sleep: async () => {} })
+    const bare = plain.calls.find(c => c.method === 'POST' && c.url.endsWith('/uploads'))!
+    expect('archive' in JSON.parse(bare.body as string)).toBe(false)
+  })
+
   it('pauses (resumable) when the network stays down', async () => {
     server()
     ;(global as any).fetch = jest.fn(async (url: string, init?: RequestInit) => {

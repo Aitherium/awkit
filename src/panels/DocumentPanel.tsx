@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { getApiBase } from '../lib/apiBase'
 import { uploadChunked } from '../lib/chunkedUpload'
+import { expandZipUpload } from '../lib/zipExpand'
 import { useConfig } from '../hooks/useConfig'
 import { InFlightUploadRow, mergeLive, type InFlightUpload, type LiveUpload } from './InFlightUploads'
 
@@ -70,8 +71,22 @@ const BACKGROUND_INGEST_BYTES = 5 * 1024 * 1024
  */
 export function documentFeatures(features: readonly string[] | undefined, loaded = true) {
   const has = (f: string) => loaded && !!features?.includes(f)
-  return { projects: has('document_projects'), versions: has('document_versions'), edit: has('document_edit') }
+  return {
+    projects: has('document_projects'), versions: has('document_versions'), edit: has('document_edit'),
+    // The upload routes take archive=<zip name>: the panel may unpack a .zip
+    // in the browser and send its members one by one (lib/zipExpand.ts).
+    zipExpand: has('browser_zip_expand'),
+  }
 }
+
+/** An unpacked zip member over this goes up in resumable 32 MB pieces (a
+ *  dropped connection then re-sends one piece, not the whole member). */
+const MEMBER_CHUNKED_BYTES = 32 * MB
+
+/** How the panel sends one file: ``archive`` = the zip a browser-unpacked
+ *  member came out of; ``onLanded`` = its bytes are on the server (it may still
+ *  be indexing); ``quiet`` = do not take over the single batch-job card. */
+interface SendOptions { archive?: string; onLanded?: () => void; quiet?: boolean }
 
 /** Where the chosen upload project is remembered (per backend), so the next
  *  upload -- after a reload, or with the window closed and reopened -- goes to
@@ -309,10 +324,15 @@ export default function DocumentPanel() {
   const [inFlight, setInFlight] = useState<InFlightUpload[]>([])
   const inFlightRef = useRef<InFlightUpload[]>([])
   inFlightRef.current = inFlight
-  const [liveUpload, setLiveUpload] = useState<LiveUpload | null>(null)
+  // This tab's own chunked uploads in flight (more than one while a zip's
+  // members are sent from the browser), keyed so each updates its own row.
+  const [liveUploads, setLiveUploads] = useState<(LiveUpload & { key: number })[]>([])
+  const liveKey = useRef(0)
   const [dismissedUploads, setDismissedUploads] = useState<Set<string>>(() => new Set())
   // Files whose upload hit a same-name 409, kept so Replace / Keep both can resend.
   const pendingDupes = useRef(new Map<string, File>())
+  // ... and the zip such a file came out of, so Replace / Keep both keeps its provenance.
+  const dupeArchives = useRef(new Map<string, string>())
   const projectRef = useRef('')
   projectRef.current = cleanLabel(project)
   const setProject = (value: string) => {
@@ -434,7 +454,7 @@ export default function DocumentPanel() {
   }, [])
 
   /** Upload one file through /upload; always resolves to a result for that file. */
-  const uploadOne = async (file: File, onDuplicate?: DuplicateChoice): Promise<UploadResult> => {
+  const uploadOne = async (file: File, onDuplicate?: DuplicateChoice, send: SendOptions = {}): Promise<UploadResult> => {
     const form = new FormData()
     form.append('file', file)
     form.append('auto_extract', 'true')
@@ -442,10 +462,15 @@ export default function DocumentPanel() {
     if (projects && projectRef.current) form.append('project', projectRef.current)
     if (onDuplicate) form.append('on_duplicate', onDuplicate)
     if (versions && wantsBackgroundIngest(file)) form.append('background', 'true')
+    if (send.archive) form.append('archive', send.archive)
     try {
       const resp = await fetch(`${getApiBase()}/api/documents/upload`, { method: 'POST', body: form })
+      send.onLanded?.()
       if (resp.status === 409 && !onDuplicate) {
-        if (versions) pendingDupes.current.set(file.name, file)
+        if (versions) {
+          pendingDupes.current.set(file.name, file)
+          if (send.archive) dupeArchives.current.set(file.name, send.archive)
+        }
         return { filename: file.name, status: 'error', duplicate: versions, detail: await errorDetail(resp, 'Already uploaded') }
       }
       if (!resp.ok) {
@@ -453,7 +478,7 @@ export default function DocumentPanel() {
       }
       const data = await resp.json()
       if (data.job_id) {
-        const job = await waitForBatchJob(data.job_id)
+        const job = await waitForBatchJob(data.job_id, send.quiet)
         return jobResults(job, [file])[0]
       }
       const n = data.chunks_created ?? data.chunk_count
@@ -469,26 +494,76 @@ export default function DocumentPanel() {
   /** A file past the single-request cap: verified 32 MB pieces, resumable.
    *  Its progress is a row at the top of the list (InFlightUploadRow), never a
    *  line that reads as done; a paused upload the server holds is resumed. */
-  const uploadBig = async (file: File): Promise<UploadResult> => {
+  const uploadBig = async (file: File, send: SendOptions = {}): Promise<UploadResult> => {
     const held = inFlightRef.current.find(u => u.state === 'uploading' && u.upload_id
       && u.filename === file.name && u.size === file.size)
-    setLiveUpload({ uploadId: held?.upload_id || null, filename: file.name, sent: 0, total: file.size })
+    const key = ++liveKey.current
+    const patch = (p: Partial<LiveUpload>) =>
+      setLiveUploads(all => all.map(l => (l.key === key ? { ...l, ...p } : l)))
+    setLiveUploads(all => [...all,
+      { key, uploadId: held?.upload_id || null, filename: file.name, sent: 0, total: file.size }])
     let result
     try {
       result = await uploadChunked(file, {
         apiBase: getApiBase(),
         project: supportsRef.current.projects ? projectRef.current : '',
         resumeId: held?.upload_id || undefined,
-        onStart: id => setLiveUpload(l => (l ? { ...l, uploadId: id } : l)),
-        onProgress: (sent, total) => setLiveUpload(l => (l ? { ...l, sent, total } : l)),
+        archive: send.archive,
+        onStart: id => patch({ uploadId: id }),
+        onProgress: (sent, total) => patch({ sent, total }),
       })
     } finally {
-      setLiveUpload(null)
+      setLiveUploads(all => all.filter(l => l.key !== key))
+      send.onLanded?.()
     }
     if (!result.ok) return { filename: file.name, status: 'error', detail: result.detail }
-    setUploadProgress(`Uploaded ${file.name}. Checking and unpacking it -- its files appear below when done.`)
-    return jobResults(await waitForBatchJob(result.jobId), [file])[0]
+    if (!send.quiet) {
+      setUploadProgress(`Uploaded ${file.name}. Checking and unpacking it -- its files appear below when done.`)
+    }
+    return jobResults(await waitForBatchJob(result.jobId, send.quiet), [file])[0]
       ?? { filename: file.name, status: 'done', detail: 'Uploaded' }
+  }
+
+  /**
+   * A .zip opened in this browser: each member goes up on its own (3 at once)
+   * and starts indexing as soon as it lands, instead of the whole archive
+   * first (a 3.3 GB zip was ~80 minutes with nothing indexed). Members over
+   * 32 MB use the resumable chunked upload. Returns false -- nothing sent --
+   * when this zip cannot be read here; the caller then sends it whole.
+   */
+  const uploadZipMembers = async (zip: File): Promise<boolean> => {
+    const { chunked, single, perFile } = limitsRef.current
+    let total = 0
+    const say = (names: readonly string[], finished: number) => setUploadProgress(
+      `Unpacking ${zip.name} in this browser: ${finished} of ${total} file${total !== 1 ? 's' : ''} sent`
+      + (names.length ? ` · sending ${names.join(', ')}` : ''))
+    let lastRefresh = 0
+    const out = await expandZipUpload<UploadResult>(zip, {
+      accepted: acceptedRef.current,
+      maxTotalBytes: perFile,
+      upload: async (file, landed) => {
+        const send = { archive: zip.name, onLanded: landed, quiet: true }
+        if (chunked && (file.size > single || file.size > MEMBER_CHUNKED_BYTES)) return uploadBig(file, send)
+        if (file.size > single) {
+          landed()
+          return {
+            filename: file.name, status: 'error',
+            detail: `Inside ${zip.name}: ${formatMb(file.size)} is over the ${formatMb(single)} upload limit`,
+          }
+        }
+        return uploadOne(file, undefined, send)
+      },
+      row: (filename, status, detail) => ({ filename, status, detail }),
+      onResult: r => {
+        addResults([r])
+        // Each member becomes a document as it is indexed: show it, at most every 3 s.
+        const now = Date.now()
+        if (r.status === 'done' && now - lastRefresh > 3000) { lastRefresh = now; fetchDocs() }
+      },
+      onPlan: members => { total = members; say([], 0) },
+      onSending: say,
+    })
+    return out.kind === 'done'
   }
 
   const uploadSequential = async (fileList: File[]) => {
@@ -498,20 +573,23 @@ export default function DocumentPanel() {
     }
   }
 
-  /** Poll a batch job until it finishes; resolves with the final job (null on loss). */
-  const waitForBatchJob = (jobId: string) => new Promise<BatchJob | null>(resolve => {
+  /** Poll a batch job until it finishes; resolves with the final job (null on loss).
+   *  ``quiet`` (a zip member, several at once): no batch card, polled every 2 s. */
+  const waitForBatchJob = (jobId: string, quiet = false) => new Promise<BatchJob | null>(resolve => {
     let misses = 0
     const poll = async () => {
       try {
         const resp = await fetch(`${getApiBase()}/api/documents/batch/${jobId}`)
         if (resp.ok) {
           const data: BatchJob = await resp.json()
-          setBatchJob(data)
-          setUploadProgress(null)
+          if (!quiet) {
+            setBatchJob(data)
+            setUploadProgress(null)
+          }
           if (data.status === 'completed' || data.status === 'failed') { resolve(data); return }
         } else if (++misses >= 5) { resolve(null); return }
       } catch { if (++misses >= 5) { resolve(null); return } }
-      setTimeout(poll, 1000)
+      setTimeout(poll, quiet ? 2000 : 1000)
     }
     poll()
   })
@@ -553,10 +631,12 @@ export default function DocumentPanel() {
     const file = pendingDupes.current.get(filename)
     if (!file) return
     pendingDupes.current.delete(filename)
+    const archive = dupeArchives.current.get(filename)
+    dupeArchives.current.delete(filename)
     setUploading(true)
     setUploadProgress(`${choice === 'replace' ? 'Replacing' : 'Uploading a new version of'} ${filename}...`)
     try {
-      const result = await uploadOne(file, choice)
+      const result = await uploadOne(file, choice, { archive })
       setResults(prev => prev.map(r => (r.filename === filename && r.duplicate ? result : r)))
     } finally {
       setUploadProgress(null)
@@ -601,13 +681,24 @@ export default function DocumentPanel() {
     const { chunked, single, perFile } = limitsRef.current
     const { ok: accepted, rejected } = partitionUploads(arr, acceptedRef.current, perFile)
     pendingDupes.current.clear()
+    dupeArchives.current.clear()
     setResults(rejected)
     setActionError(null)
     if (accepted.length === 0) return
-    const big = chunked ? accepted.filter(f => f.size > single) : []
-    const ok = accepted.filter(f => !big.includes(f))
     setUploading(true)
     try {
+      // A .zip is opened here and sent member by member when the backend takes
+      // archive= (browser_zip_expand) and publishes a real type allowlist to
+      // filter by; one this browser cannot read goes up whole, as before.
+      const rest: File[] = []
+      for (const f of accepted) {
+        const expand = fileExt(f.name) === '.zip' && supportsRef.current.zipExpand
+          && acceptedRef.current.length > 0
+        if (expand && await uploadZipMembers(f)) continue
+        rest.push(f)
+      }
+      const big = chunked ? rest.filter(f => f.size > single) : []
+      const ok = rest.filter(f => !big.includes(f))
       for (const f of big) addResults([await uploadBig(f)])
       if (ok.length === 1 && fileExt(ok[0].name) !== '.zip' && !isMediaUpload(ok[0].name)) {
         setUploadProgress(`Uploading ${ok[0].name}...`)
@@ -659,7 +750,8 @@ export default function DocumentPanel() {
     return () => { stopped = true; if (timer) clearTimeout(timer) }
   }, [limits.chunked])
 
-  const shownUploads = mergeLive(inFlight, liveUpload).filter(u =>
+  const shownUploads = liveUploads
+    .reduce<InFlightUpload[]>((rows, l) => mergeLive(rows, l), inFlight).filter(u =>
     !dismissedUploads.has(u.id) && !(batchJob && u.job_id && u.job_id === batchJob.job_id))
 
   const handleDrop = useCallback((e: React.DragEvent) => {

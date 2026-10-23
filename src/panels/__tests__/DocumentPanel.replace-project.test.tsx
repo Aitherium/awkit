@@ -180,10 +180,11 @@ describe('DocumentPanel projects', () => {
   })
 
   it('documentFeatures reads the advertised flags only once config loaded', () => {
-    expect(documentFeatures(HOST_FEATURES)).toEqual({ projects: true, versions: true, edit: false })
-    expect(documentFeatures([...HOST_FEATURES, 'document_edit'])).toEqual({ projects: true, versions: true, edit: true })
-    expect(documentFeatures(HOST_FEATURES, false)).toEqual({ projects: false, versions: false, edit: false })
-    expect(documentFeatures(undefined)).toEqual({ projects: false, versions: false, edit: false })
+    expect(documentFeatures(HOST_FEATURES)).toEqual({ projects: true, versions: true, edit: false, zipExpand: false })
+    expect(documentFeatures([...HOST_FEATURES, 'document_edit'])).toEqual({ projects: true, versions: true, edit: true, zipExpand: false })
+    expect(documentFeatures(HOST_FEATURES, false)).toEqual({ projects: false, versions: false, edit: false, zipExpand: false })
+    expect(documentFeatures(undefined)).toEqual({ projects: false, versions: false, edit: false, zipExpand: false })
+    expect(documentFeatures([...HOST_FEATURES, 'browser_zip_expand']).zipExpand).toBe(true)
   })
 
   it('filters the list by project chip', async () => {
