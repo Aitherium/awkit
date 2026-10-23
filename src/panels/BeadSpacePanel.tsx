@@ -6,6 +6,7 @@ import type { BeadData, BeadNode } from '@aitherium/bead-space'
 import {
   COMPUTE_CLUSTER_ORDER,
   fromAgentActivity,
+  fromAgentRoster,
   fromBacklogTriage,
   fromComputePool,
   fromConstellation,
@@ -14,6 +15,7 @@ import {
   fromFleet,
   fromMeshRouting,
   fromRegistry,
+  normalizeFleetRecords,
   fromScopeGraph,
   fromTaskHub,
   fromWorkUniverse,
@@ -33,9 +35,29 @@ import '@aitherium/bead-space/bead-space.css'
 import { useAuth } from '../hooks'
 import Tooltip from '../ui/Tooltip'
 
+/**
+ * What a host-side loader answers. `empty` and `error` both carry the REASON, because
+ * "No data available" with no why is the one state this panel must never show
+ * (owner 2026-10-22: five of twelve tabs said exactly that, each for a different cause).
+ */
+export type BeadSourceResult =
+  | { kind: 'ok'; data: BeadData; note?: string }
+  | { kind: 'empty'; reason: string }
+  | { kind: 'error'; reason: string }
+
+/** A host replaces a source's fetch+adapt with its own loader (several reads, a join). */
+export type BeadSourceLoader = (signal: AbortSignal) => Promise<BeadSourceResult>
+
 export interface BeadSpacePanelProps {
   apiBase?: string
+  /** Host-side loaders that replace the built-in endpoint for a source (keyed by source id). */
+  sourceOverrides?: Partial<Record<string, BeadSourceLoader>>
+  /** Open on this source instead of "Agents' work". */
+  initialSource?: string
 }
+
+/** A read that has not answered by now is reported as a timeout, never an endless spinner. */
+export const SOURCE_TIMEOUT_MS = 20_000
 
 type DataSource =
   | 'universe'
@@ -61,6 +83,8 @@ interface SourceConfig {
    * without an adapter silently renders an empty universe.
    */
   adapt: (payload: any) => BeadData
+  /** Why an answered-but-empty payload is empty, in words. Default: "<label> answered no items". */
+  emptyReason?: (payload: any) => string
   /**
    * Pins legend/colour order for this source. Without it the engine orders clusters by
    * SIZE, which assigns colours by how many rows a bucket happens to hold — that is how the
@@ -113,20 +137,29 @@ const SOURCES: Record<DataSource, SourceConfig> = {
     // ⚠️ TaskHub is IN-MEMORY — a Genesis restart empties it, and it has no blocker field
     // (parent/child only). An empty Work tab is frequently the truth, not a bug.
     adapt: (p) => fromTaskHub(unwrap(p, 'tasks', 'items', 'data')),
+    emptyReason: () => 'TaskHub holds no tasks (it is in-memory: a Genesis restart empties it)',
   },
   agents: {
     label: 'Agents',
     endpoint: '/agent-activity',
-    hint: 'Agent swarm at work — live task activity',
-    // TaskHub tasks filtered to agent-related work. Each task becomes a planet,
-    // agents own planets they're actively executing. Empty when no tasks in-flight.
-    adapt: (p) => fromAgentActivity(unwrap(p, 'tasks', 'items', 'data') as AgentTaskRecord[]),
+    hint: 'Every agent, with the tasks it is running',
+    // The roster is the universe; in-flight TaskHub tasks hang off their agent. The
+    // task-only adapter showed "No data available" whenever TaskHub was empty.
+    adapt: (p) =>
+      Array.isArray(p)
+        ? fromAgentActivity(p as AgentTaskRecord[])
+        : fromAgentRoster({ tasks: unwrap(p, 'tasks', 'items', 'data') as AgentTaskRecord[], agents: p?.agents }),
+    emptyReason: () => 'no agents are registered and no agent tasks are in flight',
   },
   fleet: {
     label: 'Fleet',
     endpoint: '/services',
     hint: 'Services and health',
-    adapt: (p) => fromFleet(unwrap(p, 'services', 'items', 'data') as FleetServiceRecord[]),
+    // Veil answers PascalCase rows (Name/Status/Port); normalizeFleetRecords reads both.
+    adapt: (p) => {
+      const { services, health } = normalizeFleetRecords(unwrap(p, 'services', 'items', 'data'))
+      return fromFleet(services as FleetServiceRecord[], { health })
+    },
   },
   ecosystem: {
     label: 'Aither World',
@@ -151,6 +184,7 @@ const SOURCES: Record<DataSource, SourceConfig> = {
     endpoint: '/compute/pool',
     hint: 'GPU pool, VRAM and what is serving',
     adapt: (p) => fromComputePool(p as ComputePoolRecord),
+    emptyReason: () => 'the compute pool lists no GPU nodes',
     clusterOrder: COMPUTE_CLUSTER_ORDER,
   },
   scope: {
@@ -176,6 +210,7 @@ const SOURCES: Record<DataSource, SourceConfig> = {
     hint: 'AitherNet routing — who served which layers/experts, agent hops between meshes',
     adapt: (p) =>
       fromMeshRouting(unwrap(p, 'traces', 'records', 'items', 'data') as RoutingTraceRecord[]),
+    emptyReason: (p) => (typeof p?.note === 'string' ? p.note : 'no routing traces recorded yet'),
   },
   mine: {
     label: 'Mine',
@@ -186,6 +221,7 @@ const SOURCES: Record<DataSource, SourceConfig> = {
     endpoint: '/devices',
     hint: 'Your hardware — endpoints you enrolled, alive right now',
     adapt: (p) => fromDevices(unwrap(p, 'devices', 'items') as DeviceRecord[]),
+    emptyReason: () => 'you have no enrolled devices',
   },
   triage: {
     label: 'Backlog Triage',
@@ -196,69 +232,120 @@ const SOURCES: Record<DataSource, SourceConfig> = {
     endpoint: '/backlog-triage',
     hint: 'GitHub PR/issue sweep — every run, what it closed vs held for humans',
     adapt: (p) => fromBacklogTriage(unwrap(p, 'runs', 'executions') as TriageRunRecord[]),
+    emptyReason: (p) =>
+      typeof p?.reason === 'string' && p.reason
+        ? p.reason
+        : p?.last_executed
+          ? `no runs in the scheduler history (last run ${p.last_executed})`
+          : 'the sweep has never run (no executions in the scheduler history)',
   },
 }
 
 /**
- * Custom hook for sources that need adapter transformation.
- * Fetches raw graph data and transforms it using the appropriate adapter.
+ * Fetch + adapt one source, or run the host's loader for it. Pure over an injected fetch
+ * so the reason strings are unit-tested; the hook below only schedules it.
  */
-function useAdaptedBeadData(
-  url: string | null,
+export async function loadSource(
+  url: string,
   adapt: (payload: any) => BeadData,
-  { intervalMs = 15_000 }: { intervalMs?: number } = {},
-): { data: BeadData; error: Error | null; loading: boolean } {
-  const [data, setData] = useState<BeadData>({ nodes: [], links: [] })
-  const [error, setError] = useState<Error | null>(null)
-  const [loading, setLoading] = useState(url !== null)
-  const lastPayload = useRef<string>('')
-
-  useEffect(() => {
-    if (!url) return
-    let cancelled = false
-    const controller = new AbortController()
-
-    async function poll() {
-      try {
-        // credentials: the 'mine' source is session-authenticated (a 401 must
-        // surface as an error, not as an empty sky).
-        const response = await fetch(url!, { signal: controller.signal, credentials: 'include' })
-        if (!response.ok) throw new Error(`${url} → HTTP ${response.status}`)
-        const text = await response.text()
-        if (cancelled) return
-        if (text !== lastPayload.current) {
-          lastPayload.current = text
-          const parsed = JSON.parse(text)
-          /*
-           * These portal routes answer failures with BOTH an error field AND an empty
-           * collection — verified live 2026-07-25:
-           *   /api/services          {"success":false,"error":"spawn pwsh ENOENT","services":[]}
-           *   /api/services/registry {"success":false,"error":"awnode returned 404","services":[]}
-           *   /api/tasks            {"error":"HTTP 404","tasks":[]}
-           * A consumer that reads only the collection renders an empty universe and the user
-           * concludes "there is no work" when the truth is "nothing could be read". Refuse to
-           * paint an empty sky over a failure.
-           */
-          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-            if (parsed.success === false || typeof parsed.error === 'string') {
-              throw new Error(String(parsed.error ?? 'source reported failure'))
-            }
-          }
-          // An adapter that throws on an unexpected shape must surface as an ERROR, not as
-          // an empty universe — "the shape changed" and "there is no work" must not look
-          // identical to the user.
-          const transformed = adapt(parsed)
-          setData({ nodes: transformed.nodes ?? [], links: transformed.links ?? [] })
-        }
-        setError(null)
-      } catch (cause) {
-        if (cancelled || (cause as Error).name === 'AbortError') return
-        setError(cause instanceof Error ? cause : new Error(String(cause)))
-      } finally {
-        if (!cancelled) setLoading(false)
+  emptyReason: ((payload: any) => string) | undefined,
+  label: string,
+  signal: AbortSignal,
+  fetchImpl: typeof fetch = fetch,
+  timeoutMs = SOURCE_TIMEOUT_MS,
+): Promise<BeadSourceResult> {
+  const timeout = new AbortController()
+  const timer = setTimeout(() => timeout.abort(), timeoutMs)
+  const onAbort = () => timeout.abort()
+  signal.addEventListener('abort', onAbort)
+  try {
+    // credentials: the 'mine' source is session-authenticated (a 401 must
+    // surface as an error, not as an empty sky).
+    const response = await fetchImpl(url, { signal: timeout.signal, credentials: 'include' })
+    const text = await response.text()
+    let parsed: any = null
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      parsed = null
+    }
+    if (!response.ok) {
+      const why = parsed && typeof parsed === 'object' ? parsed.error || parsed.detail || parsed.message : null
+      const missing = response.status === 404 && !why ? ' (no such route on this host)' : ''
+      return { kind: 'error', reason: `${url} → HTTP ${response.status}${missing}${why ? `: ${String(why).slice(0, 200)}` : ''}` }
+    }
+    if (parsed === null) return { kind: 'error', reason: `${url} answered something that is not JSON` }
+    /*
+     * These portal routes answer failures with BOTH an error field AND an empty
+     * collection — verified live 2026-07-25:
+     *   /api/services          {"success":false,"error":"spawn pwsh ENOENT","services":[]}
+     *   /api/services/registry {"success":false,"error":"awnode returned 404","services":[]}
+     *   /api/tasks            {"error":"HTTP 404","tasks":[]}
+     * Refuse to paint an empty sky over a failure.
+     */
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      if (parsed.success === false || typeof parsed.error === 'string') {
+        return { kind: 'error', reason: String(parsed.error ?? `${label} reported a failure`) }
       }
     }
+    // An adapter that throws on an unexpected shape is an ERROR, not an empty universe.
+    let transformed: BeadData
+    try {
+      transformed = adapt(parsed)
+    } catch (cause) {
+      return { kind: 'error', reason: `${label}: the answer had a shape this view cannot read (${(cause as Error)?.message ?? cause})` }
+    }
+    const data = {
+      nodes: (transformed.nodes ?? []).filter((n: BeadNode) => n && typeof n.id === 'string' && n.id),
+      links: transformed.links ?? [],
+    }
+    if (data.nodes.length === 0) {
+      return { kind: 'empty', reason: emptyReason ? emptyReason(parsed) : `${label} answered no items` }
+    }
+    return { kind: 'ok', data }
+  } catch (cause) {
+    if (signal.aborted) return { kind: 'error', reason: 'cancelled' }
+    if (timeout.signal.aborted) {
+      return { kind: 'error', reason: `${url} did not answer within ${Math.round(timeoutMs / 1000)} s` }
+    }
+    return { kind: 'error', reason: `${url}: ${(cause as Error)?.message ?? String(cause)}` }
+  } finally {
+    clearTimeout(timer)
+    signal.removeEventListener('abort', onAbort)
+  }
+}
 
+interface SourceState {
+  key: string
+  result: BeadSourceResult | null
+}
+
+/**
+ * Poll one source. State is KEYED by source: switching tabs starts from "loading", never
+ * from the previous tab's data or error (Compute used to keep showing the agent roster,
+ * Backlog Triage the Mine tab's 404).
+ */
+function useSource(
+  key: string,
+  load: (signal: AbortSignal) => Promise<BeadSourceResult>,
+  intervalMs = 15_000,
+): { result: BeadSourceResult | null } {
+  const [state, setState] = useState<SourceState>({ key, result: null })
+  const lastText = useRef<string>('')
+  useEffect(() => {
+    let cancelled = false
+    const controller = new AbortController()
+    lastText.current = ''
+    setState({ key, result: null })
+    async function poll() {
+      const result = await load(controller.signal)
+      if (cancelled) return
+      // Same payload -> same object: the engine keeps its layout instead of re-settling.
+      const text = JSON.stringify(result)
+      if (text === lastText.current) return
+      lastText.current = text
+      setState({ key, result })
+    }
     void poll()
     const timer = window.setInterval(poll, intervalMs)
     return () => {
@@ -266,18 +353,19 @@ function useAdaptedBeadData(
       controller.abort()
       window.clearInterval(timer)
     }
-  }, [url, adapt, intervalMs])
-
-  return { data, error, loading }
+  }, [key, load, intervalMs])
+  return { result: state.key === key ? state.result : null }
 }
 
 export default function BeadSpacePanel({
   apiBase = '/api',
+  sourceOverrides,
+  initialSource,
 }: BeadSpacePanelProps) {
-  const [source, setSource] = useState<DataSource>('universe')
+  const [source, setSource] = useState<DataSource>(
+    initialSource && initialSource in SOURCES ? (initialSource as DataSource) : 'universe',
+  )
   const [selectedNode, setSelectedNode] = useState<BeadNode | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
 
   const auth = useAuth()
   // The 'mine' source re-resolves its adapter with the signed-in owner so their
@@ -294,27 +382,21 @@ export default function BeadSpacePanel({
   }, [source, ownerName])
 
   const endpoint = sourceConfig.endpoint ? `${apiBase}${sourceConfig.endpoint}` : null
-
-  // ONE path for every source. None of these endpoints speak BeadData natively, so the
-  // previous two-hook split just meant the non-adapted sources fed raw domain JSON to the
-  // renderer and drew nothing.
-  const {
-    data,
-    error: fetchError,
-    loading: dataLoading,
-  } = useAdaptedBeadData(endpoint, sourceConfig.adapt, { intervalMs: 15_000 })
-
-  useEffect(() => {
-    setLoading(dataLoading)
-  }, [dataLoading])
-
-  useEffect(() => {
-    if (fetchError) {
-      setError(fetchError.message)
-    } else {
-      setError('')
-    }
-  }, [fetchError])
+  const override = sourceOverrides?.[source]
+  const load = useCallback(
+    (signal: AbortSignal): Promise<BeadSourceResult> => {
+      if (override) return override(signal)
+      if (!endpoint) return Promise.resolve({ kind: 'error', reason: `${sourceConfig.label} has no source on this host` })
+      return loadSource(endpoint, sourceConfig.adapt, sourceConfig.emptyReason, sourceConfig.label, signal)
+    },
+    [override, endpoint, sourceConfig],
+  )
+  // ONE path for every source, keyed by the source so nothing leaks between tabs.
+  const { result } = useSource(`${source}|${endpoint ?? ''}|${override ? 'host' : 'builtin'}`, load)
+  const loading = result === null
+  const data: BeadData = result?.kind === 'ok' ? result.data : { nodes: [], links: [] }
+  const error = result?.kind === 'error' ? result.reason : ''
+  const emptyReason = result?.kind === 'empty' ? result.reason : ''
 
   const handleSelectNode = useCallback((node: BeadNode | null) => {
     setSelectedNode(node)
@@ -440,7 +522,7 @@ export default function BeadSpacePanel({
             </div>
           )}
 
-          {isEmpty && (
+          {(isEmpty || loading) && (
             <div
               style={{
                 display: 'flex',
@@ -451,11 +533,15 @@ export default function BeadSpacePanel({
                 fontSize: 14,
               }}
             >
-              No data available for {sourceConfig.label}
+              {loading
+                ? `Reading ${sourceConfig.label}…`
+                : error
+                  ? `${sourceConfig.label} could not be read — see the reason above.`
+                  : `${sourceConfig.label} is empty: ${emptyReason}`}
             </div>
           )}
 
-          {!isEmpty && (
+          {!isEmpty && !loading && (
             <BeadSpace
               // Remount per source: these are different universes, and carrying planet
               // positions / orbit phase across a source switch reads as the old graph
