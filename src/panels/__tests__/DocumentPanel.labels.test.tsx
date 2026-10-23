@@ -87,6 +87,10 @@ function mockFetch(initial: Doc[] = []) {
           return reply(200, { id, filename: doc.filename, doc_type: 'other', chunk_count: 1, kind: 'image', described: false,
             text: '[Image not yet described]\nImage file: yard.png', preview_url: `/api/documents/${id}/preview` })
         }
+        if (doc?.filename.endsWith('.pdf')) {
+          return reply(200, { id, filename: doc.filename, doc_type: 'other', chunk_count: 1, kind: 'pdf',
+            text: 'SHEET A-101 FLOOR PLAN', preview_url: `/api/documents/${id}/preview` })
+        }
         return reply(200, { id, filename: doc?.filename, doc_type: 'other', text: 'Meeting notes body', chunk_count: 1 })
       }
       if (sub === '/chunks') return reply(200, { chunks: [{ text: 'chunk' }] })
@@ -108,6 +112,7 @@ async function renderReady() {
 const yard: Doc = { id: 'n1', filename: 'Meeting Notes.docx', doc_type: 'other', uploaded_at: null, chunk_count: 3, project: 'Rail Yard Animation' }
 const loose: Doc = { id: 'n2', filename: 'Budget.pdf', doc_type: 'other', uploaded_at: null, chunk_count: 2, tags: ['finance'] }
 const pic: Doc = { id: 'p1', filename: 'yard.png', doc_type: 'other', uploaded_at: null, chunk_count: 1 }
+const sheet: Doc = { id: 'f1', filename: 'Union Station Set.pdf', doc_type: 'other', uploaded_at: null, chunk_count: 1 }
 
 beforeEach(() => window.localStorage.clear())
 
@@ -271,5 +276,18 @@ describe('images', () => {
     expect(screen.queryByText(/No text content available/)).toBeNull()
     const calls = ((global as any).fetch as jest.Mock).mock.calls.map(c => String(c[0]))
     expect(calls.some(u => u.endsWith('/api/documents/p1/preview'))).toBe(true)
+  })
+
+  // Customer report 2026-10-20: a PDF opened Adobe / Bluebeam instead of showing in the app.
+  it('shows a PDF inside the viewer, with the text it read below', async () => {
+    mockFetch([sheet])
+    await renderReady()
+    await act(async () => { fireEvent.click(await screen.findByText('Union Station Set.pdf')) })
+    const frame = await screen.findByTestId('document-pdf-frame')
+    expect(frame.getAttribute('src')).toBe('blob:preview-1')
+    expect(screen.getByTestId('document-pdf-open').getAttribute('href')).toBe('blob:preview-1')
+    expect(screen.getByText(/SHEET A-101 FLOOR PLAN/)).toBeTruthy()
+    const calls = ((global as any).fetch as jest.Mock).mock.calls.map(c => String(c[0]))
+    expect(calls.some(u => u.endsWith('/api/documents/f1/preview'))).toBe(true)
   })
 })

@@ -112,6 +112,12 @@ export interface ChunkedOptions {
   project?: string
   onDuplicate?: string
   onProgress?: (sentBytes: number, totalBytes: number) => void
+  /** The server's id for this upload, once it is known (new or resumed). */
+  onStart?: (uploadId: string) => void
+  /** An upload the server already holds for this file (GET /uploads), resumed
+   *  when this browser has no record of it -- another browser or a cleared
+   *  profile started it. */
+  resumeId?: string
   /** Attempts per piece before the upload gives up (it stays resumable). */
   maxAttempts?: number
   sleep?: (ms: number) => Promise<void>
@@ -163,7 +169,7 @@ export async function uploadChunked(file: File, opts: ChunkedOptions): Promise<C
   const key = resumeKey(base, file)
   let state: { upload_id: string; chunk_bytes: number; total_chunks: number; received: number[] } | null = null
 
-  const known = recall(key)
+  const known = recall(key) || opts.resumeId || null
   if (known) {
     try {
       const r = await fetch(`${base}/api/documents/uploads/${known}`)
@@ -184,6 +190,8 @@ export async function uploadChunked(file: File, opts: ChunkedOptions): Promise<C
     remember(key, state!.upload_id)
   }
   const { upload_id: id, chunk_bytes: step, total_chunks: total } = state!
+  remember(key, id)
+  opts.onStart?.(id)
   const have = new Set(state!.received || [])
   const whole = new Sha256()
   let sent = 0

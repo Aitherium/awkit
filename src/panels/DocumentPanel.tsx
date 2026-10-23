@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import { getApiBase } from '../lib/apiBase'
 import { uploadChunked } from '../lib/chunkedUpload'
 import { useConfig } from '../hooks/useConfig'
+import { InFlightUploadRow, mergeLive, type InFlightUpload, type LiveUpload } from './InFlightUploads'
 
 /**
  * Per-file and per-request ceiling. Uploads reach tenant backends through
@@ -243,7 +244,8 @@ interface DocContent {
   doc_type: string
   text: string
   chunk_count: number
-  /** 'image': the viewer shows the picture from preview_url. */
+  /** 'image': the viewer shows the picture from preview_url. 'pdf': the PDF
+   *  itself, in the app (served inline), instead of a hand-off to Adobe/Bluebeam. */
   kind?: string
   /** For an image: false when only its file name is indexed (no vision description yet). */
   described?: boolean
@@ -301,6 +303,14 @@ export default function DocumentPanel() {
   const [selected, setSelected] = useState<Set<string>>(() => new Set())
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  // Big uploads not yet documents (GET /api/documents/uploads), and the one this
+  // tab is sending right now. Before these the list showed nothing for the 20+
+  // minutes a 6 GB zip takes (customer report 2026-10-22).
+  const [inFlight, setInFlight] = useState<InFlightUpload[]>([])
+  const inFlightRef = useRef<InFlightUpload[]>([])
+  inFlightRef.current = inFlight
+  const [liveUpload, setLiveUpload] = useState<LiveUpload | null>(null)
+  const [dismissedUploads, setDismissedUploads] = useState<Set<string>>(() => new Set())
   // Files whose upload hit a same-name 409, kept so Replace / Keep both can resend.
   const pendingDupes = useRef(new Map<string, File>())
   const projectRef = useRef('')
@@ -377,7 +387,8 @@ export default function DocumentPanel() {
 
     if (contentRes.status === 'fulfilled' && contentRes.value) {
       setDocContent(contentRes.value)
-      if (contentRes.value.kind === 'image' && contentRes.value.preview_url) {
+      const kind = contentRes.value.kind
+      if ((kind === 'image' || kind === 'pdf') && contentRes.value.preview_url) {
         viewIdRef.current = doc.id
         loadPreview(contentRes.value.preview_url, doc.id)
       }
@@ -455,16 +466,27 @@ export default function DocumentPanel() {
     }
   }
 
-  /** A file past the single-request cap: verified 32 MB pieces, resumable. */
+  /** A file past the single-request cap: verified 32 MB pieces, resumable.
+   *  Its progress is a row at the top of the list (InFlightUploadRow), never a
+   *  line that reads as done; a paused upload the server holds is resumed. */
   const uploadBig = async (file: File): Promise<UploadResult> => {
-    const result = await uploadChunked(file, {
-      apiBase: getApiBase(),
-      project: supportsRef.current.projects ? projectRef.current : '',
-      onProgress: (sent, total) => setUploadProgress(
-        `Uploading ${file.name}: ${Math.floor((100 * sent) / total)}% of ${formatMb(total)}`),
-    })
+    const held = inFlightRef.current.find(u => u.state === 'uploading' && u.upload_id
+      && u.filename === file.name && u.size === file.size)
+    setLiveUpload({ uploadId: held?.upload_id || null, filename: file.name, sent: 0, total: file.size })
+    let result
+    try {
+      result = await uploadChunked(file, {
+        apiBase: getApiBase(),
+        project: supportsRef.current.projects ? projectRef.current : '',
+        resumeId: held?.upload_id || undefined,
+        onStart: id => setLiveUpload(l => (l ? { ...l, uploadId: id } : l)),
+        onProgress: (sent, total) => setLiveUpload(l => (l ? { ...l, sent, total } : l)),
+      })
+    } finally {
+      setLiveUpload(null)
+    }
     if (!result.ok) return { filename: file.name, status: 'error', detail: result.detail }
-    setUploadProgress(`Checking and reading ${file.name}...`)
+    setUploadProgress(`Uploaded ${file.name}. Checking and unpacking it -- its files appear below when done.`)
     return jobResults(await waitForBatchJob(result.jobId), [file])[0]
       ?? { filename: file.name, status: 'done', detail: 'Uploaded' }
   }
@@ -599,6 +621,46 @@ export default function DocumentPanel() {
       fetchDocs()
     }
   }, [])
+
+  // Closing the tab mid-upload pauses it: say so before the browser does it.
+  useEffect(() => {
+    if (!uploading || typeof window === 'undefined') return
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      e.returnValue = 'An upload is still running. Leaving this page pauses it.'
+      return e.returnValue
+    }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [uploading])
+
+  // The caller's uploads in flight, polled while the panel is open. A row that
+  // leaves the list (its files were read) refreshes the documents.
+  useEffect(() => {
+    if (!limits.chunked) return
+    let stopped = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const poll = async () => {
+      try {
+        const r = await fetch(`${getApiBase()}/api/documents/uploads`)
+        if (r.status === 404 || r.status === 405) return // an older backend: no list
+        if (r.ok) {
+          const data = await r.json()
+          const next: InFlightUpload[] = Array.isArray(data?.uploads) ? data.uploads : []
+          if (stopped) return
+          const gone = inFlightRef.current.some(u => u.state !== 'failed' && !next.some(n => n.id === u.id))
+          setInFlight(next)
+          if (gone) fetchDocs()
+        }
+      } catch { /* offline: try again next tick */ }
+      if (!stopped) timer = setTimeout(poll, 5000)
+    }
+    poll()
+    return () => { stopped = true; if (timer) clearTimeout(timer) }
+  }, [limits.chunked])
+
+  const shownUploads = mergeLive(inFlight, liveUpload).filter(u =>
+    !dismissedUploads.has(u.id) && !(batchJob && u.job_id && u.job_id === batchJob.job_id))
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -912,7 +974,16 @@ export default function DocumentPanel() {
           padding: '0 1.5rem 1rem',
           borderRight: viewDoc ? '1px solid var(--glass-border, #333)' : undefined,
         }}>
-          {docs.length === 0 && !batchJob ? (
+          {shownUploads.length > 0 && (
+            <div data-testid="inflight-uploads" style={{ display: 'grid', gap: '0.35rem', marginBottom: '0.35rem' }}>
+              {shownUploads.map(u => (
+                <InFlightUploadRow key={u.id} upload={u} compact={!!viewDoc}
+                  onResume={() => !uploading && fileRef.current?.click()}
+                  onDismiss={x => setDismissedUploads(prev => new Set(prev).add(x.id))} />
+              ))}
+            </div>
+          )}
+          {docs.length === 0 && !batchJob && shownUploads.length === 0 ? (
             <div className="empty-state" style={{ padding: '2rem 0', textAlign: 'center' }}>
               <h3 style={{ fontSize: '0.9rem', margin: '0 0 0.3rem' }}>No documents yet</h3>
               <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>Upload documents to create a knowledge base.</p>
@@ -1116,6 +1187,35 @@ export default function DocumentPanel() {
                       </div>
                     </div>
                   )}
+                </div>
+              ) : viewMode === 'content' && docContent?.kind === 'pdf' ? (
+                <div data-testid="document-pdf-view">
+                  {previewUrl ? (
+                    <>
+                      <iframe data-testid="document-pdf-frame" src={previewUrl} title={viewDoc.filename}
+                        style={{ display: 'block', width: '100%', height: '70vh', border: 'none',
+                          borderRadius: 'var(--radius, 6px)', background: '#fff', marginBottom: '0.5rem' }} />
+                      <a data-testid="document-pdf-open" href={previewUrl} target="_blank" rel="noopener noreferrer"
+                        style={{ fontSize: '0.72rem', color: 'var(--accent-primary, #5EC9CC)' }}>
+                        Open in a new tab
+                      </a>
+                    </>
+                  ) : (
+                    <div style={{ color: 'var(--text-muted, #888)', fontSize: '0.8rem', textAlign: 'center', padding: '1rem' }}>
+                      Loading PDF...
+                    </div>
+                  )}
+                  {displayText ? (
+                    <details style={{ marginTop: '0.75rem' }}>
+                      <summary style={{ fontSize: '0.75rem', color: 'var(--text-secondary, #aaa)', cursor: 'pointer' }}>
+                        Text read from this PDF
+                      </summary>
+                      <div style={{ fontSize: '0.82rem', lineHeight: 1.65, whiteSpace: 'pre-wrap',
+                        fontFamily: 'var(--font-mono, monospace)', color: 'var(--text-primary, #ddd)', marginTop: '0.5rem' }}>
+                        {displayText}
+                      </div>
+                    </details>
+                  ) : null}
                 </div>
               ) : viewMode === 'content' ? (
                 displayText ? (

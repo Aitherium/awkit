@@ -8,6 +8,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react'
+import ConnectedAccountsSection, { errorLine, readJson } from './ConnectedAccountsSection'
 
 export interface DataSourceSetupPanelProps {
   apiBase?: string
@@ -164,8 +165,10 @@ export default function DataSourceSetupPanel({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ provider: emailProvider, email, password }),
       })
-      const d = await res.json()
-      if (!res.ok) throw new Error(d.detail || 'Failed')
+      // A proxy error page is HTML and a 422 detail is a list: neither may become
+      // "Unexpected token '<'" or "[object Object]" on screen.
+      const d = (await readJson(res)) as Record<string, any> | null
+      if (!res.ok || !d) throw new Error(errorLine(d, `Failed (HTTP ${res.status})`))
       setSuccess(`Connected ${email}`)
       await fetchState()
     } catch (e: any) {
@@ -188,8 +191,10 @@ export default function DataSourceSetupPanel({
           user_email: calEmail || undefined,
         }),
       })
-      const d = await res.json()
-      if (!res.ok) throw new Error(d.detail || 'Failed')
+      // A proxy error page is HTML and a 422 detail is a list: neither may become
+      // "Unexpected token '<'" or "[object Object]" on screen.
+      const d = (await readJson(res)) as Record<string, any> | null
+      if (!res.ok || !d) throw new Error(errorLine(d, `Failed (HTTP ${res.status})`))
       setSuccess('Calendar connected')
       await fetchState()
     } catch (e: any) {
@@ -214,8 +219,10 @@ export default function DataSourceSetupPanel({
           config,
         }),
       })
-      const d = await res.json()
-      if (!res.ok) throw new Error(d.detail || 'Failed')
+      // A proxy error page is HTML and a 422 detail is a list: neither may become
+      // "Unexpected token '<'" or "[object Object]" on screen.
+      const d = (await readJson(res)) as Record<string, any> | null
+      if (!res.ok || !d) throw new Error(errorLine(d, `Failed (HTTP ${res.status})`))
       setSuccess('Storage connected')
       await fetchState()
     } catch (e: any) {
@@ -238,8 +245,10 @@ export default function DataSourceSetupPanel({
           csv_data: empSource === 'csv' ? csvData : undefined,
         }),
       })
-      const d = await res.json()
-      if (!res.ok) throw new Error(d.detail || 'Failed')
+      // A proxy error page is HTML and a 422 detail is a list: neither may become
+      // "Unexpected token '<'" or "[object Object]" on screen.
+      const d = (await readJson(res)) as Record<string, any> | null
+      if (!res.ok || !d) throw new Error(errorLine(d, `Failed (HTTP ${res.status})`))
       setSuccess(`Imported ${d.imported} employees`)
       await fetchState()
     } catch (e: any) {
@@ -345,6 +354,9 @@ export default function DataSourceSetupPanel({
             day-to-day: emails, calendar, documents, and team directory.
           </p>
 
+          <ConnectedAccountsSection apiBase={apiBase} />
+
+          <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: 8 }}>Set up by hand</h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {[
               { label: 'Email', done: state.email_connected, detail: state.email_address },
