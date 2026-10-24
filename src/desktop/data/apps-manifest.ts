@@ -1033,6 +1033,20 @@ const CREATIVE_APPS: AitherApp[] = [
         desktopWidget: { widgetId: 'hearth', defaultSize: { width: 1080, height: 760 }, icon: 'home' },
     },
     {
+        // 2026-10-24 owner: the meetup town goes into the Aither app (/town, #14091).
+        id: 'town',
+        name: 'Tagalong',
+        description: 'A little town where the weekend happens: real places, plans and deals, and the people going.',
+        icon: 'map',
+        route: '/town',
+        category: 'social',
+        status: 'beta',
+        requiresAuth: true,
+        availability: 'gateway',
+        showInNav: true,
+        keywords: ['tagalong', 'town', 'meetup', 'plans', 'deals', 'places', 'map'],
+    },
+    {
         // 2026-10-01 owner: "this whole academy thing seems very poorly integrated".
         // Measured: Classroom and Learn had NO entry here, so neither was in the nav,
         // the start menu or the command palette; the one inbound link to Classroom
