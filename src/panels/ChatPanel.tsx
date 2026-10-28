@@ -84,8 +84,10 @@ interface Message {
 }
 
 interface Props {
-  conversationId: string | null
-  onNewConversation: (id: string) => void
+  /** Controlled conversation. Omit it (a bare panel window) and the panel keeps
+   *  its own -- the Veil tenant desktop mounts ChatPanel with no props at all. */
+  conversationId?: string | null
+  onNewConversation?: (id: string) => void
   externalInput?: string
   onExternalInputConsumed?: () => void
   voiceEnabled?: boolean
@@ -409,9 +411,22 @@ function getStoredEngine(): ChatEngine {
   try { return (localStorage.getItem(ENGINE_KEY) as ChatEngine) || 'aitherchat' } catch { return 'aitherchat' }
 }
 
-export default function ChatPanel({ conversationId, onNewConversation, externalInput, onExternalInputConsumed, voiceEnabled: voiceEnabledProp, voiceTier: voiceTierProp }: Props) {
+export default function ChatPanel({ conversationId: conversationIdProp, onNewConversation: onNewConversationProp, externalInput, onExternalInputConsumed, voiceEnabled: voiceEnabledProp, voiceTier: voiceTierProp }: Props) {
   const config = useConfig()
   const { brand } = useTheme()
+
+  // Uncontrolled mode. The Veil tenant desktop renders this panel bare, and calling
+  // the missing `onNewConversation` threw AFTER the reply had been committed; the
+  // stream's catch then committed the same reply again -- one question, the answer
+  // shown twice (customer review 2026-10-27, "What is 2+2?" -> "4." "4."). Without a host the
+  // panel now owns its conversation id, so turn two also continues turn one.
+  const controlled = conversationIdProp !== undefined
+  const [ownConversationId, setOwnConversationId] = useState<string | null>(null)
+  const conversationId = controlled ? (conversationIdProp ?? null) : ownConversationId
+  const onNewConversation = useCallback((id: string) => {
+    if (controlled) onNewConversationProp?.(id)
+    else setOwnConversationId(id)
+  }, [controlled, onNewConversationProp])
 
   // Voice config: props override brain pack config
   const voiceCfg = config.voice
@@ -450,7 +465,7 @@ export default function ChatPanel({ conversationId, onNewConversation, externalI
   // A turn in flight, held in a REF not state: setLoading(true) only takes effect on
   // the next render, so two Enter presses in one render cycle both passed the old
   // `if (loading) return` and started two turns -- the customer saw the same answer
-  // twice (Jason, 2026-10-27, "2+2" answered twice). A ref flips synchronously.
+  // twice (customer review 2026-10-27, "2+2" answered twice). A ref flips synchronously.
   const sendingRef = useRef(false)
 
   // rAF-throttled stream state flushing — coalesces per-token updates to ~60fps
@@ -707,6 +722,9 @@ export default function ChatPanel({ conversationId, onNewConversation, externalI
     let streamPipeline: PipelineTrace | undefined
     let streamUsage: PipelineUsage | undefined
     let doneReceived = false
+    // Set once the reply is in the transcript: a throw after that point (a host
+    // callback, a post-stream side effect) must not commit the same reply twice.
+    let committed = false
 
     try {
       const resp = await fetchThroughRestart(`${getApiBase()}/api/chat/aither`, {
@@ -826,12 +844,15 @@ export default function ChatPanel({ conversationId, onNewConversation, externalI
         pipeline: streamPipeline,
         pipeline_usage: streamUsage,
       }])
+      committed = true
       if (!conversationId && streamConvId) {
         skipHistoryReload.current = true
         onNewConversation(streamConvId)
       }
     } catch (err: any) {
-      if (doneReceived && contentBuf) {
+      if (committed) {
+        // The reply is already shown; only the bookkeeping after it failed.
+      } else if (doneReceived && contentBuf) {
         // Response was fully delivered — the error is from post-stream
         // cleanup (persist, side-effects). Commit the content instead
         // of showing an error that replaces the valid response.

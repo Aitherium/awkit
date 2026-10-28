@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import PeopleStaffNotes from './PeopleStaffNotes'
 
 interface WorkspaceUser {
   id: string
@@ -678,12 +679,17 @@ export default function PeoplePanel({ apiBase = '/api/people' }: PeoplePanelProp
                     </div>
                   )}
 
-                  {selectedStaff.source_doc_id && (
-                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted, #888)', marginTop: 4 }}>
-                      Source: document #{selectedStaff.source_doc_id}
-                    </div>
-                  )}
                 </div>
+                <PeopleStaffNotes
+                  key={selectedStaff.id}
+                  apiBase={apiBase}
+                  staffId={selectedStaff.id}
+                  resumeDocId={selectedStaff.source_doc_id}
+                  onResumeLinked={docId => {
+                    setSelectedStaff(prev => (prev ? { ...prev, source_doc_id: docId } : prev))
+                    fetchPeople()
+                  }}
+                />
               </>
             )}
           </div>

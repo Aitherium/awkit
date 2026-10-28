@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 interface Staff {
   id: string
@@ -51,21 +51,48 @@ export default function DatabasePanel({ apiBase = '/api/data', exportBase = '/ap
   const [projects, setProjects] = useState<Project[]>([])
   const [search, setSearch] = useState('')
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
+  const [importNote, setImportNote] = useState('')
+  const importRef = useRef<HTMLInputElement>(null)
 
+  // BOTH lists load on mount and on every search: each tab's label shows its count,
+  // and fetching only the selected tab left the other reading "Projects (0)" until it
+  // was clicked, when it jumped to 33 (customer review, 2026-10-27).
   useEffect(() => {
+    let cancelled = false
     const params = search ? `?search=${encodeURIComponent(search)}` : ''
-    if (subTab === 'staff') {
-      fetch(`${apiBase}/staff${params}`)
-        .then(r => r.json())
-        .then(setStaff)
+    const load = <T,>(path: string, set: (rows: T[]) => void) =>
+      fetch(`${apiBase}/${path}${params}`)
+        .then(r => (r.ok ? r.json() : []))
+        .then(rows => { if (!cancelled && Array.isArray(rows)) set(rows as T[]) })
         .catch(() => {})
-    } else {
-      fetch(`${apiBase}/projects${params}`)
-        .then(r => r.json())
-        .then(setProjects)
-        .catch(() => {})
+    load<Staff>('staff', setStaff)
+    load<Project>('projects', setProjects)
+    return () => { cancelled = true }
+  }, [search, apiBase, reloadKey])
+
+  // A project list (CSV/XLSX) becomes project records: "upload a list of all
+  // projects (current & past)" -- customer review, 2026-10-27. Re-importing updates by name.
+  const importProjects = async (file: File) => {
+    setImportNote(`Importing ${file.name}...`)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const r = await fetch(`${apiBase}/projects/import`, { method: 'POST', body: form })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) {
+        setImportNote(typeof d?.detail === 'string' ? d.detail : 'That list could not be imported.')
+        return
+      }
+      const skipped = Array.isArray(d.skipped_rows) && d.skipped_rows.length
+        ? `, ${d.skipped_rows.length} rows without a project name skipped` : ''
+      setImportNote(`Imported ${file.name}: ${d.created ?? 0} added, ${d.updated ?? 0} updated${skipped}.`)
+      setSubTab('projects')
+      setReloadKey(k => k + 1)
+    } catch {
+      setImportNote('That list could not be imported: the workspace did not answer.')
     }
-  }, [subTab, search, apiBase])
+  }
 
   const exportExcel = async () => {
     const url = subTab === 'staff' ? `${exportBase}/staff-spreadsheet` : `${exportBase}/project-spreadsheet`
@@ -77,6 +104,30 @@ export default function DatabasePanel({ apiBase = '/api/data', exportBase = '/ap
     <div style={{ padding: '1.5rem' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
         <h2 style={{ fontSize: '1.1rem' }}>Database</h2>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+        <button
+          onClick={() => importRef.current?.click()}
+          title="Import a project list from a CSV or Excel file (needs a Project or Name column)"
+          style={{
+            padding: '0.5rem 1rem',
+            background: 'var(--bg-surface)',
+            color: 'var(--text-secondary)',
+            border: '1px solid var(--border, #333)',
+            borderRadius: 'var(--radius)',
+            fontWeight: 600,
+            fontSize: '0.8rem',
+          }}
+        >
+          Import project list
+        </button>
+        <input
+          ref={importRef}
+          type="file"
+          hidden
+          aria-label="Project list file"
+          accept=".csv,.xlsx,.xlsm"
+          onChange={e => { const f = e.target.files?.[0]; if (f) importProjects(f); e.target.value = '' }}
+        />
         <button
           onClick={exportExcel}
           style={{
@@ -90,7 +141,13 @@ export default function DatabasePanel({ apiBase = '/api/data', exportBase = '/ap
         >
           Export to Excel
         </button>
+        </div>
       </div>
+      {importNote && (
+        <div role="status" style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
+          {importNote}
+        </div>
+      )}
 
       {/* Sub-tabs */}
       <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>

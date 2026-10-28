@@ -45,9 +45,52 @@ export interface FormsPanelProps {
   apiBase?: string
 }
 
+/* The forms router answers `{forms: [entity]}`, each entity `{id, title, status,
+   data: {title, description, fields}, created_at}` (awkit-backend local_store).
+   This panel read `data.data.forms` and `form.form_id/fields/published`, none of
+   which exist, so it never listed a form it had just created (customer review,
+   2026-10-27: \"Forms is kind of goofy\"). Both shapes are read here. */
+type Raw = Record<string, any>
+
+export function toFormDef(raw: Raw): FormDef {
+  const d: Raw = raw?.data && typeof raw.data === 'object' ? raw.data : {}
+  const fields = Array.isArray(raw?.fields) ? raw.fields : Array.isArray(d.fields) ? d.fields : []
+  return {
+    form_id: String(raw?.form_id ?? raw?.id ?? ''),
+    title: String(raw?.title ?? d.title ?? 'Untitled form'),
+    description: raw?.description ?? d.description ?? undefined,
+    fields,
+    published: Boolean(raw?.published ?? (raw?.status ?? d.status) === 'published'),
+    submission_count: raw?.submission_count ?? undefined,
+    created_at: raw?.created_at ?? undefined,
+  }
+}
+
+export function formsFrom(payload: Raw | null): FormDef[] {
+  const list = Array.isArray(payload?.forms) ? payload!.forms
+    : Array.isArray(payload?.data?.forms) ? payload!.data.forms
+      : Array.isArray(payload?.data) ? payload!.data
+        : []
+  return list.map(toFormDef).filter((f: FormDef) => f.form_id)
+}
+
+function toSubmission(raw: Raw): Submission {
+  const d: Raw = raw?.data && typeof raw.data === 'object' ? raw.data : {}
+  return {
+    submission_id: String(raw?.submission_id ?? raw?.id ?? ''),
+    responses: raw?.responses ?? d.responses ?? {},
+    submitter_name: raw?.submitter_name ?? d.submitted_by ?? undefined,
+    submitter_email: raw?.submitter_email ?? undefined,
+    submitted_at: raw?.submitted_at ?? raw?.created_at ?? '',
+  }
+}
+
+const LOAD_TIMEOUT_MS = 15_000
+
 export default function FormsPanel({ apiBase = '/api/forms' }: FormsPanelProps) {
   const [forms, setForms] = useState<FormDef[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [view, setView] = useState<ViewMode>('list')
 
   // Create form state
@@ -67,22 +110,28 @@ export default function FormsPanel({ apiBase = '/api/forms' }: FormsPanelProps) 
   const [submissions, setSubmissions] = useState<Submission[]>([])
   const [analytics, setAnalytics] = useState<FormAnalytics | null>(null)
 
+  // Bounded: a request that never answers must end in a sentence and a Retry,
+  // never in "Loading forms..." for good.
   const fetchForms = useCallback(async () => {
     setLoading(true)
+    setLoadError('')
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), LOAD_TIMEOUT_MS)
     try {
-      const res = await fetch(apiBase)
+      const res = await fetch(apiBase, { signal: ctrl.signal })
       if (res.ok) {
-        const data = await res.json()
-        if (data?.data?.forms) {
-          setForms(data.data.forms)
-        } else if (Array.isArray(data?.data)) {
-          setForms(data.data)
-        }
+        setForms(formsFrom(await res.json()))
+      } else {
+        setLoadError(res.status === 401 || res.status === 403
+          ? "Sign in to see this workspace's forms."
+          : 'Forms could not be loaded right now.')
       }
-    } catch (e) {
-      console.error('Forms fetch error:', e)
+    } catch {
+      setLoadError('Forms could not be loaded: the workspace did not answer.')
+    } finally {
+      clearTimeout(timer)
+      setLoading(false)
     }
-    setLoading(false)
   }, [apiBase])
 
   useEffect(() => { fetchForms() }, [fetchForms])
@@ -95,13 +144,17 @@ export default function FormsPanel({ apiBase = '/api/forms' }: FormsPanelProps) 
         fetch(`${apiBase}/${form.form_id}/submissions`).then(r => r.ok ? r.json() : null),
         fetch(`${apiBase}/${form.form_id}/analytics`).then(r => r.ok ? r.json() : null),
       ])
-      if (subRes?.data?.submissions) {
-        setSubmissions(subRes.data.submissions)
-      } else if (Array.isArray(subRes?.data)) {
-        setSubmissions(subRes.data)
-      }
-      if (analyticsRes?.data) {
-        setAnalytics(analyticsRes.data)
+      const subs = Array.isArray(subRes?.submissions) ? subRes.submissions
+        : Array.isArray(subRes?.data?.submissions) ? subRes.data.submissions
+          : Array.isArray(subRes?.data) ? subRes.data : []
+      setSubmissions(subs.map(toSubmission))
+      const a = analyticsRes?.data ?? analyticsRes
+      if (a) {
+        setAnalytics({
+          total_submissions: a.total_submissions ?? a.submission_count ?? subs.length,
+          completion_rate: a.completion_rate,
+          field_stats: a.field_stats,
+        })
       }
     } catch (e) {
       console.error('Form detail fetch error:', e)
@@ -148,7 +201,7 @@ export default function FormsPanel({ apiBase = '/api/forms' }: FormsPanelProps) 
           title: newTitle,
           description: newDescription,
           fields: newFields,
-          published: false,
+          status: 'draft',
         }),
       })
       if (resp.ok) {
@@ -186,14 +239,26 @@ export default function FormsPanel({ apiBase = '/api/forms' }: FormsPanelProps) 
 
   if (loading) {
     return (
-      <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+      <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
         Loading forms...
       </div>
     )
   }
 
+  if (loadError) {
+    return (
+      <div role="alert" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+        <div style={{ marginBottom: 12 }}>{loadError}</div>
+        <button onClick={fetchForms} style={{
+          padding: '0.5rem 1rem', borderRadius: 'var(--radius, 8px)', border: 'none', cursor: 'pointer',
+          background: 'var(--accent-primary)', color: 'var(--bg-deep)', fontWeight: 600, fontSize: '0.8rem',
+        }}>Retry</button>
+      </div>
+    )
+  }
+
   return (
-    <div style={{ padding: '1.5rem', maxWidth: 900, margin: '0 auto' }}>
+    <div style={{ padding: '1.5rem', color: 'var(--text-primary)' }}>
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -209,7 +274,7 @@ export default function FormsPanel({ apiBase = '/api/forms' }: FormsPanelProps) 
               Back
             </button>
           )}
-          <h2 style={{ margin: 0, fontSize: '1.25rem' }}>
+          <h2 style={{ margin: 0, fontSize: '1.1rem' }}>
             {view === 'list' ? 'Forms' : selectedForm?.title || 'Form Detail'}
           </h2>
         </div>
@@ -218,7 +283,7 @@ export default function FormsPanel({ apiBase = '/api/forms' }: FormsPanelProps) 
             onClick={() => setShowCreate(!showCreate)}
             style={{
               padding: '6px 14px', borderRadius: 6, border: 'none',
-              background: 'var(--accent)', color: '#fff', cursor: 'pointer',
+              background: 'var(--accent-primary)', color: 'var(--bg-deep)', cursor: 'pointer',
               fontSize: '0.8rem', fontWeight: 600,
             }}
           >
@@ -232,8 +297,8 @@ export default function FormsPanel({ apiBase = '/api/forms' }: FormsPanelProps) 
               style={{
                 padding: '6px 14px', borderRadius: 6,
                 border: view === 'detail' ? 'none' : '1px solid var(--border)',
-                background: view === 'detail' ? 'var(--accent)' : 'transparent',
-                color: view === 'detail' ? '#fff' : 'var(--text-muted)',
+                background: view === 'detail' ? 'var(--accent-primary)' : 'transparent',
+                color: view === 'detail' ? 'var(--bg-deep)' : 'var(--text-muted)',
                 cursor: 'pointer', fontSize: '0.8rem',
               }}
             >
@@ -244,8 +309,8 @@ export default function FormsPanel({ apiBase = '/api/forms' }: FormsPanelProps) 
               style={{
                 padding: '6px 14px', borderRadius: 6,
                 border: view === 'analytics' ? 'none' : '1px solid var(--border)',
-                background: view === 'analytics' ? 'var(--accent)' : 'transparent',
-                color: view === 'analytics' ? '#fff' : 'var(--text-muted)',
+                background: view === 'analytics' ? 'var(--accent-primary)' : 'transparent',
+                color: view === 'analytics' ? 'var(--bg-deep)' : 'var(--text-muted)',
                 cursor: 'pointer', fontSize: '0.8rem',
               }}
             >
@@ -258,20 +323,20 @@ export default function FormsPanel({ apiBase = '/api/forms' }: FormsPanelProps) 
       {/* Create Form Modal */}
       {showCreate && view === 'list' && (
         <div style={{
-          padding: '1rem', borderRadius: 8, background: 'var(--bg-elevated)',
+          padding: '1rem', borderRadius: 'var(--radius, 8px)', background: 'var(--bg-surface)',
           border: '1px solid var(--border)', marginBottom: '1rem',
         }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 12 }}>
             <input
               value={newTitle} onChange={e => setNewTitle(e.target.value)}
               placeholder="Form title"
-              style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-deep)', color: 'var(--text)' }}
+              style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-deep)', color: 'var(--text-primary)' }}
             />
             <textarea
               value={newDescription} onChange={e => setNewDescription(e.target.value)}
               placeholder="Description (optional)"
               rows={2}
-              style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-deep)', color: 'var(--text)', resize: 'vertical' }}
+              style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-deep)', color: 'var(--text-primary)', resize: 'vertical' }}
             />
 
             {/* Field List */}
@@ -288,7 +353,7 @@ export default function FormsPanel({ apiBase = '/api/forms' }: FormsPanelProps) 
                   >
                     <span style={{
                       padding: '2px 6px', borderRadius: 3, fontSize: '0.65rem', fontWeight: 600,
-                      background: 'rgba(124,58,237,0.15)', color: 'var(--accent)',
+                      background: 'rgba(94, 201, 204, 0.12)', color: 'var(--accent-primary)',
                     }}>
                       {f.field_type}
                     </span>
@@ -313,7 +378,7 @@ export default function FormsPanel({ apiBase = '/api/forms' }: FormsPanelProps) 
               <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto', gap: 8, alignItems: 'center' }}>
                 <select
                   value={addFieldType} onChange={e => setAddFieldType(e.target.value)}
-                  style={{ padding: '6px 8px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: '0.8rem' }}
+                  style={{ padding: '6px 8px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text-primary)', fontSize: '0.8rem' }}
                 >
                   {FIELD_TYPES.map(t => (
                     <option key={t} value={t}>{t}</option>
@@ -323,7 +388,7 @@ export default function FormsPanel({ apiBase = '/api/forms' }: FormsPanelProps) 
                   value={addFieldLabel} onChange={e => setAddFieldLabel(e.target.value)}
                   placeholder="Field label"
                   onKeyDown={e => { if (e.key === 'Enter') handleAddField() }}
-                  style={{ padding: '6px 10px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: '0.8rem' }}
+                  style={{ padding: '6px 10px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text-primary)', fontSize: '0.8rem' }}
                 />
                 <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                   <input type="checkbox" checked={addFieldRequired} onChange={e => setAddFieldRequired(e.target.checked)} />
@@ -334,11 +399,11 @@ export default function FormsPanel({ apiBase = '/api/forms' }: FormsPanelProps) 
                 <input
                   value={addFieldOptions} onChange={e => setAddFieldOptions(e.target.value)}
                   placeholder="Options (comma-separated)"
-                  style={{ marginTop: 8, width: '100%', padding: '6px 10px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text)', fontSize: '0.8rem', boxSizing: 'border-box' }}
+                  style={{ marginTop: 8, width: '100%', padding: '6px 10px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text-primary)', fontSize: '0.8rem', boxSizing: 'border-box' }}
                 />
               )}
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
-                <button onClick={handleAddField} style={{ padding: '4px 12px', borderRadius: 4, border: 'none', background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600 }}>
+                <button onClick={handleAddField} style={{ padding: '4px 12px', borderRadius: 4, border: 'none', background: 'var(--accent-primary)', color: 'var(--bg-deep)', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600 }}>
                   Add Field
                 </button>
               </div>
@@ -349,7 +414,7 @@ export default function FormsPanel({ apiBase = '/api/forms' }: FormsPanelProps) 
             <button onClick={() => { setShowCreate(false); setNewFields([]) }} style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}>
               Cancel
             </button>
-            <button onClick={handleCreateForm} disabled={!newTitle || newFields.length === 0} style={{ padding: '6px 14px', borderRadius: 6, border: 'none', background: !newTitle || newFields.length === 0 ? 'rgba(124,58,237,0.3)' : 'var(--accent)', color: '#fff', cursor: !newTitle || newFields.length === 0 ? 'default' : 'pointer', fontWeight: 600 }}>
+            <button onClick={handleCreateForm} disabled={!newTitle || newFields.length === 0} style={{ padding: '6px 14px', borderRadius: 6, border: 'none', background: !newTitle || newFields.length === 0 ? 'var(--bg-surface)' : 'var(--accent-primary)', color: 'var(--bg-deep)', cursor: !newTitle || newFields.length === 0 ? 'default' : 'pointer', fontWeight: 600 }}>
               Create Form
             </button>
           </div>
@@ -368,8 +433,8 @@ export default function FormsPanel({ apiBase = '/api/forms' }: FormsPanelProps) 
             <div
               key={form.form_id}
               style={{
-                padding: '14px 16px', borderRadius: 8, background: 'var(--bg-elevated)',
-                border: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between',
+                padding: '14px 16px', borderRadius: 'var(--radius, 8px)', background: 'var(--bg-surface)',
+                border: '1px solid var(--glass-border, var(--border))', display: 'flex', justifyContent: 'space-between',
                 alignItems: 'center', cursor: 'pointer',
               }}
               onClick={() => fetchDetail(form)}
@@ -417,7 +482,7 @@ export default function FormsPanel({ apiBase = '/api/forms' }: FormsPanelProps) 
             {selectedForm.fields.map((f, i) => (
               <span key={i} style={{
                 padding: '2px 8px', borderRadius: 4,
-                background: 'rgba(124,58,237,0.1)', color: 'var(--accent)',
+                background: 'rgba(94, 201, 204, 0.12)', color: 'var(--accent-primary)',
               }}>
                 {f.label} ({f.field_type})
               </span>
@@ -451,7 +516,7 @@ export default function FormsPanel({ apiBase = '/api/forms' }: FormsPanelProps) 
                         {formatDate(sub.submitted_at)}
                       </td>
                       {selectedForm.fields.map((f, i) => (
-                        <td key={i} style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)', color: 'var(--text)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <td key={i} style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)', color: 'var(--text-primary)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {sub.responses[f.label] != null ? String(sub.responses[f.label]) : '-'}
                         </td>
                       ))}
@@ -471,20 +536,20 @@ export default function FormsPanel({ apiBase = '/api/forms' }: FormsPanelProps) 
       {view === 'analytics' && selectedForm && analytics && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12 }}>
           <div style={{
-            padding: '16px', borderRadius: 8, background: 'var(--bg-elevated)',
+            padding: '16px', borderRadius: 'var(--radius, 8px)', background: 'var(--bg-surface)',
             border: '1px solid var(--border)', textAlign: 'center',
           }}>
-            <div style={{ fontSize: '2rem', fontWeight: 700, color: 'var(--accent)' }}>
+            <div style={{ fontSize: '2rem', fontWeight: 700, color: 'var(--accent-primary)' }}>
               {analytics.total_submissions}
             </div>
             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Total Submissions</div>
           </div>
           {analytics.completion_rate != null && (
             <div style={{
-              padding: '16px', borderRadius: 8, background: 'var(--bg-elevated)',
+              padding: '16px', borderRadius: 'var(--radius, 8px)', background: 'var(--bg-surface)',
               border: '1px solid var(--border)', textAlign: 'center',
             }}>
-              <div style={{ fontSize: '2rem', fontWeight: 700, color: 'var(--accent)' }}>
+              <div style={{ fontSize: '2rem', fontWeight: 700, color: 'var(--accent-primary)' }}>
                 {(analytics.completion_rate * 100).toFixed(1)}%
               </div>
               <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Completion Rate</div>
@@ -494,7 +559,7 @@ export default function FormsPanel({ apiBase = '/api/forms' }: FormsPanelProps) 
             <div
               key={field}
               style={{
-                padding: '16px', borderRadius: 8, background: 'var(--bg-elevated)',
+                padding: '16px', borderRadius: 'var(--radius, 8px)', background: 'var(--bg-surface)',
                 border: '1px solid var(--border)',
               }}
             >

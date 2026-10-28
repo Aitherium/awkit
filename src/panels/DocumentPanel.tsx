@@ -111,6 +111,32 @@ function storeProject(project: string) {
 /** A project or tag name as the backend stores it: whitespace collapsed, capped. */
 export const cleanLabel = (v: string, max = 120) => v.split(/\s+/).filter(Boolean).join(' ').slice(0, max)
 
+/** Longest folder path the backend stores (documents.MAX_PROJECT_LEN). */
+const MAX_FOLDER_PATH = 240
+
+/** A folder path as the backend stores it: each "/" segment whitespace-collapsed,
+ *  empty segments dropped (" A / /B " -> "A/B"). A name without "/" is cleanLabel's. */
+export const cleanFolderPath = (v: string) =>
+  v.split('/').map(s => cleanLabel(s, MAX_FOLDER_PATH)).filter(Boolean).join('/').slice(0, MAX_FOLDER_PATH).replace(/[/ ]+$/, '')
+
+/** One folder of GET /api/documents/folders (document_folders backends). */
+export interface FolderInfo {
+  path: string
+  name: string
+  parent: string | null
+  depth: number
+  /** Documents directly inside; total_count includes every subfolder. */
+  doc_count: number
+  total_count: number
+}
+
+/** The folder a path sits in ("" at the top). */
+export const parentFolder = (path: string) => (path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '')
+
+/** True when ``project`` is ``folder`` or inside it. */
+export const inFolder = (project: string | null | undefined, folder: string) =>
+  !!project && (project === folder || project.startsWith(`${folder}/`))
+
 /** Ask a versions-capable backend to ingest in the background (202 + job). */
 export const wantsBackgroundIngest = (file: File) =>
   isMediaUpload(file.name) || fileExt(file.name) === '.pdf' || file.size > BACKGROUND_INGEST_BYTES
@@ -334,11 +360,13 @@ export default function DocumentPanel() {
   // ... and the zip such a file came out of, so Replace / Keep both keeps its provenance.
   const dupeArchives = useRef(new Map<string, string>())
   const projectRef = useRef('')
-  projectRef.current = cleanLabel(project)
+  projectRef.current = cleanFolderPath(project)
   const setProject = (value: string) => {
     setProjectState(value)
-    storeProject(cleanLabel(value))
+    storeProject(cleanFolderPath(value))
   }
+  // Folder tree (document_folders backends): nested project paths + empty folders.
+  const [folders, setFolders] = useState<FolderInfo[]>([])
 
   // The accept list and hint come from the backend's /api/config/embed when it is
   // a real extension allowlist (a pack that publishes it); other tenants keep the legacy list and
@@ -351,6 +379,9 @@ export default function DocumentPanel() {
   const supports = documentFeatures(config.features, config.loaded)
   const supportsRef = useRef(supports)
   supportsRef.current = supports
+  // Kept out of documentFeatures (its shape is pinned by other tests): the folder
+  // tree, nested paths, folder rename / tag / delete (/api/documents/folders).
+  const foldersOn = config.loaded && !!config.features?.includes('document_folders')
   const limits = uploadLimits(config)
   const limitsRef = useRef(limits)
   limitsRef.current = limits
@@ -442,6 +473,77 @@ export default function DocumentPanel() {
   }
 
   useEffect(() => { fetchDocs() }, [])
+
+  const fetchFolders = async () => {
+    try {
+      const r = await fetch(`${getApiBase()}/api/documents/folders`)
+      if (!r.ok) return
+      const data = await r.json()
+      setFolders(Array.isArray(data?.folders) ? data.folders : [])
+    } catch { /* the tree keeps its last state; the list still works */ }
+  }
+
+  // Every change to the list (upload, move, tag, rename) can change the tree.
+  useEffect(() => { if (foldersOn) fetchFolders() }, [foldersOn, docs])
+
+  /** POST/DELETE one folder route; the error line names the action on failure. */
+  const folderCall = async (what: string, method: string, path: string, body?: unknown) => {
+    setActionError(null)
+    try {
+      const resp = await fetch(`${getApiBase()}/api/documents/folders${path}`, {
+        method, ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+      })
+      if (!resp.ok) {
+        setActionError(`Could not ${what}: ${await errorDetail(resp, 'Request failed')}`)
+        return null
+      }
+      const data = await resp.json()
+      const failed: { filename?: string; detail?: string }[] = data?.failed || []
+      if (failed.length > 0) setActionError(`Not updated: ${failed.map(f => `${f.filename}: ${f.detail}`).join('; ')}`)
+      return data
+    } catch (e) {
+      setActionError(`Could not ${what}: ${(e as Error)?.message || 'network error'}`)
+      return null
+    }
+  }
+
+  /** New folder inside ``parent`` ("" = top level); opens it as the upload target. */
+  const createFolder = async (parent: string, name: string) => {
+    const path = cleanFolderPath(parent ? `${parent}/${name}` : name)
+    if (!path) return
+    const data = await folderCall('create the folder', 'POST', '', { path })
+    if (!data) return
+    await fetchFolders()
+    chooseProjectFilter(data.path || path)
+  }
+
+  /** Rename a folder (its last segment); every subfolder and document follows. */
+  const renameFolder = async (path: string, name: string) => {
+    const parent = parentFolder(path)
+    const newPath = cleanFolderPath(parent ? `${parent}/${name}` : name)
+    if (!newPath || newPath === path) return
+    const data = await folderCall('rename the folder', 'POST', '/rename', { path, new_path: newPath })
+    if (!data) return
+    const remap = (p: string) => (inFolder(p, path) ? newPath + p.slice(path.length) : p)
+    if (projectFilter) setProjectFilter(remap(projectFilter))
+    if (inFolder(projectRef.current, path)) setProject(remap(projectRef.current))
+    applyLabels(data.updated || [])
+    await fetchFolders()
+  }
+
+  /** Add a tag to every document in a folder and its subfolders. */
+  const tagFolder = async (path: string, tag: string) => {
+    const data = await folderCall('tag the folder', 'POST', '/tags', { path, add_tags: [tag], recursive: true })
+    if (data) applyLabels(data.updated || [])
+  }
+
+  /** Delete an empty folder (the backend refuses one holding documents). */
+  const deleteFolder = async (path: string) => {
+    const data = await folderCall('delete the folder', 'DELETE', `?path=${encodeURIComponent(path)}`)
+    if (!data) return
+    if (projectFilter && inFolder(projectFilter, path)) setProjectFilter(null)
+    await fetchFolders()
+  }
 
   // A sign-in (or the desk handing this frame its bearer) after the first load
   // must clear "Authentication required" -- before this the error never went
@@ -887,7 +989,10 @@ export default function DocumentPanel() {
     }
   }
 
-  const projects = projectsOf(docs)
+  // With folders, every folder (empty ones too) is a move / upload target.
+  const projects = foldersOn
+    ? Array.from(new Set([...folders.map(f => f.path), ...projectsOf(docs)])).sort()
+    : projectsOf(docs)
   const tags = tagsOf(docs)
   const shownDocs = docs.filter(d =>
     (!projectFilter || d.project === projectFilter)
@@ -1075,6 +1180,14 @@ export default function DocumentPanel() {
               ))}
             </div>
           )}
+          {/* Shown even before the first upload, so folders can be laid out first. */}
+          {foldersOn && (
+            <div style={{ marginBottom: '0.35rem' }}>
+              <FolderTree folders={folders} selected={projectFilter} total={docs.length}
+                canEdit={supports.edit} onSelect={chooseProjectFilter}
+                onCreate={createFolder} onRename={renameFolder} onTag={tagFolder} onDelete={deleteFolder} />
+            </div>
+          )}
           {docs.length === 0 && !batchJob && shownUploads.length === 0 ? (
             <div className="empty-state" style={{ padding: '2rem 0', textAlign: 'center' }}>
               <h3 style={{ fontSize: '0.9rem', margin: '0 0 0.3rem' }}>No documents yet</h3>
@@ -1082,7 +1195,7 @@ export default function DocumentPanel() {
             </div>
           ) : (
             <div style={{ display: 'grid', gap: '0.35rem' }}>
-              {projects.length > 0 && (
+              {!foldersOn && projects.length > 0 && (
                 <div data-testid="document-project-filter" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
                   {[null, ...projects].map(p => (
                     <button key={p ?? '__all'} aria-pressed={projectFilter === p} onClick={() => chooseProjectFilter(p)} style={{
@@ -1404,7 +1517,7 @@ export function ProjectPicker({
   const [draft, setDraft] = useState('')
   const options = Array.from(new Set([...projects, ...(value ? [value] : [])])).sort()
   const commitDraft = () => {
-    const name = cleanLabel(draft)
+    const name = cleanFolderPath(draft)  // "Yard/Scripts" = a nested folder
     if (!name) return
     onCommit(name)
     setDraft('')
@@ -1415,7 +1528,7 @@ export function ProjectPicker({
     return (
       <span style={{ display: 'flex', gap: '0.3rem', alignItems: 'center', flex: 1, minWidth: 0 }}>
         <input data-testid={inputTestId} value={live ? value : draft}
-          maxLength={120} placeholder={placeholder}
+          maxLength={MAX_FOLDER_PATH} placeholder={placeholder}
           onChange={e => (live ? onCommit(e.target.value) : setDraft(e.target.value))}
           onKeyDown={e => {
             if (e.key === 'Enter' && !live) commitDraft()
@@ -1518,6 +1631,124 @@ function BulkBar({ count, allSelected, projects, onToggleAll, onMove, onTag, onC
         <button data-testid="document-bulk-tag-add" onClick={addTag} style={smallButton}>Tag</button>
         <button onClick={onClear} style={smallButton}>Clear</button>
       </>)}
+    </div>
+  )
+}
+
+interface FolderTreeProps {
+  folders: readonly FolderInfo[]
+  /** The open folder (exact path) or null = all documents. */
+  selected: string | null
+  /** Every document's count, for the "All documents" row. */
+  total: number
+  canEdit: boolean
+  onSelect: (path: string | null) => void
+  /** New folder ``name`` inside ``parent`` ("" = top level). */
+  onCreate: (parent: string, name: string) => void
+  onRename: (path: string, name: string) => void
+  onTag: (path: string, tag: string) => void
+  onDelete: (path: string) => void
+}
+
+type FolderAction = 'new' | 'rename' | 'tag'
+
+/** File-explorer folder tree (customer ask 2026-10-28): nested folders, click to
+ *  open, New folder inside the open one, Rename, Tag every document inside. */
+export function FolderTree({
+  folders, selected, total, canEdit, onSelect, onCreate, onRename, onTag, onDelete,
+}: FolderTreeProps) {
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
+  const [action, setAction] = useState<FolderAction | null>(null)
+  const [draft, setDraft] = useState('')
+  const current = selected ? folders.find(f => f.path === selected) : undefined
+  const hasChildren = new Set(folders.map(f => f.parent).filter((p): p is string => !!p))
+  // A folder is hidden while any folder above it is collapsed.
+  const visible = folders.filter(f => !Array.from(collapsed).some(c => f.path.startsWith(`${c}/`)))
+
+  const start = (a: FolderAction) => {
+    setAction(prev => (prev === a ? null : a))
+    setDraft(a === 'rename' && current ? current.name : '')
+  }
+  const submit = () => {
+    const value = action === 'tag' ? cleanLabel(draft, 40) : cleanFolderPath(draft)
+    if (!value || !action) return
+    if (action === 'new') onCreate(selected || '', value)
+    else if (action === 'rename' && selected) onRename(selected, value)
+    else if (action === 'tag' && selected) onTag(selected, value)
+    setAction(null)
+    setDraft('')
+  }
+  const toggle = (path: string) => setCollapsed(prev => {
+    const next = new Set(prev)
+    if (next.has(path)) next.delete(path)
+    else next.add(path)
+    return next
+  })
+  const placeholder = action === 'new'
+    ? (current ? `New folder inside ${current.name}` : 'New folder name')
+    : action === 'rename' ? 'New name' : 'Tag for everything inside'
+  const rowStyle = (on: boolean): React.CSSProperties => ({
+    display: 'flex', alignItems: 'center', gap: '0.3rem', width: '100%', textAlign: 'left',
+    padding: '0.15rem 0.4rem', borderRadius: 4, fontSize: '0.72rem', cursor: 'pointer', border: 'none',
+    background: on ? 'var(--accent-primary, #3b82f6)' : 'transparent',
+    color: on ? '#fff' : 'var(--text-secondary, #aaa)',
+  })
+
+  return (
+    <div data-testid="document-folder-tree" style={{ border: '1px solid var(--glass-border, #333)',
+      borderRadius: 'var(--radius, 6px)', background: 'var(--bg-surface, #1a1a2e)', padding: '0.4rem' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.3rem', marginBottom: '0.3rem' }}>
+        <span style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary, #aaa)', marginRight: 'auto' }}>Folders</span>
+        {canEdit && (<>
+          <button data-testid="folder-new" onClick={() => start('new')} style={smallButton}>New folder</button>
+          {current && <button data-testid="folder-rename" onClick={() => start('rename')} style={smallButton}>Rename</button>}
+          {current && current.total_count > 0 && (
+            <button data-testid="folder-tag" onClick={() => start('tag')} style={smallButton}>Tag folder</button>
+          )}
+          {current && current.total_count === 0 && (
+            <button data-testid="folder-delete" onClick={() => onDelete(current.path)} style={smallButton}>Delete</button>
+          )}
+        </>)}
+      </div>
+      {action && (
+        <div style={{ display: 'flex', gap: '0.3rem', marginBottom: '0.3rem' }}>
+          <input data-testid="folder-input" value={draft} autoFocus placeholder={placeholder}
+            maxLength={action === 'tag' ? 40 : MAX_FOLDER_PATH}
+            onChange={e => setDraft(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') submit()
+              if (e.key === 'Escape') setAction(null)
+            }}
+            style={{ ...pickerStyle, flex: 1 }} />
+          <button data-testid="folder-input-ok" onClick={submit} style={smallButton}>
+            {action === 'new' ? 'Create' : action === 'rename' ? 'Rename' : 'Apply'}
+          </button>
+          <button onClick={() => setAction(null)} style={smallButton}>Cancel</button>
+        </div>
+      )}
+      <div role="tree" style={{ display: 'grid', gap: '0.05rem', maxHeight: '14rem', overflowY: 'auto' }}>
+        <button role="treeitem" data-testid="folder-row-all" aria-selected={selected === null}
+          onClick={() => onSelect(null)} style={rowStyle(selected === null)}>
+          <span style={{ flex: 1 }}>All documents</span>
+          <span style={{ fontSize: '0.62rem', opacity: 0.8 }}>{total}</span>
+        </button>
+        {visible.map(f => (
+          <div key={f.path} style={{ display: 'flex', alignItems: 'center', paddingLeft: `${f.depth * 0.9}rem` }}>
+            <button aria-label={`${collapsed.has(f.path) ? 'Expand' : 'Collapse'} ${f.name}`}
+              onClick={() => toggle(f.path)} disabled={!hasChildren.has(f.path)}
+              style={{ width: '1rem', flexShrink: 0, padding: 0, border: 'none', background: 'transparent',
+                color: 'var(--text-muted, #888)', fontSize: '0.6rem', cursor: hasChildren.has(f.path) ? 'pointer' : 'default',
+                visibility: hasChildren.has(f.path) ? 'visible' : 'hidden' }}>
+              {collapsed.has(f.path) ? '▸' : '▾'}
+            </button>
+            <button role="treeitem" data-testid={`folder-row-${f.path}`} aria-selected={selected === f.path}
+              title={f.path} onClick={() => onSelect(f.path)} style={rowStyle(selected === f.path)}>
+              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📁 {f.name}</span>
+              <span style={{ fontSize: '0.62rem', opacity: 0.8 }}>{f.total_count}</span>
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
