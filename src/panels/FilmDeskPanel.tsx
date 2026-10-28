@@ -18,6 +18,7 @@
  */
 
 import { useCallback, useEffect, useState, type CSSProperties } from 'react'
+import FilmLookStrips from './FilmLookStrips'
 
 export interface FilmDeskPanelProps {
   apiBase?: string
@@ -156,14 +157,20 @@ export default function FilmDeskPanel({ apiBase = '/api' }: FilmDeskPanelProps) 
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <h3 style={{ margin: 0, flex: 1 }}>{manifest.title}</h3>
               {manifest.builder_url && (
-                <a
-                  href={manifest.builder_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{ ...button, textDecoration: 'none' }}
+                <button
+                  style={button}
+                  onClick={() => {
+                    // the host returns the builder URL with the user's sign-in in its
+                    // #fragment; the builder trades it for its own session cookie
+                    getJson<{ url: string }>(
+                      `${base}/projects/${encodeURIComponent(manifest.project)}/builder`,
+                    )
+                      .then((d) => { window.open(d.url, '_blank', 'noopener,noreferrer') })
+                      .catch((e: Error) => setError(e.message))
+                  }}
                 >
                   Build the site
-                </a>
+                </button>
               )}
             </div>
             {film ? (
@@ -210,6 +217,14 @@ export default function FilmDeskPanel({ apiBase = '/api' }: FilmDeskPanelProps) 
                 </div>
               ))}
             </div>
+
+            <FilmLookStrips
+              base={base}
+              project={manifest.project}
+              steps={manifest.shots
+                .map((s) => Number((/^step0*(\d+)$/.exec(s.id) || [])[1] || 0))
+                .filter((n) => n > 0)}
+            />
 
             <div style={card}>
               <div style={{ marginBottom: 8 }}>Change proposals</div>
