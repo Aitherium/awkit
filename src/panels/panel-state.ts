@@ -121,6 +121,7 @@ export const PANEL_STATE_MAP: Record<string, PanelState> = {
   'migration': 'usable',
   'model-browser': 'usable',
   'my-hardware': 'usable',
+  'film-desk': 'usable',
   'my-packs': 'usable',
   'nanobrain': 'usable',
   'notebooks': 'usable',

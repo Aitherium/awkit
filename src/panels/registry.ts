@@ -712,6 +712,16 @@ export const PANEL_REGISTRY: PanelMeta[] = [
     apiPrefix: '/api/studio',
   },
   {
+    id: 'film-desk',
+    name: 'Film Desk',
+    description: 'Film projects of this workspace in Media Forge: watch, browse shots, ask Iris for a change (owner approves)',
+    category: 'creative',
+    icon: 'clapperboard',
+    apiPrefix: '/api/film',
+    requiresBackend: ['film.py'],
+    tenantIsolated: true,
+  },
+  {
     id: 'iris',
     name: 'Iris',
     description: 'Visual artisan: brief -> planned pipeline -> critique -> refine, through /api/iris/* to the Iris agent',

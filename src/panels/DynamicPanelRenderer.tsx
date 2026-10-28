@@ -58,6 +58,7 @@ import PeoplePanel from './PeoplePanel'
 // resolved to nothing and the panel rendered nothing. Same phantom shape as
 // `company-room`, which was removed for exactly this reason. Asserted by RB003.
 import MyHardwarePanel from './MyHardwarePanel'
+import FilmDeskPanel from './FilmDeskPanel'
 import ApprovalQueue from './ApprovalQueue'
 import BatchUploadPanel from './BatchUploadPanel'
 import RequestsPanel from './RequestsPanel'
@@ -231,6 +232,7 @@ export const PANEL_COMPONENTS: Record<string, PanelEntry> = {
   'poll':                { component: PollPanel },
   'people':              { component: PeoplePanel },
   'my-hardware':         { component: MyHardwarePanel },
+  'film-desk':           { component: FilmDeskPanel },
   'approval-queue':      { component: ApprovalQueue },
   'batch-upload':        { component: BatchUploadPanel },
   'requests':            { component: RequestsPanel },
