@@ -447,6 +447,11 @@ export default function ChatPanel({ conversationId, onNewConversation, externalI
   // history reload — the in-memory messages are already complete (with thinking,
   // tool_calls, etc.) and the DB persist may still be in flight.
   const skipHistoryReload = useRef(false)
+  // A turn in flight, held in a REF not state: setLoading(true) only takes effect on
+  // the next render, so two Enter presses in one render cycle both passed the old
+  // `if (loading) return` and started two turns -- the customer saw the same answer
+  // twice (Jason, 2026-10-27, "2+2" answered twice). A ref flips synchronously.
+  const sendingRef = useRef(false)
 
   // rAF-throttled stream state flushing — coalesces per-token updates to ~60fps
   const rafRef = useRef<number>(0)
@@ -1020,7 +1025,9 @@ export default function ChatPanel({ conversationId, onNewConversation, externalI
       setMessages(prev => prev.filter(m => !(m.role === 'user' && m.steering && m.content === userMsg)))
     }
 
-    if (loading) return
+    // Claim the turn synchronously; a second caller in the same tick is refused.
+    if (loading || sendingRef.current) return
+    sendingRef.current = true
     setInput('')
     setLastFailedInput('')
     setMessages(prev => [...prev, { role: 'user', content: userMsg }])
@@ -1033,6 +1040,7 @@ export default function ChatPanel({ conversationId, onNewConversation, externalI
         await sendNativeStream(userMsg)
       }
     } finally {
+      sendingRef.current = false
       setLoading(false)
     }
   }
