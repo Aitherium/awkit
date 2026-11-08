@@ -24,6 +24,8 @@ Point it at one MCP tool result and get a panel you can put in your own page.
 ## Where it lives
 
 - Repo: https://github.com/Aitherium/awkit
+- Docs: https://aitherium.github.io/awkit/
+- Manifest (keys + the one-line adoption story): https://aitherium.github.io/awkit/aither-manifest.json
 
 This repository is mirrored from the AitherOS monorepo by `.github/workflows/sync-awkit.yml`; hand edits made here are overwritten on the next sync — change the source instead.
 
