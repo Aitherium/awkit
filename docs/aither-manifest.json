@@ -1,0 +1,27 @@
+{
+  "schemaVersion": "1",
+  "name": "awkit",
+  "description": "Render an agent panel from a tool result — one component, any React app.",
+  "url": "https://aitherium.github.io/awkit/",
+  "repository": "https://github.com/Aitherium/awkit",
+  "kind": "tool",
+  "status": "no-pages",
+  "adopt": "Point it at one MCP tool result and get a panel you can put in your own page.",
+  "pairs_with": [
+    "awdk",
+    "awnode",
+    "awiam",
+    "awbeads"
+  ],
+  "includes": [],
+  "metrics": {
+    "files": {
+      "value": 625,
+      "as_of": "2026-11-08T15:13:38Z"
+    },
+    "tests": {
+      "value": 0,
+      "as_of": "2026-11-08T15:13:38Z"
+    }
+  }
+}
