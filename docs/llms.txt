@@ -1,0 +1,30 @@
+# awkit
+
+> Render an agent panel from a tool result — one component, any React app.
+
+Every agent surface re-implements the same panel by hand, so each one rots separately: a catalogue lists an app the renderer cannot draw, a tab is declared with an id no component answers to, and nothing compares the two. Measured 2026-08-19 on ONE tenant: 18 apps listed and 0 deployed, and 2 of 6 declared panels were ids with no component — they rendered NOTHING, with no error, no boundary and no log line, which is indistinguishable from a feature nobody wanted.
+
+## Install
+
+```
+git clone https://github.com/Aitherium/awkit
+```
+
+## Use it in 30 seconds
+
+Point it at one MCP tool result and get a panel you can put in your own page.
+
+## Composes with
+
+- [awdk](https://aitherium.github.io/awdk/) — Build AI agent fleets — 3 lines, any backend, local or cloud.
+- [awnode](https://aitherium.github.io/awnode/) — A lightweight local gateway — bridges your apps to the AI backends you chose.
+- [awiam](https://aitherium.github.io/awiam/) — Who is this caller? A directory and session store that fails honestly.
+- [awbeads](https://aitherium.github.io/awbeads/) — A spatial canvas for a page — arrange things, connect them, and keep the arrangement.
+
+## Where it lives
+
+- Repo: https://github.com/Aitherium/awkit
+
+This repository is mirrored from the AitherOS monorepo by `.github/workflows/sync-awkit.yml`; hand edits made here are overwritten on the next sync — change the source instead.
+
+Everything Aitherium, in one file for agents: https://aitherium.com/llms.txt
