@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { installTelemetry, captureDebugBundle } from '../lib/telemetry'
 import { getApiBase } from '../lib/apiBase'
 import { relayWsUrl as buildRelayWsUrl } from '../lib/relayWsUrl'
+import { friendlyHttpError, friendlyThrown } from '../lib/friendlyError'
 
 /**
  * SupportWidget — Floating chat bubble + quick-action support widget.
@@ -174,13 +175,13 @@ export default function SupportWidget({
     setTickets(null)
     setTicketsError(null)
     fetch(`${apiBase}/api/support/tickets`)
-      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
+      .then(r => { if (!r.ok) throw new Error(friendlyHttpError(r.status, { action: 'load your tickets' })); return r.json() })
       .then(d => {
         const list = Array.isArray(d) ? d : d?.tickets
         if (Array.isArray(list)) setTickets(list)
-        else throw new Error(d?.error || 'unexpected response')
+        else throw new Error(friendlyThrown(new SyntaxError('unreadable'), { action: 'load your tickets' }))
       })
-      .catch(e => setTicketsError(String(e?.message || e)))
+      .catch(e => setTicketsError(friendlyThrown(e, { action: 'load your tickets' })))
   }, [view, apiBase])
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [chatMsgs])
@@ -227,7 +228,7 @@ export default function SupportWidget({
       throw new Error(
         res.status === 401 || res.status === 403
           ? 'Please sign in first — your report needs an account to attach to.'
-          : `Could not send your report (HTTP ${res.status}).`
+          : friendlyHttpError(res.status, { action: 'send your report' })
       )
     }
   }
@@ -430,7 +431,7 @@ export default function SupportWidget({
             {ticketsError && (
               <div style={{ textAlign: 'center', padding: '1rem' }}>
                 <div style={{ fontSize: '0.8rem', color: 'var(--text-muted, #888)', marginBottom: '0.75rem' }}>
-                  Couldn't load your tickets ({ticketsError}).
+                  {ticketsError}
                 </div>
                 <button onClick={() => setView('menu')} style={btnStyle(false)}>Back</button>
               </div>

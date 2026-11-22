@@ -137,7 +137,7 @@ export interface UpdateStatus {
 
 // ── components ─────────────────────────────────────────────────────────────
 
-export type ComponentKind = 'pypi' | 'git' | 'container' | 'pack' | 'baked'
+export type ComponentKind = 'pypi' | 'git' | 'container' | 'pack' | 'baked' | 'bundle'
 
 export type ComponentResultState =
   | 'baked'
@@ -156,6 +156,27 @@ export interface ComponentResult {
   previous_pin: string | null
   reason: string
   log_tail: string
+  /** A background op (component-install-start / component-remove-start) on this row. */
+  progress?: ComponentProgress | null
+  /** A bundle that publishes local service URLs for the app (memory-stack). */
+  endpoints?: Record<string, string> | null
+  /** A bundle's member ids, in install order. */
+  requires?: string[]
+}
+
+/** Written by awnix-component while a background op runs, and kept after it ends. */
+export interface ComponentProgress {
+  op: 'install' | 'remove'
+  step: number
+  steps: number
+  current: string
+  /** Plain words for a person: "Starting vector memory". */
+  message: string
+  updated_at: string
+  done: boolean
+  ok: boolean | null
+  /** Plain words; set when done && ok === false. */
+  error: string
 }
 
 export interface ComponentsResult {
@@ -298,6 +319,8 @@ export type ActionVerb =
   | 'component-install'
   | 'component-remove'
   | 'component-rollback'
+  | 'component-install-start'
+  | 'component-remove-start'
   | 'endpoints-probe'
   | 'setup-rerun'
   | 'mesh-join'
@@ -317,6 +340,9 @@ export interface ActionBodies {
   'component-install': { id: string }
   'component-remove': { id: string }
   'component-rollback': { id: string }
+  /** Same as component-install, run in the background; progress lands on the row. */
+  'component-install-start': { id: string }
+  'component-remove-start': { id: string }
   'endpoints-probe': Record<string, never>
   'setup-rerun': Record<string, never>
   /** The enroll token goes to the CLI on stdin (`awnix mesh join -`), never argv. */

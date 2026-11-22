@@ -70,6 +70,10 @@
       "types": "./src/panels/AcademyMirrorCard.tsx",
       "import": "./src/panels/AcademyMirrorCard.tsx"
     },
+    "./panels/LessonsCard": {
+      "types": "./src/panels/LessonsCard.tsx",
+      "import": "./src/panels/LessonsCard.tsx"
+    },
     "./panels/AcademyAnalyticsPanel": {
       "types": "./src/panels/AcademyAnalyticsPanel.tsx",
       "import": "./src/panels/AcademyAnalyticsPanel.tsx"
@@ -159,6 +163,10 @@
       "import": "./src/auth/index.ts"
     },
     "./auth/signin.css": "./src/auth/signin.css",
+    "./auth/return-url": {
+      "types": "./src/auth/return-url.ts",
+      "import": "./src/auth/return-url.ts"
+    },
     "./ui": {
       "types": "./src/ui/index.ts",
       "import": "./src/ui/index.ts"
@@ -256,6 +264,10 @@
         "import": "./dist/auth/index.js"
       },
       "./auth/signin.css": "./dist/auth/signin.css",
+      "./auth/return-url": {
+        "types": "./dist/auth/return-url.d.ts",
+        "import": "./dist/auth/return-url.js"
+      },
       "./ui": {
         "types": "./dist/ui/index.d.ts",
         "import": "./dist/ui/index.js"
@@ -353,6 +365,10 @@
       "./panels/AcademyMirrorCard": {
         "types": "./dist/panels/AcademyMirrorCard.d.ts",
         "import": "./dist/panels/AcademyMirrorCard.js"
+      },
+      "./panels/LessonsCard": {
+        "types": "./dist/panels/LessonsCard.d.ts",
+        "import": "./dist/panels/LessonsCard.js"
       },
       "./panels/AcademyAnalyticsPanel": {
         "types": "./dist/panels/AcademyAnalyticsPanel.d.ts",
@@ -460,6 +476,8 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json && node copy-assets.mjs && npm run build:worker && npm run build:embed-worker",
+    "gen:elements": "node scripts/gen-elements.mjs",
+    "check:elements": "node scripts/gen-elements.mjs --check",
     "pack:dist": "npm run build && npm pack"
   },
   "dependencies": {

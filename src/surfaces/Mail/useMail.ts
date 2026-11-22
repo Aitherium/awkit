@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { friendlyThrown } from '../../lib/friendlyError'
 
 export interface MailMessage {
   id: string
@@ -63,8 +64,7 @@ export function useMail(endpoint = '/api/platform/email/inbox'): UseMailState {
 
       setMessages(data.messages)
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error'
-      setError(`Could not reach the mail service: ${message}`)
+      setError(friendlyThrown(err, { action: 'load your mail' }))
       setMessages([])
     } finally {
       setLoading(false)

@@ -612,6 +612,22 @@ export const PANEL_REGISTRY: PanelMeta[] = [
     apiPrefix: '/api/landing',
     requiresBackend: ['landing.py'],
   },
+  {
+    // .PRODUCTS/.AGENTIC-WEB -- "Make my site agent-ready". The API is Veil's
+    // /api/agentic-web/[action] route proxying the awdk agentic_web MCP tools
+    // (no awkit-backend router, nothing new in Genesis). Publishing to the
+    // customer's domain needs an approved customer_domain_publish decision card.
+    id: 'agentic-web',
+    name: 'Agent-Ready Site',
+    description: 'Scan a domain for the agentic-web checks, preview every well-known file and DNS-AID record, publish after owner approval',
+    category: 'commerce',
+    icon: 'globe',
+    apiPrefix: '/api/agentic-web',
+    planRequirement: 'pro',
+    domain: 'commerce',
+    tiers: ['tenant'],
+    tenantIsolated: true,
+  },
 
   // ── Analytics ─────────────────────────────────────────────────────
   {
@@ -719,6 +735,16 @@ export const PANEL_REGISTRY: PanelMeta[] = [
     icon: 'clapperboard',
     apiPrefix: '/api/film',
     requiresBackend: ['film.py'],
+    tenantIsolated: true,
+  },
+  {
+    id: 'certtrack',
+    name: 'CertTrack',
+    description: 'Engineer certifications read from the workspace documents: expiring, expired, by employee (admin)',
+    category: 'business',
+    icon: 'badge-check',
+    apiPrefix: '/api/certtrack',
+    requiresBackend: ['certtrack.py'],
     tenantIsolated: true,
   },
   {
@@ -1042,6 +1068,21 @@ export const PANEL_REGISTRY: PanelMeta[] = [
     defaultEnabled: false,
   },
   {
+    id: 'neuralnet',
+    name: 'NeuralNet',
+    description:
+      'Every service on its L0-L12 layer as one BeadSpace field, sized by dependents and coloured by live health; Pulse, Chronicle, Watch and Flux traffic light it as it happens',
+    category: 'intelligence',
+    icon: 'brain-circuit',
+    /*
+     * Reads /stack?view=graph (services/yaml when Registry is down), /services/health,
+     * /universe/stream and /logs -- all existing operator routes in AitherVeil; restart is
+     * the existing /services/restart. No backend of its own, so no requiresBackend.
+     */
+    apiPrefix: '/api/stack',
+    defaultEnabled: false,
+  },
+  {
     id: 'escalations',
     name: 'Escalations',
     description: 'Human-in-the-loop approval queue — review and resolve agent escalation requests',
@@ -1310,6 +1351,17 @@ export const PANEL_REGISTRY: PanelMeta[] = [
     // the authenticated caller server-side (.PRODUCTS/.ERASE layer 5).
     apiPrefix: '/api/v1/aither-erase',
     tenantIsolated: true,
+  },
+  {
+    id: 'element-gallery',
+    name: 'Elements',
+    description: 'Copy-ready UI elements — buttons, toggles, loaders, cards and more, each rendered live with its source one click away',
+    category: 'utility',
+    icon: 'layout-grid',
+    // Original Aitherium designs live in src/elements/<category>/*.tsx and are
+    // paired into src/elements/registry.generated.ts by `npm run gen:elements`.
+    planRequirement: 'free',
+    state: 'usable',
   },
   {
     id: 'model-browser',

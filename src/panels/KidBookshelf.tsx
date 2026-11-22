@@ -16,10 +16,22 @@
  *   voice is off or down, it follows a gentle reading-pace estimate so the child can read
  *   along silently. Speech is a nicety: every failure is silence, never an error on screen.
  * - Only named, expected fields of a server reply are ever rendered.
+ *
+ * Songs (the shelf's `songs`, placed by a grown-up like the books): one card per song with
+ * ONE big play/pause, over a single shared audio element, so only one song is ever heard.
+ * A song ends and stops: nothing plays next by itself and there is no feed. The read-aloud
+ * voice is stopped while a song plays. Five songs show, then "+N more". A server that sends
+ * no songs draws no songs section at all. The audio is fetched with the host's headers and
+ * played from memory, so it works where the session is a bearer and not a cookie, and a
+ * song the server refuses (not on the shelf, file missing) is silence, never an error.
+ * The audio element is started INSIDE the tap (on a moment of silence while the song
+ * downloads, or on the song itself when it is already here), because a phone refuses a
+ * play() that arrives after the tap is over. If the browser refuses anyway, the card glows
+ * and asks for one more tap, and that tap plays at once.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { C, EASE, FONT_UI, LEARN_CSS } from './learnTheme'
-import { createLearnVoice, type LearnSpeak, type SpeakingSource } from './learnVoice'
+import { createLearnVoice, playRefused, unlockAudio, type LearnSpeak, type SpeakingSource } from './learnVoice'
 
 export interface KidBookshelfProps {
   /** Base of the tutor proxy, e.g. '/api/tutor'. */
@@ -32,9 +44,14 @@ export interface KidBookshelfProps {
   onFinished?: (bookId: string) => void
   /** Test seam / host override: build the voice. Default: the Learn voice for apiBase. */
   makeVoice?: (onSpeaking: (src: SpeakingSource) => void) => LearnSpeak
+  /** Draw the songs above the books (the Hearth "Songs" tile opens the shelf this way). */
+  songsFirst?: boolean
+  /** Test seam: build the ONE audio element every song plays through. */
+  makeAudio?: () => HTMLAudioElement
 }
 
 export interface ShelfBook { id: string; kind: string; title: string; art: string; pages: number; page: number; finished: boolean }
+export interface ShelfSong { id: string; title: string; seconds: number; topic: string }
 export interface BookWord { w: string; say: string; start: number; end: number; t: number }
 export interface BookPage { text: string; words: BookWord[] }
 export interface OpenBook { id: string; kind: string; title: string; art: string; page: number; pages: BookPage[]; image?: string }
@@ -51,6 +68,21 @@ export function asShelfBook(raw: unknown): ShelfBook | null {
   return { id, kind: str(o.kind, 'book'), title: str(o.title, 'A book'), art: str(o.art, 'book'),
     pages: num(o.pages), page: num(o.page), finished: o.finished === true }
 }
+
+/** A song id the tutor proxy will carry as one path segment (never a URL, never '..'). */
+const SONG_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/
+
+/** Only the expected fields of one song on the shelf. The server's `audio` path is NOT
+ *  kept: the address is always built here from the id. Exported for tests. */
+export function asShelfSong(raw: unknown): ShelfSong | null {
+  const o = obj(raw)
+  const id = str(o.id)
+  if (o.kind !== 'song' || !SONG_ID_RE.test(id)) return null
+  return { id, title: str(o.title, 'A song').slice(0, 80), seconds: Math.max(0, num(o.seconds)), topic: str(o.topic, 'music') }
+}
+
+/** How many songs show before "+N more" (the rest are kept and revealed, never dropped). */
+export const SONGS_SHOWN = 5
 
 /** Only the expected fields of an opened book; a data: image only (never a remote URL). */
 export function asOpenBook(raw: unknown): OpenBook | null {
@@ -130,6 +162,58 @@ export function CoverArt({ art, size = 120 }: { art: string; size?: number }) {
   )
 }
 
+// --------------------------------------------------------------------------- songs
+
+const SONG_TINT: Record<string, [string, string]> = {
+  counting: ['#06D6A0', '#118AB2'], alphabet: ['#F25F5C', '#FFE066'], colors: ['#C77DFF', '#FF8FAB'],
+  shapes: ['#3D5A80', '#98C1D9'], animals: ['#F7B267', '#7FB069'], hand_washing: ['#48CAE4', '#0077B6'],
+  tooth_brushing: ['#95D5B2', '#48CAE4'], tidying: ['#FF7B54', '#FFB26B'], bedtime: ['#22223B', '#9A8C98'],
+  name_song: ['#FF8FAB', '#FFD166'], music: ['#5EC9CC', '#1E9EA2'],
+}
+
+/** A picture for a song's topic, so a child who cannot read yet can find their song.
+ *  Shapes only: no text, no emoji, no images. An unknown topic gets a music note. */
+export function SongArt({ topic, size = 84 }: { topic: string; size?: number }) {
+  const ink = '#1d1d2b'
+  const paper = '#fff6e8'
+  const shapes: Record<string, ReactNode> = {
+    counting: <g>{[[32, 34], [50, 34], [68, 34], [41, 54], [59, 54], [50, 72]].map(([x, y]) => <circle key={`${x}-${y}`} cx={x} cy={y} r="7" fill={paper} />)}</g>,
+    alphabet: <g><rect x="22" y="30" width="24" height="24" rx="5" fill={paper} /><rect x="54" y="30" width="24" height="24" rx="5" fill="#ffe066" /><rect x="38" y="56" width="24" height="24" rx="5" fill="#98c1d9" /><path d="M28 48 L34 35 L40 48 M30.5 44 H37.5" stroke={ink} strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round" /></g>,
+    colors: <g><circle cx="40" cy="42" r="15" fill="#e63946" /><circle cx="60" cy="42" r="15" fill="#ffb703" fillOpacity=".9" /><circle cx="50" cy="60" r="15" fill="#219ebc" fillOpacity=".9" /></g>,
+    shapes: <g><circle cx="34" cy="38" r="12" fill="#ffb703" /><rect x="54" y="26" width="24" height="24" rx="3" fill={paper} /><path d="M50 56 L66 80 H34 Z" fill="#e63946" /></g>,
+    animals: <g><ellipse cx="50" cy="58" rx="24" ry="20" fill={paper} /><ellipse cx="30" cy="44" rx="8" ry="14" fill="#8b5e3c" /><ellipse cx="70" cy="44" rx="8" ry="14" fill="#8b5e3c" /><circle cx="42" cy="54" r="3.5" fill={ink} /><circle cx="58" cy="54" r="3.5" fill={ink} /><ellipse cx="50" cy="64" rx="5" ry="3.5" fill={ink} /></g>,
+    hand_washing: <g><path d="M50 22 C62 40 70 50 70 60 A20 20 0 0 1 30 60 C30 50 38 40 50 22 Z" fill={paper} /><circle cx="26" cy="32" r="5" fill="none" stroke="#fff" strokeWidth="2" /><circle cx="76" cy="38" r="3.5" fill="none" stroke="#fff" strokeWidth="2" /></g>,
+    tooth_brushing: <g><path d="M34 30 Q50 22 66 30 Q72 46 64 76 Q58 80 54 60 Q50 54 46 60 Q42 80 36 76 Q28 46 34 30 Z" fill={paper} /><path d="M42 44 Q50 50 58 44" stroke={ink} strokeWidth="2.5" fill="none" strokeLinecap="round" /></g>,
+    tidying: <g><path d="M26 44 H74 L68 78 H32 Z" fill={paper} /><rect x="22" y="38" width="56" height="8" rx="3" fill="#8b5e3c" /><circle cx="42" cy="32" r="8" fill="#e63946" /><rect x="52" y="22" width="14" height="14" rx="2" fill="#ffe066" /></g>,
+    bedtime: <g><path d="M60 22 A28 28 0 1 0 78 62 A22 22 0 0 1 60 22 Z" fill="#fff3b0" /><circle cx="28" cy="28" r="2" fill="#fff" /><circle cx="76" cy="30" r="1.6" fill="#fff" /><circle cx="36" cy="76" r="1.6" fill="#fff" /></g>,
+    name_song: <g><path d="M50 78 C24 60 24 36 38 32 C45 30 50 36 50 40 C50 36 55 30 62 32 C76 36 76 60 50 78 Z" fill={paper} /></g>,
+  }
+  const [a, b] = SONG_TINT[topic] || SONG_TINT.music
+  const gid = `sg-${topic.replace(/[^a-z0-9_]/gi, '')}`
+  return (
+    <svg viewBox="0 0 100 100" width={size} height={size} aria-hidden="true" style={{ display: 'block', flexShrink: 0 }}>
+      <defs>
+        <linearGradient id={gid} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor={a} /><stop offset="1" stopColor={b} />
+        </linearGradient>
+      </defs>
+      <rect x="0" y="0" width="100" height="100" rx="18" fill={`url(#${gid})`} />
+      {shapes[topic] || <g><ellipse cx="40" cy="70" rx="10" ry="8" fill={paper} /><ellipse cx="68" cy="62" rx="10" ry="8" fill={paper} /><path d="M50 70 V30 L78 22 V62" stroke={paper} strokeWidth="5" fill="none" strokeLinejoin="round" /></g>}
+    </svg>
+  )
+}
+
+/** Play or pause, drawn (a glyph would render as an emoji on some phones). */
+function PlayMark({ playing, size = 30 }: { playing: boolean; size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true" fill="currentColor">
+      {playing
+        ? <g><rect x="5" y="4" width="5" height="16" rx="1.5" /><rect x="14" y="4" width="5" height="16" rx="1.5" /></g>
+        : <path d="M7 4.5 V19.5 a1 1 0 0 0 1.5 .86 L20.5 12.86 a1 1 0 0 0 0-1.72 L8.5 3.64 A1 1 0 0 0 7 4.5 Z" />}
+    </svg>
+  )
+}
+
 // --------------------------------------------------------------------------- the panel
 
 const big: CSSProperties = {
@@ -151,7 +235,7 @@ const CSS = `
 @media (prefers-reduced-motion:reduce){.kb-star{animation:none}.kb-word{transition:none}}
 `
 
-export default function KidBookshelf({ apiBase, extraHeaders, onClose, onFinished, makeVoice }: KidBookshelfProps) {
+export default function KidBookshelf({ apiBase, extraHeaders, onClose, onFinished, makeVoice, songsFirst, makeAudio }: KidBookshelfProps) {
   const headersRef = useRef(extraHeaders || {})
   headersRef.current = extraHeaders || {}
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -160,6 +244,18 @@ export default function KidBookshelf({ apiBase, extraHeaders, onClose, onFinishe
     return makeVoice ? makeVoice(onSpeaking) : createLearnVoice(apiBase, () => headersRef.current, { onSpeaking })
   }, [apiBase, makeVoice])
   const [books, setBooks] = useState<ShelfBook[] | null>(null)
+  const [songs, setSongs] = useState<ShelfSong[]>([])
+  const [allSongs, setAllSongs] = useState(false)
+  /** The song that is sounding now (null: silence). */
+  const [playing, setPlaying] = useState<string | null>(null)
+  /** The song being fetched after a tap. */
+  const [fetching, setFetching] = useState<string | null>(null)
+  /** The song that is downloaded but the browser would not start: one more tap plays it. */
+  const [again, setAgain] = useState<string | null>(null)
+  const songEl = useRef<HTMLAudioElement | null>(null)
+  const songLoaded = useRef<string | null>(null)
+  const songUrls = useRef(new Map<string, string>())
+  const songSeq = useRef(0)
   const [view, setView] = useState<View>({ kind: 'shelf' })
   const [lit, setLit] = useState(-1)
   const [busy, setBusy] = useState(false)
@@ -179,8 +275,94 @@ export default function KidBookshelf({ apiBase, extraHeaders, onClose, onFinishe
   const loadShelf = useCallback(async () => {
     const r = await call('/me/shelf')
     const list = (Array.isArray(obj(r.data).books) ? (obj(r.data).books as unknown[]) : []).map(asShelfBook)
-    setBooks(list.filter(Boolean) as ShelfBook[])
+    // A song is never opened as a book, whichever list the server put it in.
+    setBooks((list.filter(Boolean) as ShelfBook[]).filter((b) => b.kind !== 'song'))
+    const tunes = (Array.isArray(obj(r.data).songs) ? (obj(r.data).songs as unknown[]) : []).map(asShelfSong)
+    setSongs(tunes.filter(Boolean) as ShelfSong[])
   }, [call])
+
+  /** Silence the song (a book is opening, or the child tapped pause). */
+  const stopSong = useCallback(() => {
+    songSeq.current += 1
+    try { songEl.current?.pause() } catch { /* already quiet */ }
+    setPlaying(null)
+    setFetching(null)
+    setAgain(null)
+  }, [])
+
+  /** The ONE audio element. A song that ends stops: nothing is queued after it. */
+  const songAudio = useCallback((): HTMLAudioElement | null => {
+    if (songEl.current) return songEl.current
+    if (!makeAudio && typeof Audio === 'undefined') return null
+    const el = makeAudio ? makeAudio() : new Audio()
+    // songLoaded is null while the element holds the tap's moment of silence, not a song.
+    const quiet = () => { if (songLoaded.current) setPlaying(null) }
+    el.addEventListener('ended', () => { if (songLoaded.current) { try { el.currentTime = 0 } catch { /* fine */ } quiet() } })
+    el.addEventListener('error', quiet)
+    songEl.current = el
+    return el
+  }, [makeAudio])
+
+  const songSrc = useCallback(async (id: string): Promise<string | null> => {
+    const hit = songUrls.current.get(id)
+    if (hit) return hit
+    if (typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') return null
+    try {
+      const r = await fetch(`${apiBase}/me/shelf/${encodeURIComponent(id)}/audio`, { headers: { ...headersRef.current } })
+      if (!r.ok || !(r.headers?.get('content-type') || '').startsWith('audio/')) return null
+      const url = URL.createObjectURL(await r.blob())
+      songUrls.current.set(id, url)
+      return url
+    } catch {
+      return null
+    }
+  }, [apiBase])
+
+  /** The one button of a song card: play it, or pause it when it is the one playing. */
+  const toggleSong = useCallback((song: ShelfSong) => {
+    const el = songAudio()
+    if (!el) return
+    if (playing === song.id) { stopSong(); return }
+    const mine = ++songSeq.current
+    try { el.pause() } catch { /* nothing was playing */ }
+    voice.stop?.() // the read-aloud voice never talks over a song
+    setPlaying(null)
+    setAgain(null)
+    const start = async (src: string) => {
+      if (songLoaded.current !== song.id) { el.src = src; songLoaded.current = song.id }
+      setPlaying(song.id)
+      try {
+        await el.play()
+      } catch (err) {
+        if (mine !== songSeq.current) return
+        setPlaying(null)
+        if (playRefused(err)) { setAgain(song.id); voice('Tap one more time to hear your song!') }
+      }
+    }
+    // Everything up to here, and the play() below, runs inside the child's tap.
+    const here = songUrls.current.get(song.id)
+    if (here) { setFetching(null); void start(here); return }
+    songLoaded.current = null
+    unlockAudio(el)
+    setFetching(song.id)
+    void (async () => {
+      const src = await songSrc(song.id)
+      if (mine !== songSeq.current) return
+      setFetching(null)
+      if (!src) {
+        try { el.pause() } catch { /* already quiet */ }
+        voice('That song is resting. Let\'s pick another one!')
+        return
+      }
+      await start(src)
+    })()
+  }, [playing, songAudio, songSrc, stopSong, voice])
+
+  useEffect(() => () => {
+    try { songEl.current?.pause() } catch { /* gone */ }
+    for (const url of songUrls.current.values()) { try { URL.revokeObjectURL(url) } catch { /* gone */ } }
+    songUrls.current.clear()
+  }, [])
 
   useEffect(() => { void loadShelf() }, [loadShelf])
   useEffect(() => () => { if (timer.current) clearInterval(timer.current) }, [])
@@ -206,6 +388,7 @@ export default function KidBookshelf({ apiBase, extraHeaders, onClose, onFinishe
 
   const open = async (id: string) => {
     if (busy) return
+    stopSong()
     setBusy(true)
     const r = await call(`/me/shelf/${encodeURIComponent(id)}`)
     setBusy(false)
@@ -288,6 +471,38 @@ export default function KidBookshelf({ apiBase, extraHeaders, onClose, onFinishe
     )
   }
 
+  const shownSongs = allSongs ? songs : songs.slice(0, SONGS_SHOWN)
+  const moreSongs = songs.length - shownSongs.length
+  // No songs from the server (or an older server): no section, no heading, no error.
+  const songSection = books !== null && songs.length > 0 && (
+    <section data-testid="kid-songs" aria-label="My songs" style={{ display: 'grid', gap: 12, margin: songsFirst ? '0 0 24px' : '24px 0 0' }}>
+      <div style={{ font: `800 24px/1.2 ${FONT_UI}` }}>My songs</div>
+      {shownSongs.map((g) => {
+        const on = playing === g.id
+        const tapAgain = again === g.id
+        return (
+          <button type="button" key={g.id} className="kb-book al-focus" data-testid={`kid-song-${g.id}`}
+            aria-label={`${on ? 'Pause' : 'Play'} ${g.title}`} aria-pressed={on} aria-busy={fetching === g.id}
+            data-again={tapAgain ? '1' : '0'} onClick={() => toggleSong(g)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 14, width: '100%', minHeight: 96, padding: 8, cursor: 'pointer',
+              borderRadius: 22, border: `2px solid ${on || tapAgain ? C.accent : C.hairlineStrong}`, background: C.raise, color: C.ink, textAlign: 'left',
+            }}>
+            <SongArt topic={g.topic} />
+            <span style={{ flex: 1, minWidth: 0, font: `700 20px/1.25 ${FONT_UI}`, overflowWrap: 'anywhere' }}>{g.title}</span>
+            <span data-playing={on ? '1' : '0'} className={tapAgain ? 'al-glow' : undefined} style={{ ...big, flexShrink: 0, opacity: fetching === g.id ? 0.55 : 1 }}>
+              <PlayMark playing={on} />
+            </span>
+          </button>
+        )
+      })}
+      {moreSongs > 0 && (
+        <button type="button" data-testid="kid-songs-more" aria-label={`Show ${moreSongs} more songs`} onClick={() => setAllSongs(true)}
+          style={{ ...soft, width: '100%', minHeight: 64, fontSize: 22 }}>+{moreSongs} more</button>
+      )}
+    </section>
+  )
+
   return (
     <div style={root} data-testid="kid-bookshelf">
       <style>{LEARN_CSS + CSS}</style>
@@ -296,7 +511,8 @@ export default function KidBookshelf({ apiBase, extraHeaders, onClose, onFinishe
         <div style={{ font: `800 28px/1.2 ${FONT_UI}` }}>My books</div>
       </div>
       {books === null && <div className="al-skel" style={{ height: 180, borderRadius: 20, background: C.skeleton }} />}
-      {books !== null && books.length === 0 && (
+      {songsFirst && songSection}
+      {books !== null && books.length === 0 && songs.length === 0 && (
         <div data-testid="kid-bookshelf-empty" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, padding: 24, textAlign: 'center' }}>
           <CoverArt art="book" size={110} />
           <div style={{ font: `700 22px/1.4 ${FONT_UI}` }}>Your shelf is waiting for books!</div>
@@ -318,6 +534,7 @@ export default function KidBookshelf({ apiBase, extraHeaders, onClose, onFinishe
           ))}
         </div>
       )}
+      {!songsFirst && songSection}
     </div>
   )
 }

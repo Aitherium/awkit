@@ -15,6 +15,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react'
+import { friendlyThrown, isHumanDetail } from '../../lib/friendlyError'
 
 export interface RoomNote {
   doc_id?: string
@@ -58,7 +59,7 @@ export default function NotesSurface({
         // A refusal is not an empty workspace. Name which one it is.
         const unauth = /auth/i.test(data.error)
         setState(unauth ? 'unauthorized' : 'failed')
-        setDetail(data.error)
+        setDetail(isHumanDetail(data.error) ? data.error : 'Could not load your notes. Try again in a moment.')
         setNotes([])
         return
       }
@@ -66,7 +67,7 @@ export default function NotesSurface({
       setState('ready')
     } catch (err) {
       setState('failed')
-      setDetail(err instanceof Error ? err.message : 'unknown error')
+      setDetail(friendlyThrown(err, { action: 'load your notes' }))
     }
   }, [apiBase])
 
@@ -86,7 +87,7 @@ export default function NotesSurface({
       const data = await r.json().catch(() => ({}))
       if (data?.error) {
         setState('failed')
-        setDetail(String(data.error))
+        setDetail(isHumanDetail(data.error) ? String(data.error) : 'Could not start that note. Try again in a moment.')
       } else {
         setTitle('')
         onCite(`Started a note: ${name}`)
@@ -116,7 +117,7 @@ export default function NotesSurface({
 
         {state === 'failed' && (
           <p className="room-note">
-            Could not reach the room notes{detail ? ` — ${detail}` : ''}. The room is still live.
+            {detail || 'Could not load your notes. Check your connection and try again.'}
           </p>
         )}
 

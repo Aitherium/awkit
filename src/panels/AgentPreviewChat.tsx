@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect } from 'react'
 
 export interface AgentPreviewChatProps {
   apiBase?: string
+  /** @deprecated ignored: the preview is stateless on the host's own model. */
   sessionId?: string
   agentName?: string
   systemPrompt?: string
@@ -14,37 +15,21 @@ interface ChatMessage {
   content: string
 }
 
+/**
+ * Live preview of a draft agent. Each turn POSTs to the HOST app's
+ * `/api/agent-builder/preview/chat` (awkit-backend), which answers with the
+ * workspace's own model -- never the retired Elysium demo-chat endpoints.
+ */
 export default function AgentPreviewChat({
   apiBase = '',
-  sessionId: externalSessionId,
   agentName = 'Agent',
   systemPrompt,
 }: AgentPreviewChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
-  const [sessionId, setSessionId] = useState(externalSessionId || '')
-  const [tokensLeft, setTokensLeft] = useState<number | null>(null)
   const [error, setError] = useState('')
   const messagesRef = useRef<HTMLDivElement>(null)
-
-  // Create demo session on mount
-  useEffect(() => {
-    if (sessionId) return
-    ;(async () => {
-      try {
-        const elysiumBase = apiBase || ''
-        const res = await fetch(`${elysiumBase}/api/v1/demo/session`, { method: 'POST' })
-        if (res.ok) {
-          const data = await res.json()
-          setSessionId(data.session_id)
-          setTokensLeft(data.token_limit)
-        }
-      } catch {
-        setError('Could not create preview session')
-      }
-    })()
-  }, [apiBase, sessionId])
 
   useEffect(() => {
     messagesRef.current?.scrollTo({ top: messagesRef.current.scrollHeight, behavior: 'smooth' })
@@ -52,19 +37,21 @@ export default function AgentPreviewChat({
 
   const send = async () => {
     const text = input.trim()
-    if (!text || loading || !sessionId) return
+    if (!text || loading) return
+    const history = messages
     setInput('')
     setError('')
     setMessages(prev => [...prev, { role: 'user', content: text }])
     setLoading(true)
 
     try {
-      const res = await fetch(`${apiBase}/api/v1/demo/chat`, {
+      const res = await fetch(`${apiBase}/api/agent-builder/preview/chat`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          session_id: sessionId,
           message: text,
+          history,
           ...(systemPrompt ? { system_prompt: systemPrompt } : {}),
         }),
       })
@@ -74,7 +61,6 @@ export default function AgentPreviewChat({
       }
       const data = await res.json()
       setMessages(prev => [...prev, { role: 'assistant', content: data.response || '(no response)' }])
-      if (data.session?.tokens_remaining != null) setTokensLeft(data.session.tokens_remaining)
     } catch (e: any) {
       setError(e.message || 'Chat failed')
     } finally {
@@ -94,11 +80,6 @@ export default function AgentPreviewChat({
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
       }}>
         <span style={{ fontSize: 13, fontWeight: 600 }}>Preview: {agentName}</span>
-        {tokensLeft != null && (
-          <span style={{ fontSize: 10, color: 'var(--text-muted, #666)' }}>
-            {tokensLeft} tokens remaining
-          </span>
-        )}
       </div>
 
       {/* Messages */}
@@ -152,7 +133,7 @@ export default function AgentPreviewChat({
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && send()}
-          disabled={loading || !sessionId}
+          disabled={loading}
           style={{
             flex: 1, padding: '8px 12px',
             background: 'var(--bg-surface, #16162a)',
@@ -163,7 +144,7 @@ export default function AgentPreviewChat({
         />
         <button
           onClick={send}
-          disabled={loading || !input.trim() || !sessionId}
+          disabled={loading || !input.trim()}
           style={{
             padding: '8px 16px', borderRadius: 'var(--radius, 8px)', border: 'none',
             background: 'var(--accent, #5EC9CC)', color: '#fff',

@@ -23,6 +23,7 @@ import {
   agentStatus,
   agoLabel,
   ageLabel,
+  decisionGroups,
   decisionOrder,
   defaultMachine,
   glanceOrder,
@@ -31,9 +32,11 @@ import {
   needsYouCount,
   offersQuickReplies,
   pickerHarnesses,
+  primaryOption,
   safeRemoteUrl,
   tokensText,
   sessionName,
+  skipOption,
   startableMachines,
   type AgentDecision,
   type AgentListResult,
@@ -99,6 +102,91 @@ function Chip({ tone, label }: { tone: AgentTone; label: string }) {
     >
       {label}
     </span>
+  )
+}
+
+/**
+ * "Waiting on you" as a compact list (owner 2026-11-14: 54 cards, each a giant box
+ * with three full-width buttons, was unreadable). One line per card: its title, where
+ * and how old, and ONE primary action. Tapping the line opens the card's other
+ * options in place. Cards are grouped by kind; a group whose cards can be skipped
+ * (shares) gets one "Skip all" -- the only batch action, and it only ever answers
+ * `skip`, so it can never post or approve anything.
+ */
+function DecisionList({ decisions, canAnswer, onAnswer }: {
+  decisions: AgentDecision[]
+  canAnswer: boolean
+  onAnswer: (d: AgentDecision, key: string) => void
+}) {
+  const [openId, setOpenId] = useState('')
+  const groups = useMemo(() => decisionGroups(decisions), [decisions])
+  const small: React.CSSProperties = { ...BTN, minHeight: 32, padding: '0 10px', fontSize: 13, borderRadius: 8 }
+  return (
+    <div style={{ margin: '0 0 12px', display: 'grid', gap: 10 }} aria-label="Waiting on you">
+      {groups.map((g) => {
+        const skippable = g.kind === 'share' ? g.items.filter((d) => skipOption(d)) : []
+        return (
+          <section key={g.kind} data-decision-group={g.kind}>
+            <header style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 4px 4px' }}>
+              <span style={{ flex: 1, fontSize: 12, fontWeight: 600, letterSpacing: '.08em', textTransform: 'uppercase', color: C.faint }}>
+                {g.label} · {g.items.length}
+              </span>
+              {skippable.length > 1 && (
+                <button type="button" disabled={!canAnswer} style={small} data-action="skip-all"
+                  onClick={() => skippable.forEach((d) => onAnswer(d, skipOption(d)!.key))}>
+                  Skip all {skippable.length}
+                </button>
+              )}
+            </header>
+            <ul style={{ listStyle: 'none', margin: 0, padding: 0, border: C.line, borderRadius: 12, overflow: 'hidden' }}>
+              {g.items.map((d, i) => {
+                const k = `${d.nodeId}/${d.id}`
+                const primary = primaryOption(d)
+                const isOpen = openId === k
+                return (
+                  <li key={k} data-decision={d.id}
+                    style={{ borderTop: i ? C.line : 'none', background: isOpen ? C.card : 'transparent' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 8px 6px 12px', minHeight: 44 }}>
+                      <button type="button" aria-expanded={isOpen}
+                        onClick={() => setOpenId(isOpen ? '' : k)}
+                        style={{ flex: 1, minWidth: 0, textAlign: 'left', background: 'transparent', border: 'none', color: C.ink, cursor: 'pointer', padding: 0 }}>
+                        <span style={{ display: 'block', fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {d.title.replace(/^share:\s*/i, '')}
+                        </span>
+                        <span style={{ display: 'block', fontSize: 11, color: C.faint, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {d.machine}{ageLabel(d.age_seconds) ? ` · ${ageLabel(d.age_seconds)}` : ''}
+                        </span>
+                      </button>
+                      {primary && (
+                        <button type="button" disabled={!canAnswer} data-action="primary"
+                          style={{ ...small, ...(primary.recommended ? { background: C.accent, color: '#06121A', border: 'none', fontWeight: 600 } : {}), maxWidth: '45%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                          title={primary.label}
+                          onClick={() => onAnswer(d, primary.key)}>
+                          {primary.label}
+                        </button>
+                      )}
+                    </div>
+                    {isOpen && (
+                      <div style={{ padding: '0 12px 10px', display: 'grid', gap: 8 }}>
+                        {d.description && <span style={{ fontSize: 13, color: C.dim, whiteSpace: 'pre-wrap' }}>{d.description}</span>}
+                        <span style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                          {d.options.filter((o) => o.key !== primary?.key).map((o) => (
+                            <button key={o.key} type="button" disabled={!canAnswer} style={small}
+                              onClick={() => onAnswer(d, o.key)}>
+                              {o.label}
+                            </button>
+                          ))}
+                        </span>
+                      </div>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+          </section>
+        )
+      })}
+    </div>
   )
 }
 
@@ -247,34 +335,11 @@ export function AgentSessionsPanel({
         {listError && <Note>{listError}</Note>}
         {rowNote && <Note>{rowNote}</Note>}
         {decisions.length > 0 && (
-          <ul style={{ listStyle: 'none', margin: '0 0 8px', padding: 0, display: 'grid', gap: 8 }} aria-label="Waiting on you">
-            {decisions.map((d) => (
-              <li key={`${d.nodeId}/${d.id}`} data-decision={d.id}
-                style={{ padding: '12px 14px', borderRadius: 14, border: `1px solid ${TONE.attention.fg}`, background: C.card, display: 'grid', gap: 6 }}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ flex: 1, minWidth: 0, fontWeight: 600 }}>{d.title}</span>
-                  <Chip tone="attention" label="asks you" />
-                </span>
-                <span style={{ fontSize: 12, color: C.faint }}>
-                  {d.machine}{ageLabel(d.age_seconds) ? ` · ${ageLabel(d.age_seconds)}` : ''}
-                </span>
-                {d.description && (
-                  <span style={{ fontSize: 13, color: C.dim, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                    {d.description}
-                  </span>
-                )}
-                <span style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                  {d.options.map((o) => (
-                    <button key={o.key} type="button" disabled={!transport.answer}
-                      style={o.recommended ? { ...PRIMARY, flex: '1 1 auto' } : { ...BTN, flex: '1 1 auto' }}
-                      onClick={() => void answer(d, o.key)}>
-                      {o.label}
-                    </button>
-                  ))}
-                </span>
-              </li>
-            ))}
-          </ul>
+          <DecisionList
+            decisions={decisions}
+            canAnswer={!!transport.answer}
+            onAnswer={(d, key) => void answer(d, key)}
+          />
         )}
         {list && sessions.length === 0 && decisions.length === 0 && !listError && (
           <Note>

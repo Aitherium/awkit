@@ -21,11 +21,28 @@ import { speakable } from './speakable'
 
 export type LearnSpeak = ((text: string | undefined) => void) & {
   prefetch?: (text: string | undefined) => void
+  /** Stop whatever is being read now and drop any line still on its way (a song is starting). */
+  stop?: () => void
 }
 
 const RATE = 0.92
 const CACHE_MAX = 64
 const SERVER_RETRY_MS = 60_000
+/** 50 ms of silence (8 kHz mono WAV). A phone only lets a page start sound from inside a
+ *  tap, and only for an audio element that has already been started by one. A song is
+ *  downloaded first, which takes longer than the tap lasts, so the element plays this inside
+ *  the tap and the song when it arrives. */
+export const SILENT_CLIP = `data:audio/wav;base64,UklGRrQBAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YZABAACA${'gICA'.repeat(133)}`
+/** True when a play() was refused because it did not happen inside a tap. */
+export const playRefused = (err: unknown): boolean => (err as { name?: unknown } | null)?.name === 'NotAllowedError'
+/** Start an element on SILENT_CLIP. Call it synchronously from a click handler. */
+export function unlockAudio(el: HTMLAudioElement): void {
+  try {
+    el.src = SILENT_CLIP
+    const started = el.play() as Promise<void> | undefined
+    if (started && typeof started.catch === 'function') started.catch(() => { /* the song will ask again */ })
+  } catch { /* the song will ask again */ }
+}
 /** The server's cap on one line (family_tutor_voice.MAX_CHARS). */
 export const MAX_LINE = 240
 
@@ -323,6 +340,7 @@ export function createLearnVoice(
     stop()
     void run(splitForSpeech(text), mine)
   }
+  speak.stop = () => { seq += 1; stop() }
   speak.prefetch = (raw) => {
     const text = speakable(raw)
     if (!text || typeof window === 'undefined') return

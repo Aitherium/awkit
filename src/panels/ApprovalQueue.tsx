@@ -190,6 +190,8 @@ export default function ApprovalQueue() {
   const [editPayload, setEditPayload] = useState('')
   const [reviewingId, setReviewingId] = useState<string | null>(null)
   const [dismissingId, setDismissingId] = useState<string | null>(null)
+  /** Outcome of an approved install, said in the panel (never silent). */
+  const [outcome, setOutcome] = useState<string | null>(null)
 
   const listRef = useRef<HTMLDivElement>(null)
 
@@ -247,7 +249,22 @@ export default function ApprovalQueue() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       })
-      if (!res.ok) throw new Error('Review failed')
+      if (!res.ok) {
+        const why = await res.json().catch(() => ({}))
+        throw new Error(why.detail || 'Review failed')
+      }
+
+      // An approved install runs now, as the approving admin, and says how it went.
+      const item = approvals.find(a => a.id === id)
+      if (status === 'approved' && item?.action_type === 'install_pack') {
+        const name = String(item.payload?.name || 'The pack')
+        const ex = await fetch(`/api/approvals/${id}/execute`, { method: 'POST' })
+        const done = await ex.json().catch(() => ({}))
+        const r = done.execution_result || {}
+        setOutcome(ex.ok && r.executed
+          ? `${name} is installed.`
+          : `${name} was approved but did not install: ${r.error || done.detail || ex.status}`)
+      }
 
       /* Animate out, then remove */
       setDismissingId(id)
@@ -258,8 +275,9 @@ export default function ApprovalQueue() {
         setEditingId(null)
         setPendingCount(c => Math.max(0, c - 1))
       }, 280)
-    } catch {
-      setError('Failed to submit review. Please try again.')
+    } catch (err) {
+      setError(err instanceof Error && err.message !== 'Review failed'
+        ? err.message : 'Failed to submit review. Please try again.')
     } finally {
       setReviewingId(null)
     }
@@ -361,6 +379,12 @@ export default function ApprovalQueue() {
           </button>
         </div>
       </div>
+
+      {outcome && (
+        <div role="status" className="animate-in" style={{ padding: '0.5rem 0.75rem', fontSize: '0.8rem' }}>
+          {outcome}
+        </div>
+      )}
 
       {/* Error banner */}
       {error && (

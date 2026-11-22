@@ -130,6 +130,12 @@ export const APP_GATING: Readonly<Record<string, AppGating>> = {
     class: 'rbac',
     rbac: { resource: 'system', action: 'admin' },
   },
+  // Aitherium HQ: every tenant workspace. Platform operator only (Genesis
+  // /platform/hq/* is require_platform_caller; this is the attention boundary).
+  hq: {
+    class: 'rbac',
+    rbac: { resource: 'system', action: 'admin' },
+  },
   // Aither Control: the owner's device/lending/model console. The tile shows only to
   // platform operators; /api/control refuses everyone but the platform owner.
   control: {
@@ -148,6 +154,15 @@ export const APP_GATING: Readonly<Record<string, AppGating>> = {
     class: 'rbac',
     rbac: { resource: 'system', action: 'admin' },
   },
+  // Bot Observatory (2026-10-30): the bot/AI-agent census of the owner's own
+  // Cloudflare zones plus Cloudflare Radar's internet-wide baseline. The store
+  // names the zones and their traffic shares, so it carries the operator
+  // consoles' class; /api/bot-observatory is route-manifest system:admin and
+  // Genesis /bot-observatory/* gates every read with require_authenticated_caller.
+  'bot-observatory': {
+    class: 'rbac',
+    rbac: { resource: 'system', action: 'admin' },
+  },
   // Dark Matters (2026-09-30): the owner's game, framed from the fleet behind its
   // Identity gate. apps-manifest declares minRole admin (owner-only until the PG lane,
   // .AITHEROS/37-DARK-MATTERS-PRIVATE-PLAY.md); the OS window carries the operator
@@ -159,6 +174,13 @@ export const APP_GATING: Readonly<Record<string, AppGating>> = {
   // Media Forge (2026-10-01): the owner's private studio. apps-manifest declares
   // minRole admin and mediaforge.aitherium.com admits only the owner at its edge.
   mediaforge: {
+    class: 'rbac',
+    rbac: { resource: 'system', action: 'admin' },
+  },
+  // Owner Lab (2026-11-14): the owner's private preview. Its page is served by an
+  // owner-gated API route (denyUnlessPlatformOwner); this class keeps the window
+  // itself off every other launcher.
+  'owner-lab': {
     class: 'rbac',
     rbac: { resource: 'system', action: 'admin' },
   },

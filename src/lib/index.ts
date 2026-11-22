@@ -6,3 +6,5 @@ export * from './telemetry';
 export * from './errorReporter';
 export * from './agentSessions';
 export * from './workspaceSessionsTransport';
+export * from './friendlyError';
+export * from './greeting';

@@ -13,7 +13,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import AgentSessionsPanel from '../panels/AgentSessionsPanel'
 import {
   agentStatus, foldEvents, glanceOrder, lastLine, mergeLines, needsYouCount, sessionName, startBody,
-  defaultMachine,
+  defaultMachine, decisionGroups, decisionKind, primaryOption,
   type AgentListResult, type AgentSession, type AgentSessionsTransport,
 } from '../lib/agentSessions'
 
@@ -203,6 +203,50 @@ describe('AgentSessionsPanel', () => {
     await waitFor(() => expect(answered).toEqual([['d-hi', 'go']]))
     expect(taps).toBe(1)
     await waitFor(() => expect(screen.queryByText('Deploy veil now?')).toBeNull())
+  })
+
+  it('waiting-on-you is a compact list: one line and ONE action per card, grouped by kind, shares last', async () => {
+    const share = (id: string, title: string) => ({
+      id, nodeId: 'n1', machine: 'desk', title: `Share: ${title}`, urgency: 'high', raised_by: 'ship-share',
+      options: [{ key: 'post', label: 'Post (X, LINKEDIN)' }, { key: 'edit', label: 'Edit' }, { key: 'skip', label: 'Skip' }],
+    })
+    const answered: Array<[string, string]> = []
+    const f = fakeTransport({
+      ...LIST,
+      decisions: [
+        share('d-s1', 'One'), share('d-s2', 'Two'), share('d-s3', 'Three'),
+        { id: 'd-sup', nodeId: 'n1', machine: 'desk', title: 'support repro: app down', raised_by: 'support-loop',
+          options: [{ key: 'fix', label: 'Fix it' }, { key: 'info', label: 'Need more info' }, { key: 'dismiss', label: 'Dismiss' }] },
+        { id: 'd-ask', nodeId: 'n1', machine: 'desk', title: 'Deploy veil now?', options: [{ key: 'go', label: 'Deploy', recommended: true }, { key: 'wait', label: 'Wait' }] },
+      ],
+    })
+    f.t.answer = jest.fn(async (d, key) => { answered.push([d.id, key]); return { ok: true, detail: '' } })
+    render(<AgentSessionsPanel transport={f.t} listEveryMs={60_000} readEveryMs={60_000} />)
+    const box = await screen.findByLabelText('Waiting on you')
+    const groups = Array.from(box.querySelectorAll('[data-decision-group]')).map((g) => g.getAttribute('data-decision-group'))
+    expect(groups).toEqual(['ask', 'support', 'share'])
+    // every card shows exactly ONE action until it is opened
+    for (const li of within(box).getAllByRole('listitem')) {
+      expect(li.querySelectorAll('[data-action="primary"]').length).toBe(1)
+      expect(within(li).queryByRole('button', { name: 'Edit' })).toBeNull()
+    }
+    // the row opens in place to show the rest
+    const first = screen.getByText('One').closest('li')!
+    fireEvent.click(within(first).getByRole('button', { expanded: false }))
+    expect(within(first).getByRole('button', { name: 'Edit' })).toBeTruthy()
+    // one batch action, and it only ever skips
+    fireEvent.click(within(box).getByRole('button', { name: 'Skip all 3' }))
+    await waitFor(() => expect(answered.sort()).toEqual([['d-s1', 'skip'], ['d-s2', 'skip'], ['d-s3', 'skip']]))
+    expect(within(box).queryByRole('button', { name: /^Skip all/ })).toBeNull()
+  })
+
+  it('kinds and the primary action are decided by pure rules', () => {
+    expect(decisionKind({ title: 'Share: x', raised_by: 'ship-share' })).toBe('share')
+    expect(decisionKind({ title: 'support repro: y' })).toBe('support')
+    expect(decisionKind({ title: 'Deploy?' })).toBe('ask')
+    expect(primaryOption({ options: [{ key: 'skip', label: 'Skip' }, { key: 'go', label: 'Go' }] })?.key).toBe('go')
+    expect(primaryOption({ options: [{ key: 'a', label: 'A' }, { key: 'b', label: 'B', recommended: true }] })?.key).toBe('b')
+    expect(decisionGroups([]).length).toBe(0)
   })
 
   it('job (c) for a session waiting for input: Yes on the row itself, 1 tap after opening', async () => {

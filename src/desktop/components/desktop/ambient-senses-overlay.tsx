@@ -332,7 +332,8 @@ export function AmbientSensesOverlay() {
               ? 'text-blue-400 bg-blue-500/20 animate-pulse'
               : 'text-zinc-600'
           }`}
-          title={senses.voice.isSpeaking ? 'Cancel speech' : 'TTS idle'}
+          title={senses.voice.isSpeaking ? 'Aither is speaking. Click to stop.' : 'Aither is not speaking'}
+          aria-label={senses.voice.isSpeaking ? 'Stop Aither speaking' : 'Aither is not speaking'}
         >
           {senses.voice.isSpeaking ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
         </button>
@@ -351,7 +352,8 @@ export function AmbientSensesOverlay() {
               ? 'text-cyan-400 bg-cyan-500/20'
               : 'text-zinc-600 hover:text-zinc-400'
           }`}
-          title={senses.vision.mode !== 'off' ? 'Vision active' : 'Capture screen'}
+          title={senses.vision.mode !== 'off' ? 'Aither is looking at your screen. Click to stop.' : 'Let Aither look at your screen'}
+          aria-label={senses.vision.mode !== 'off' ? 'Stop Aither looking at your screen' : 'Let Aither look at your screen'}
         >
           {senses.vision.mode !== 'off' ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
         </button>
@@ -374,10 +376,10 @@ export function AmbientSensesOverlay() {
             senses.browser.connected && !senses.browser.stale
               ? `Browsing: ${senses.browser.title || senses.browser.url || 'unknown'} — click to refresh`
               : senses.browser.connected && senses.browser.stale
-                ? 'Browser context stale — click to refresh'
-                : 'Awconnect not connected — click to check status'
+                ? 'The browser link is out of date. Click to refresh.'
+                : 'Your browser is not linked to Aither yet. Click to check.'
           }
-          aria-label="Refresh browser context"
+          aria-label="Check the browser link"
         >
           <Globe className="w-3.5 h-3.5" />
         </button>
@@ -390,7 +392,8 @@ export function AmbientSensesOverlay() {
               ? 'text-emerald-400 bg-emerald-500/20 ring-1 ring-emerald-500/30'
               : 'text-zinc-600 hover:text-zinc-400'
           }`}
-          title={senses.isAmbient ? 'Ambient mode ON (hearing + seeing)' : 'Enable ambient mode'}
+          title={senses.isAmbient ? 'Aither is listening and watching. Click to turn off.' : 'Let Aither listen and watch in the background'}
+          aria-label={senses.isAmbient ? 'Turn off listening and watching' : 'Let Aither listen and watch in the background'}
         >
           <Radio className="w-3.5 h-3.5" />
         </button>

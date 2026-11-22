@@ -9,8 +9,13 @@ interface UserInfo {
 
 export interface OnboardingWizardPanelProps {
   apiBase?: string
-  user: UserInfo
-  onComplete: () => void
+  /** Optional: a host desktop mounts panels BARE (Veil's PanelApp passes no
+   *  user), so the greeting must survive without one. */
+  user?: UserInfo | null
+  /** Optional for the same reason. Absent = the wizard is an ordinary window
+   *  (a tenant's launcher rocket): it never auto-closes and its exits land on the
+   *  done card instead of calling into nothing. */
+  onComplete?: () => void
 }
 
 type Step = 'setup' | 'done'
@@ -54,6 +59,16 @@ export default function OnboardingWizardPanel({ apiBase = '/api', user, onComple
   const [syncResult, setSyncResult] = useState<{ ok: boolean; msg: string } | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+  // Measured 2026-10-29 on a tenant host: the launcher's rocket opened this
+  // panel bare, `user.display_name` threw, and the window became "This app hit
+  // an error" -- the customer's "it bricked me". Both props are optional now.
+  const embedded = typeof onComplete !== 'function'
+  const [existing, setExisting] = useState<{ docs: number; staff: number } | null>(null)
+  const finish = useCallback(() => {
+    if (typeof onComplete === 'function') onComplete()
+    else setStep('done')
+  }, [onComplete])
+  const displayName = typeof user?.display_name === 'string' ? user.display_name.trim() : ''
 
   // ── 1. Ask whether setup is needed at all ────────────────────────────────
   // A 404/500/offline probe must NOT trap the user in a wizard, so any failure
@@ -78,8 +93,13 @@ export default function OnboardingWizardPanel({ apiBase = '/api', user, onComple
           staff = Number(s?.company_staff ?? 0)
         }
         if (!cancelled && (docs > 0 || staff > 0)) {
-          onComplete()
-          return
+          if (typeof onComplete === 'function') {
+            onComplete()
+            return
+          }
+          // A window has nobody to hand control back to: say the workspace is
+          // already set up and still offer the upload, never a blank pane.
+          setExisting({ docs, staff })
         }
       } catch {
         /* fall through to showing the wizard */
@@ -155,12 +175,15 @@ export default function OnboardingWizardPanel({ apiBase = '/api', user, onComple
   return (
     <div
       style={{
+        // minHeight 100% (not 100vh): inside a desktop window 100vh is taller
+        // than the window, so the card sat off-centre and its own scroll
+        // container fought the window's. boxSizing keeps the padding inside.
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        minHeight: '100vh', background: 'var(--bg-deep)', padding: '2rem',
+        minHeight: '100%', boxSizing: 'border-box', background: 'var(--bg-deep)', padding: '2rem',
       }}
       onKeyDown={e => {
         if (e.key === 'Enter' && step === 'setup' && !uploading) setStep('done')
-        if (e.key === 'Escape' && step === 'setup') onComplete()
+        if (e.key === 'Escape' && step === 'setup') finish()
       }}
     >
       <div style={{
@@ -170,8 +193,16 @@ export default function OnboardingWizardPanel({ apiBase = '/api', user, onComple
         {step === 'setup' && (
           <>
             <h2 style={{ fontSize: '1.4rem', fontWeight: 700, marginBottom: '0.5rem' }}>
-              Welcome, {user.display_name}
+              {displayName ? `Welcome, ${displayName}` : 'Welcome'}
             </h2>
+            {existing && (
+              <p data-testid="onboarding-already-set-up" style={{ color: 'var(--accent-green)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
+                This workspace is already set up
+                {existing.docs > 0 ? ` (${existing.docs} document${existing.docs === 1 ? '' : 's'}` : ' ('}
+                {existing.docs > 0 && existing.staff > 0 ? ', ' : ''}
+                {existing.staff > 0 ? `${existing.staff} staff` : ''}). Add more any time below.
+              </p>
+            )}
             <p style={{ color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: '1.75rem' }}>
               Add a few documents and the assistant can answer from them straight away —
               resumes, proposals, project sheets, anything you would otherwise go digging for.
@@ -265,7 +296,7 @@ export default function OnboardingWizardPanel({ apiBase = '/api', user, onComple
               marginTop: '2rem', paddingTop: '1.5rem', borderTop: '1px solid var(--glass-border)',
             }}>
               {/* Always available. Never trap the user in setup. */}
-              <button onClick={onComplete} style={btn(false)}>Skip for now</button>
+              <button onClick={finish} style={btn(false)}>Skip for now</button>
               <button onClick={() => setStep('done')} disabled={uploading} style={{
                 ...btn(true), opacity: uploading ? 0.6 : 1,
               }}>
@@ -288,9 +319,15 @@ export default function OnboardingWizardPanel({ apiBase = '/api', user, onComple
                 ? 'You can add documents any time from the Knowledge tab — the assistant works without them too.'
                 : 'The assistant can answer from them now.'}
             </p>
-            <button onClick={onComplete} style={{ ...btn(true), width: '100%', marginTop: '2rem' }}>
-              Start Chatting
-            </button>
+            {embedded ? (
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: '1.5rem' }}>
+                You can close this window.
+              </p>
+            ) : (
+              <button onClick={finish} style={{ ...btn(true), width: '100%', marginTop: '2rem' }}>
+                Start Chatting
+              </button>
+            )}
           </div>
         )}
       </div>

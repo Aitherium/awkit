@@ -52,6 +52,11 @@ export interface SignInProps {
     degraded?: boolean
     /** Hosted mode hides "Create Account"/capacity chrome that belongs to the portal. */
     variant?: 'portal' | 'hosted'
+    /** Absolute origins `returnUrl` may point at DESPITE being cross-origin — the
+     *  OIDC-delegation resume flow (`<issuer>/oidc/resume`) and the owner studio.
+     *  Forwarded verbatim to `sanitizeReturnUrl`'s `allowedOrigins`; empty/omitted
+     *  keeps same-origin-only. See return-url.ts for the exact-origin match. */
+    allowedReturnOrigins?: readonly string[]
 }
 
 // ── SSO Buttons (upstream IdP + OAuth + SAML + Cloudflare Access) ────────────
@@ -259,6 +264,7 @@ export default function SignIn({
     initialError,
     degraded,
     variant = 'portal',
+    allowedReturnOrigins = [],
 }: SignInProps) {
     const notify = host.notify ?? domNotifier
     const Anchor = host.Link ?? (({ href, className, children }) =>
@@ -309,7 +315,20 @@ export default function SignIn({
 
     // `returnUrl` is canonical; `redirect` is accepted as an alias because ~30
     // in-app callers link `/login?redirect=...`.
-    const returnUrl = sanitizeReturnUrl(query.get('returnUrl') || query.get('redirect'))
+    //
+    // SignInHost passes allowedReturnOrigins (the IdP issuer + the owner studio);
+    // until this prop existed it was dropped on the floor and every delegated
+    // returnUrl silently fell back to /dashboard (f05b3f6ed5b fixed it on a tenant
+    // branch that never reached develop; ported 2026-10-29).
+    const returnUrl = sanitizeReturnUrl(
+        query.get('returnUrl') || query.get('redirect'),
+        '/dashboard',
+        allowedReturnOrigins,
+    )
+    // A cross-origin returnUrl only ever exists via the allowlist above (the
+    // same-origin branch always returns a leading `/`), so this is exactly
+    // "there is a pending delegation to resume."
+    const isDelegatedReturn = returnUrl.startsWith('https://')
     const errorParam = query.get('error')
     // Break-glass: ?admin=1 reveals password sign-in for recovery.
     const adminMode = query.get('admin') === '1' || query.get('password') === '1'
@@ -456,9 +475,12 @@ export default function SignIn({
             rememberMe,
         })
         notify.success(`Welcome back, ${displayName}! Redirecting...`)
+        // A pending delegation wins over the host's role-based routing; otherwise
+        // an admin account (onSession always returns a dest) never resumes it.
+        const target = isDelegatedReturn ? returnUrl : (dest || returnUrl)
         // Brief delay so the user sees the success toast before navigation.
-        setTimeout(() => { window.location.href = dest || returnUrl }, 800)
-    }, [host, notify, rememberMe, returnUrl])
+        setTimeout(() => { window.location.href = target }, 800)
+    }, [host, notify, rememberMe, returnUrl, isDelegatedReturn])
 
     // ── Handlers ──────────────────────────────────────────────────────────────
 

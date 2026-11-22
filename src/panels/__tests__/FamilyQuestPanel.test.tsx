@@ -97,4 +97,15 @@ describe('FamilyQuestPanel', () => {
     expect(body.guests).toEqual(['kr_b'])
     expect(body.players).toEqual(['a'])
   })
+  it('a child with no story is offered a way to make one, not a dead end', async () => {
+    const json = (d: unknown, s = 200) => ({ ok: s < 400, status: s, json: async () => d, headers: { get: () => 'application/json' } })
+    ;(global as unknown as { fetch: unknown }).fetch = jest.fn(async (url: string) => {
+      if (url.endsWith('/me/adventure')) return json({ sessions: [] })
+      if (url.endsWith('/family/adventure')) return json({ detail: 'Not paired yet' }, 404)
+      return json({}, 404)
+    })
+    render(<FamilyQuestPanel apiBase="/api/tutor" />)
+    const link = (await screen.findByTestId('fq-make-story')) as HTMLAnchorElement
+    expect(link.getAttribute('href')).toBe('/learn?room=nest')
+  })
 })

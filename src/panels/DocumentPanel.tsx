@@ -5,6 +5,7 @@ import { getApiBase } from '../lib/apiBase'
 import { uploadChunked } from '../lib/chunkedUpload'
 import { expandZipUpload } from '../lib/zipExpand'
 import { useConfig } from '../hooks/useConfig'
+import DocumentExplorer from './DocumentExplorer'
 import { InFlightUploadRow, mergeLive, type InFlightUpload, type LiveUpload } from './InFlightUploads'
 
 /**
@@ -318,7 +319,18 @@ interface BatchJob {
 
 type ViewMode = 'content' | 'chunks'
 
+/**
+ * The Documents app. A host that advertises `document_drives` (a tenant) gets the file
+ * explorer (drives, folders, drag to move, recycle bin, history); every other host keeps
+ * the classic panel below, unchanged.
+ */
 export default function DocumentPanel() {
+  const config = useConfig()
+  if (config.loaded && config.features?.includes('document_drives')) return <DocumentExplorer />
+  return <ClassicDocumentPanel />
+}
+
+function ClassicDocumentPanel() {
   const [docs, setDocs] = useState<Doc[]>([])
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<string | null>(null)

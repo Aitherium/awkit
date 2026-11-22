@@ -59,7 +59,8 @@ describe('ExecutiveBriefingPanel next briefing', () => {
       latest: null,
     })
     render(<ExecutiveBriefingPanel />)
-    await screen.findByText('Good morning')
+    // The greeting follows the reader's clock, so wait on the heading, not its word.
+    await screen.findByTestId('briefing-greeting')
     await waitFor(() => expect((global as any).fetch).toHaveBeenCalledTimes(2))
     expect(screen.queryByTestId('next-briefing')).toBeNull()
     expect(screen.queryByText(/HOST_BRIEFING_SCHEDULER/)).toBeNull()
@@ -68,7 +69,7 @@ describe('ExecutiveBriefingPanel next briefing', () => {
   it('shows nothing when the app has no scheduler endpoint', async () => {
     mockFetch({ detail: 'Not Found' }, 404)
     render(<ExecutiveBriefingPanel />)
-    await screen.findByText('Good morning')
+    await screen.findByTestId('briefing-greeting')
     await waitFor(() => expect((global as any).fetch).toHaveBeenCalledTimes(2))
     expect(screen.queryByTestId('next-briefing')).toBeNull()
   })

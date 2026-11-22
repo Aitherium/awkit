@@ -2,6 +2,7 @@
 
 import { relayWsUrl as buildRelayWsUrl } from '../lib/relayWsUrl'
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { friendlyHttpError, friendlyThrown } from '../lib/friendlyError'
 
 type View = 'channels' | 'dms' | 'groups' | 'people' | 'email'
 type RightPanel = 'members' | 'pins' | 'browse' | null
@@ -122,9 +123,14 @@ export default function CommsPanel({ apiBase = '/api/platform' }: CommsPanelProp
   }
 
   const apiFetch = async (url: string, opts?: RequestInit) => {
-    const r = await fetch(url, opts)
-    const data = await r.json()
-    if (!r.ok || data.error) throw new Error(data.error || data.detail || `HTTP ${r.status}`)
+    let r: Response
+    try { r = await fetch(url, opts) } catch (e) { throw new Error(friendlyThrown(e)) }
+    // A non-JSON body (a 404 HTML page) must not surface parser wording: a failed parse is
+    // swallowed here and the STATUS decides the sentence below.
+    let parsed = true
+    const data = await r.json().catch(() => { parsed = false; return {} as Record<string, any> })
+    if (!r.ok || data.error) throw new Error(friendlyHttpError(r.status, { detail: data.error || data.detail }))
+    if (!parsed) throw new Error(friendlyThrown(new SyntaxError('unreadable')))
     return data
   }
 
@@ -502,7 +508,7 @@ export default function CommsPanel({ apiBase = '/api/platform' }: CommsPanelProp
       }
     } catch (e: any) {
       setMessages(prev => prev.map(m => m.id === tempId ? { ...m, failed: true, optimistic: false } : m))
-      showError(`Send failed: ${e.message || 'unknown error'}`)
+      showError(friendlyThrown(e))
     } finally { setSending(false) }
   }
 
@@ -513,7 +519,7 @@ export default function CommsPanel({ apiBase = '/api/platform' }: CommsPanelProp
         body: JSON.stringify({ name: newChannelName.trim().toLowerCase().replace(/\s+/g, '-'), topic: newChannelTopic, mode: newChannelPrivate ? 'private' : 'public' }) })
       setNewChannelName(''); setNewChannelTopic(''); setNewChannelPrivate(false); setShowNewChannel(false)
       fetchChannels()
-    } catch (e: any) { showError(`Create channel failed: ${e.message}`) }
+    } catch (e: any) { showError(friendlyThrown(e)) }
   }
 
   const updateTopic = async () => {
@@ -522,7 +528,7 @@ export default function CommsPanel({ apiBase = '/api/platform' }: CommsPanelProp
       await apiFetch(`${apiBase}/channels/${activeChannel}/topic`, { method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ topic: editTopic }) })
       setShowChannelSettings(false); fetchChannels()
-    } catch (e: any) { showError(`Update topic failed: ${e.message}`) }
+    } catch (e: any) { showError(friendlyThrown(e)) }
   }
 
   const deleteChannel = async () => {
@@ -530,7 +536,7 @@ export default function CommsPanel({ apiBase = '/api/platform' }: CommsPanelProp
     try {
       await apiFetch(`${apiBase}/channels/${activeChannel}`, { method: 'DELETE' })
       setActiveChannel(null); setShowChannelSettings(false); fetchChannels()
-    } catch (e: any) { showError(`Delete failed: ${e.message}`) }
+    } catch (e: any) { showError(friendlyThrown(e)) }
   }
 
   const createGroup = async () => {
@@ -539,7 +545,7 @@ export default function CommsPanel({ apiBase = '/api/platform' }: CommsPanelProp
       await apiFetch(`${apiBase}/groups`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newGroupName.trim(), members: newGroupMembers }) })
       setNewGroupName(''); setNewGroupMembers([]); setShowNewGroup(false); fetchGroups()
-    } catch (e: any) { showError(`Create group failed: ${e.message}`) }
+    } catch (e: any) { showError(friendlyThrown(e)) }
   }
 
   const inviteToGroup = async () => {
@@ -548,7 +554,7 @@ export default function CommsPanel({ apiBase = '/api/platform' }: CommsPanelProp
       await apiFetch(`${apiBase}/groups/${activeGroup}/invite`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ nick: groupInviteNick.trim() }) })
       setGroupInviteNick(''); setShowGroupInvite(false)
-    } catch (e: any) { showError(`Invite failed: ${e.message}`) }
+    } catch (e: any) { showError(friendlyThrown(e)) }
   }
 
   const leaveGroup = async () => {
@@ -556,7 +562,7 @@ export default function CommsPanel({ apiBase = '/api/platform' }: CommsPanelProp
     try {
       await apiFetch(`${apiBase}/groups/${activeGroup}/leave`, { method: 'POST' })
       setActiveGroup(null); fetchGroups()
-    } catch (e: any) { showError(`Leave failed: ${e.message}`) }
+    } catch (e: any) { showError(friendlyThrown(e)) }
   }
 
   const startDMWith = (nick: string) => {
@@ -578,7 +584,7 @@ export default function CommsPanel({ apiBase = '/api/platform' }: CommsPanelProp
       await apiFetch(`${apiBase}/email/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ to: emailTo.split(',').map(e => e.trim()).filter(Boolean), subject: emailSubject, body: emailBody }) })
       setEmailStatus('Email sent'); setEmailTo(''); setEmailSubject(''); setEmailBody('')
-    } catch (e: any) { setEmailStatus(`Failed: ${e.message || 'Unknown'}`) }
+    } catch (e: any) { setEmailStatus(friendlyThrown(e)) }
     finally { setEmailSending(false); setTimeout(() => setEmailStatus(''), 4000) }
   }
 
@@ -589,7 +595,7 @@ export default function CommsPanel({ apiBase = '/api/platform' }: CommsPanelProp
       const url = d.invite_url || d.url || ''
       if (url) { await navigator.clipboard.writeText(url); setInviteStatus('Link copied!') }
       else setInviteStatus('Could not generate link')
-    } catch (e: any) { setInviteStatus(`Failed: ${e.message}`) }
+    } catch (e: any) { setInviteStatus(friendlyThrown(e)) }
     setTimeout(() => setInviteStatus(''), 3000)
   }
 
@@ -600,7 +606,7 @@ export default function CommsPanel({ apiBase = '/api/platform' }: CommsPanelProp
       await apiFetch(`${apiBase}/invites/email`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: inviteEmail.trim() }) })
       setInviteStatus('Invite sent!'); setInviteEmail('')
-    } catch (e: any) { setInviteStatus(`Failed: ${e.message}`) }
+    } catch (e: any) { setInviteStatus(friendlyThrown(e)) }
     setTimeout(() => setInviteStatus(''), 3000)
   }
 
@@ -612,7 +618,7 @@ export default function CommsPanel({ apiBase = '/api/platform' }: CommsPanelProp
       await apiFetch(`${apiBase}/channels/${activeChannel}/messages/${messageId}/react`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ emoji }) })
       if (!wsConnected && activeChannel) fetchMessages(activeChannel)
-    } catch (e: any) { showError(`Reaction failed: ${e.message}`) }
+    } catch (e: any) { showError(friendlyThrown(e)) }
   }
 
   // Threads
@@ -630,7 +636,7 @@ export default function CommsPanel({ apiBase = '/api/platform' }: CommsPanelProp
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: threadInput }) })
       setThreadInput('')
       setThreadReplies((await apiFetch(`${apiBase}/channels/${activeChannel}/messages/${threadParent.id}/thread`)).replies || [])
-    } catch (e: any) { showError(`Thread reply failed: ${e.message}`) }
+    } catch (e: any) { showError(friendlyThrown(e)) }
   }
 
   // Edit/delete
@@ -641,12 +647,12 @@ export default function CommsPanel({ apiBase = '/api/platform' }: CommsPanelProp
       await apiFetch(`${apiBase}/channels/${activeChannel}/messages/${editingMessage}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: editContent }) })
       setEditingMessage(null); setEditContent(''); fetchMessages(activeChannel)
-    } catch (e: any) { showError(`Edit failed: ${e.message}`) }
+    } catch (e: any) { showError(friendlyThrown(e)) }
   }
   const deleteMessage = async (messageId: string) => {
     if (!activeChannel || !confirm('Delete this message?')) return
     try { await apiFetch(`${apiBase}/channels/${activeChannel}/messages/${messageId}`, { method: 'DELETE' }); fetchMessages(activeChannel) }
-    catch (e: any) { showError(`Delete failed: ${e.message}`) }
+    catch (e: any) { showError(friendlyThrown(e)) }
   }
 
   // Search
@@ -666,7 +672,7 @@ export default function CommsPanel({ apiBase = '/api/platform' }: CommsPanelProp
   const pinMessage = async (messageId: string) => {
     if (!activeChannel) return
     try { await apiFetch(`${apiBase}/channels/${activeChannel}/pin/${messageId}`, { method: 'POST' }); fetchPins(activeChannel) }
-    catch (e: any) { showError(`Pin failed: ${e.message}`) }
+    catch (e: any) { showError(friendlyThrown(e)) }
   }
 
   // File upload
@@ -685,7 +691,7 @@ export default function CommsPanel({ apiBase = '/api/platform' }: CommsPanelProp
       if (wsConnected) wsSend({ type: 'message', channel: `#${activeChannel}`, content })
       else await apiFetch(`${apiBase}/channels/${activeChannel}/messages`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content }) })
-    } catch (e: any) { showError(`Upload failed: ${e.message}`) }
+    } catch (e: any) { showError(friendlyThrown(e)) }
     finally { setUploading(false); if (fileInputRef.current) fileInputRef.current.value = '' }
   }
 

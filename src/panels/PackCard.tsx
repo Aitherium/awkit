@@ -21,6 +21,16 @@ export interface PackCardPack {
   licensed?: boolean
   installed?: boolean
   tenant_restricted?: boolean
+  /** "platform" (Genesis catalog) or "awpack" (the agent pack shelf). */
+  source?: string
+  /** awpack shelf rows: who stands behind it, what it needs, its licence. */
+  provenance?: string
+  runtime?: string
+  licence?: string
+  /** awpack: whether THIS backend has an install path (appliance console). */
+  installable?: boolean
+  /** Why a pack is not installable here, in the customer's words. */
+  install_note?: string
 }
 
 export interface PackCardProps {
@@ -112,6 +122,13 @@ export default function PackCard({
           <div style={{ fontSize: 11, color: 'var(--text-muted, #888)', marginTop: 2 }}>
             by {pack.author} &middot; v{pack.version}
           </div>
+          {pack.source === 'awpack' && (
+            <div style={{ fontSize: 10, color: 'var(--text-muted, #888)', marginTop: 2 }}>
+              {pack.provenance === 'community' ? 'Community agent pack' : 'Aitherium agent pack'}
+              {pack.runtime ? ` · needs ${pack.runtime}` : ''}
+              {pack.licence ? ` · licence: ${pack.licence}` : ''}
+            </div>
+          )}
         </div>
       </div>
 
@@ -156,7 +173,7 @@ export default function PackCard({
             }}>
               Installed
             </span>
-          ) : onInstall && pack.licensed ? (
+          ) : onInstall && (pack.licensed || pack.installable) ? (
             <button
               onClick={e => { e.stopPropagation(); if (!installing) onInstall(pack) }}
               disabled={installing}
@@ -168,6 +185,13 @@ export default function PackCard({
             >
               {installing ? 'Installing...' : 'Install'}
             </button>
+          ) : onInstall && pack.install_note ? (
+            <span title={pack.install_note} style={{
+              fontSize: 11, padding: '3px 10px', borderRadius: 12, maxWidth: 200,
+              background: '#2a2a2a', color: 'var(--text-muted, #aaa)',
+            }}>
+              {pack.install_note}
+            </span>
           ) : onInstall && !onPurchase ? (
             <span style={{
               fontSize: 11, padding: '3px 10px', borderRadius: 12,

@@ -21,7 +21,17 @@ import { CLASSROOM_API, ClassroomHttpError, classroomFetch, cseg, send, type Kid
 
 export interface KidQuestion { prompt: string; type?: 'multiple_choice' | 'short_answer' | 'essay' | string; choices?: string[] | null }
 export interface KidChallenge { id: string; title?: string; questions?: KidQuestion[] }
-export interface KidArtifact { artifact_id: string; kind?: string; title?: string | null; filename?: string | null }
+export interface KidArtifact { artifact_id: string; kind?: string; title?: string | null; filename?: string | null; content_type?: string | null }
+
+const PPTX = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+
+/** What the child reads on a material button. Slides (the studio's narrated deck, or any .pptx)
+ *  read "Lesson slides", never a filename; anything else keeps its title. */
+export function kidMaterialLabel(m: KidArtifact): { icon: string; text: string } {
+  const slides = m.kind === 'presentation' || m.content_type === PPTX || /\.pptx$/i.test(m.filename || '')
+  if (slides) return { icon: '🖼️', text: m.title && !/\.pptx$/i.test(m.title) ? m.title : 'Lesson slides' }
+  return { icon: '📄', text: m.title || m.filename || 'Open' }
+}
 export interface KidAssignmentDetail extends KidAssignment {
   lesson?: { lesson_id: string; topic?: string | null } | null
   artifacts?: KidArtifact[]
@@ -162,14 +172,17 @@ export default function KidAssignmentView({ assignmentId, apiBase = CLASSROOM_AP
       {artifacts.length > 0 && (
         <section style={CARD} aria-label="Things to look at" data-testid="kid-materials">
           <span style={LABEL}>things to look at</span>
-          {artifacts.map((m) => (
-            <a key={m.artifact_id} className="al-focus" data-testid="kid-material" download
-              href={assignmentMaterialHref(apiBase, assignmentId, m.artifact_id)}
-              style={{ ...BIG, justifyContent: 'flex-start', textAlign: 'left' }}>
-              <span aria-hidden style={{ fontSize: 32 }}>📄</span>
-              <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{m.title || m.filename || 'Open'}</span>
-            </a>
-          ))}
+          {artifacts.map((m) => {
+            const label = kidMaterialLabel(m)
+            return (
+              <a key={m.artifact_id} className="al-focus" data-testid="kid-material" download
+                href={assignmentMaterialHref(apiBase, assignmentId, m.artifact_id)}
+                style={{ ...BIG, justifyContent: 'flex-start', textAlign: 'left' }}>
+                <span aria-hidden style={{ fontSize: 32 }}>{label.icon}</span>
+                <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{label.text}</span>
+              </a>
+            )
+          })}
         </section>
       )}
 

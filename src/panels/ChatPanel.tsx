@@ -20,6 +20,59 @@ import { fetchThroughRestart } from '../lib/restartFetch'
  * workspace agent can resolve "this", "the open document", "what am I looking
  * at". Undefined when there is no desktop (a standalone panel).
  */
+/** A source document an answer returns whole (`documents` on the chat response). */
+export interface DocumentAttachment {
+  doc_id: string
+  filename: string
+  /** Tenant-scoped route that serves the file, e.g. /api/documents/{id}/download. */
+  url: string
+  label?: string
+}
+
+/** Keep only well-formed attachments whose link stays on this app's own API. */
+export function documentAttachments(raw: unknown): DocumentAttachment[] {
+  if (!Array.isArray(raw)) return []
+  return raw.filter((d): d is DocumentAttachment =>
+    !!d && typeof d === 'object'
+    && typeof (d as DocumentAttachment).doc_id === 'string'
+    && typeof (d as DocumentAttachment).filename === 'string'
+    && typeof (d as DocumentAttachment).url === 'string'
+    && (d as DocumentAttachment).url.startsWith('/api/'))
+}
+
+/**
+ * "Open <file>" buttons for the documents an answer was grounded in whole
+ * (tenant feedback, 2026-10-29: "it should also return the doc and let the user open it").
+ */
+export function DocumentAttachments({ documents }: { documents?: DocumentAttachment[] }) {
+  const docs = documentAttachments(documents)
+  if (docs.length === 0) return null
+  return (
+    <div style={{ marginTop: '0.5rem', display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+      {docs.map(d => (
+        <a
+          key={d.doc_id}
+          href={`${getApiBase()}${d.url}`}
+          target="_blank"
+          rel="noreferrer"
+          data-testid="chat-document-open"
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
+            padding: '0.35rem 0.7rem',
+            background: 'var(--glass-bg, rgba(255,255,255,0.04))',
+            border: '1px solid var(--glass-border, rgba(255,255,255,0.1))',
+            borderRadius: 'var(--radius, 8px)',
+            textDecoration: 'none', color: 'var(--text-primary)', fontSize: '0.8rem',
+          }}
+        >
+          <span aria-hidden>&#128196;</span>
+          {`Open ${d.filename}`}
+        </a>
+      ))}
+    </div>
+  )
+}
+
 export function desktopContext(): Record<string, unknown> | undefined {
   try {
     const d = (globalThis as unknown as { __AITHER_DESKTOP__?: unknown }).__AITHER_DESKTOP__
@@ -72,6 +125,8 @@ interface Message {
   isError?: boolean
   steering?: boolean   // a follow-up that STEERED the running loop (Layer 2)
   attachments?: { name: string; type: string }[]
+  /** Documents the answer was built from WHOLE, returned so the user can open them. */
+  documents?: DocumentAttachment[]
   usage?: LLMUsage
   tool_calls?: { step: number; name: string; args?: Record<string, unknown>; ok: boolean; result?: unknown }[]
   selection?: {
@@ -504,6 +559,7 @@ export default function ChatPanel({ conversationId: conversationIdProp, onNewCon
         role: 'assistant', content: displayContent.trim(),
         thinking: parsed.thinking || undefined,
         message_id: data.message_id, sources: data.sources, selection,
+        documents: documentAttachments(data.documents),
         confidence: data.confidence, citations: data.citations,
       }])
       if (!conversationId && data.conversation_id) {
@@ -660,6 +716,7 @@ export default function ChatPanel({ conversationId: conversationIdProp, onNewCon
           // present, fall back to inline <think> tags parsed from content.
           thinking: m.thinking || parsed.thinking || undefined,
           tool_calls: m.tool_calls || undefined,
+          documents: documentAttachments(m.documents),
           selection,
         }
       })
@@ -715,6 +772,7 @@ export default function ChatPanel({ conversationId: conversationIdProp, onNewCon
     let thinkBuf = ''
     let contentBuf = ''
     let streamSources: any[] = []
+    let streamDocuments: DocumentAttachment[] = []
     let streamConvId = ''
     let streamMsgId = ''
     let toolCalls: any[] = []
@@ -770,6 +828,7 @@ export default function ChatPanel({ conversationId: conversationIdProp, onNewCon
             const evt = JSON.parse(payload)
             if (evt.type === 'meta') {
               streamSources = evt.sources || []
+              if (evt.documents) streamDocuments = documentAttachments(evt.documents)
               streamConvId = evt.conversation_id || streamConvId
               streamMsgId = evt.message_id || streamMsgId
             } else if (evt.type === 'thinking') {
@@ -808,6 +867,7 @@ export default function ChatPanel({ conversationId: conversationIdProp, onNewCon
               pendingStreamRef.current.content = contentBuf
               scheduleStreamFlush()
             } else if (evt.type === 'done') {
+              if (evt.documents) streamDocuments = documentAttachments(evt.documents)
               contentBuf = evt.content || contentBuf
               thinkingText = thinkBuf || evt.thinking
               toolCalls = evt.tool_calls || toolCalls
@@ -839,7 +899,7 @@ export default function ChatPanel({ conversationId: conversationIdProp, onNewCon
         content: displayContent.trim(),
         message_id: streamMsgId || undefined,
         thinking: thinkingText || thinkBuf || parsed.thinking || undefined,
-        sources: streamSources, selection,
+        sources: streamSources, documents: streamDocuments, selection,
         tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
         pipeline: streamPipeline,
         pipeline_usage: streamUsage,
@@ -864,7 +924,7 @@ export default function ChatPanel({ conversationId: conversationIdProp, onNewCon
           content: displayContent.trim(),
           message_id: streamMsgId || undefined,
           thinking: thinkingText || thinkBuf || parsed.thinking || undefined,
-          sources: streamSources, selection,
+          sources: streamSources, documents: streamDocuments, selection,
           tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
           pipeline: streamPipeline,
           pipeline_usage: streamUsage,
@@ -907,6 +967,7 @@ export default function ChatPanel({ conversationId: conversationIdProp, onNewCon
     let thinkBuf = ''
     let contentBuf = ''
     let streamSources: any[] = []
+    let streamDocuments: DocumentAttachment[] = []
     let streamConvId = ''
     let usage: LLMUsage | undefined
 
@@ -954,6 +1015,7 @@ export default function ChatPanel({ conversationId: conversationIdProp, onNewCon
               scheduleStreamFlush()
             } else if (evt.type === 'meta' || evt.type === 'sources') {
               streamSources = evt.sources || []
+              if (evt.documents) streamDocuments = documentAttachments(evt.documents)
               streamConvId = evt.conversation_id || streamConvId
             } else if (evt.type === 'usage') {
               usage = {
@@ -963,6 +1025,7 @@ export default function ChatPanel({ conversationId: conversationIdProp, onNewCon
                 is_fallback: evt.is_fallback,
               }
             } else if (evt.type === 'done') {
+              if (evt.documents) streamDocuments = documentAttachments(evt.documents)
               contentBuf = evt.content || contentBuf
             } else if (evt.type === 'error') {
               throw new Error(evt.content)
@@ -999,6 +1062,7 @@ export default function ChatPanel({ conversationId: conversationIdProp, onNewCon
         content: displayContent.trim(),
         thinking: mergedThinking || undefined,
         sources: streamSources,
+        documents: streamDocuments,
         selection, usage,
       }])
       if (!conversationId && streamConvId) {
@@ -1341,6 +1405,7 @@ export default function ChatPanel({ conversationId: conversationIdProp, onNewCon
                     )}
                   </div>
                 )}
+                <DocumentAttachments documents={msg.documents} />
                 <SourceCitations sources={msg.sources || []} />
                 {msg.usage && <UsageBadge usage={msg.usage} />}
                 <PipelineTraceBadge pipeline={msg.pipeline} usage={msg.pipeline_usage} />

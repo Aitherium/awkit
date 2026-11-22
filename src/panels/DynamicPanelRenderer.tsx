@@ -33,6 +33,7 @@ import AutonomyRoadmapPanel from './AutonomyRoadmapPanel'
 import SpritePanel from './SpritePanel'
 import ApprovalsInboxPanel from './ApprovalsInboxPanel'
 import BeadSpacePanel from './BeadSpacePanel'
+import NeuralNetPanel from './NeuralNetPanel'
 import WorkspaceMembersPanel from './WorkspaceMembersPanel'
 import DeployedAppsPanel from './DeployedAppsPanel'
 import ChatPanel from './ChatPanel'
@@ -59,6 +60,7 @@ import PeoplePanel from './PeoplePanel'
 // `company-room`, which was removed for exactly this reason. Asserted by RB003.
 import MyHardwarePanel from './MyHardwarePanel'
 import FilmDeskPanel from './FilmDeskPanel'
+import CertTrackPanel from './CertTrackPanel'
 import ApprovalQueue from './ApprovalQueue'
 import BatchUploadPanel from './BatchUploadPanel'
 import RequestsPanel from './RequestsPanel'
@@ -144,6 +146,7 @@ import SoundLibraryPanel from './SoundLibraryPanel'
 import StorefrontShellPanel from './StorefrontShellPanel'
 import ProductCatalogPanel from './ProductCatalogPanel'
 import LandingPagePanel from './LandingPagePanel'
+import AgenticWebPanel from './AgenticWebPanel'
 import AitherWriterPanel from './AitherWriterPanel'
 import CMSPanel from './CMSPanel'
 import PersonalAutomationPanel from './PersonalAutomationPanel'
@@ -181,6 +184,7 @@ import ThemisLegalPanel from './ThemisLegalPanel'
 import SecretguardPanel from './SecretguardPanel'
 import KvHandoffPanel from './KvHandoffPanel'
 import EmbedMigratePanel from './EmbedMigratePanel'
+import ElementGallery from './ElementGallery'
 
 import PortalShell from './PortalShell'
 import type { NavItem } from './PortalShell'
@@ -233,12 +237,14 @@ export const PANEL_COMPONENTS: Record<string, PanelEntry> = {
   'people':              { component: PeoplePanel },
   'my-hardware':         { component: MyHardwarePanel },
   'film-desk':           { component: FilmDeskPanel },
+  'certtrack':           { component: CertTrackPanel },
   'approval-queue':      { component: ApprovalQueue },
   'batch-upload':        { component: BatchUploadPanel },
   'requests':            { component: RequestsPanel },
   'storefront-shell':    { component: StorefrontShellPanel },
   'product-catalog':     { component: ProductCatalogPanel },
   'landing-page':        { component: LandingPagePanel },
+  'agentic-web':         { component: AgenticWebPanel },
   'writer':              { component: AitherWriterPanel },
   'cms':                 { component: CMSPanel },
   'analytics':           { component: AnalyticsPanel },
@@ -257,6 +263,7 @@ export const PANEL_COMPONENTS: Record<string, PanelEntry> = {
   // RB010 class again, found 2026-10-02 by an aw*-stack gap sweep).
   'kv-handoff':          { component: KvHandoffPanel },
   'embed-migrate':       { component: EmbedMigratePanel },
+  'element-gallery':     { component: ElementGallery },
   // Declared in registry.ts (apiPrefix auto-wires apiBase) but never keyed
   // here, so it rendered 'no panel wired up' (RB010, 2026-09-27).
   'awprove':             { component: AwprovePanel },
@@ -363,6 +370,7 @@ export const PANEL_COMPONENTS: Record<string, PanelEntry> = {
   'aither-sprite':       { component: SpritePanel },
   'approvals-inbox':     { component: ApprovalsInboxPanel },
   'beadspace':           { component: BeadSpacePanel },
+  'neuralnet':           { component: NeuralNetPanel },
   'workspace-members':   { component: WorkspaceMembersPanel },
   'deployed-apps':       { component: DeployedAppsPanel },
   // The Academy record tools (.PRODUCTS/.ACADEMY). 'academy-lesson-studio' is

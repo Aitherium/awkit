@@ -122,6 +122,68 @@ describe('a 403 names its cause', () => {
   })
 })
 
+describe('plain-word banners never glue a sentence to a clause', () => {
+  /** A refusal whose body is not JSON (a proxy page): `json()` throws, like the real one. */
+  function emptyBody(status: number): Response {
+    return {
+      ok: false, status, statusText: '',
+      json: async () => { throw new SyntaxError('Unexpected token < in JSON at position 0') },
+    } as unknown as Response
+  }
+
+  it('a 401 with no host sentence is one sign-in sentence', async () => {
+    stubFetch(() => emptyBody(401))
+    render(<WebBrowser />)
+    go('https://github.com')
+    await waitFor(() => expect(screen.getByText(/signed out/)).toBeTruthy())
+    const t = screen.getByText(/signed out/).textContent || ''
+    expect(t).toBe('You have been signed out. Sign in again to browse.')
+    expect(t).not.toMatch(/ - |— |HTTP/)
+  })
+
+  it('a 401 with a host sentence keeps it once, then the next step', async () => {
+    stubFetch(() => jsonResponse(401, { detail: 'Your login expired.' }))
+    render(<WebBrowser />)
+    go('https://github.com')
+    await waitFor(() => expect(screen.getByText(/Your login expired/)).toBeTruthy())
+    expect(screen.getByText(/Your login expired/).textContent).toBe('Your login expired. Sign in to browse.')
+  })
+
+  it('a session that ended says so in one sentence (no "not available in this workspace")', async () => {
+    stubFetch((url) => (url === '/api/browser-session'
+      ? jsonResponse(200, { sessionId: 'sid-9', url: 'https://github.com', title: 'GitHub', engine: 'chromium', screenshot: 'AAAA' })
+      : emptyBody(404)))
+    render(<WebBrowser />)
+    go('https://github.com')
+    await waitFor(() => expect(screen.getByText(/session sid-9/)).toBeTruthy())
+    fireEvent.click(screen.getByLabelText('Reload'))
+    await waitFor(() => expect(screen.getByText(/Your browser session ended/)).toBeTruthy())
+    const t = screen.getByText(/Your browser session ended/).textContent || ''
+    expect(t).toBe('Your browser session ended. Open the page again.')
+    expect(t).not.toMatch(/workspace|administrator|HTTP/)
+    expect(screen.getByText('Reopen')).toBeTruthy()
+  })
+
+  it('a bare 403 does not attribute our own words to the server', () => {
+    const t = refusalText(null, { status: 403, statusText: 'Forbidden' } as Response)
+    expect(t).not.toMatch(/server said/i)
+    expect(t).not.toMatch(/HTTP/)
+    expect(t).toMatch(/not allowed to open an Aither Browser session/)
+    // A body that is only a reason phrase is not a sentence either.
+    expect(refusalText({ detail: 'Forbidden' }, { status: 403 } as Response)).not.toMatch(/server said/i)
+  })
+
+  it('an unreadable failure on open is a sentence with the next step, not a status', async () => {
+    stubFetch(() => emptyBody(502))
+    render(<WebBrowser />)
+    go('https://github.com')
+    await waitFor(() => expect(screen.getByText(/Could not open a browser session/)).toBeTruthy())
+    const t = screen.getByText(/Could not open a browser session/).textContent || ''
+    expect(t).not.toMatch(/HTTP|\b502\b/)
+    expect(t).toMatch(/Try again/)
+  })
+})
+
 describe('inside the desk, a URL opens in the native Aither Browser', () => {
   it('posts desk-browse to its own window, pinned to its origin, and opens NO remote session', async () => {
     markDesk(true)

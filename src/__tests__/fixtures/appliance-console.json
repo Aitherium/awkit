@@ -461,7 +461,7 @@
             "description": "The terminal agent. Run it from an SSH session.",
             "id": "awsh",
             "label": "awsh",
-            "licence": "Apache-2.0"
+            "licence": "BUSL-1.1"
           },
           {
             "delivery": "image-private",

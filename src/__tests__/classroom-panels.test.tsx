@@ -18,8 +18,8 @@ import ClassroomInsightsPanel from '../panels/ClassroomInsightsPanel'
 import ClassroomRoomPanel from '../panels/ClassroomRoomPanel'
 import ClassroomParentPanel from '../panels/ClassroomParentPanel'
 import KidAssignmentsCard from '../panels/KidAssignmentsCard'
-import KidAssignmentView from '../panels/KidAssignmentView'
-import { describeCite } from '../panels/classroomApi'
+import KidAssignmentView, { kidMaterialLabel } from '../panels/KidAssignmentView'
+import { describeCite, planEditOps } from '../panels/classroomApi'
 import { LEARN_MODE_KEY, LEARN_TOKENS, LEARN_TOKEN_KEYS, learnVarName } from '../panels/learnTheme'
 
 type Reply = { status: number; body: unknown }
@@ -430,6 +430,207 @@ describe('offline: a rejected fetch renders dim "offline", never placeholders', 
     const post = calls.find((c) => c.url.endsWith('/me/quest/q_7/rating'))
     expect(JSON.parse(String(post?.init?.body))).toEqual({ rating: 'hard' })
     expect(screen.getByTestId('kid-rating').textContent).toMatch(/Thanks/)
+  })
+})
+
+describe('studio + review + kid: the #15850 routes', () => {
+  const SHA1 = 'a'.repeat(64)
+  const SHA2 = 'b'.repeat(64)
+  const PLAN = { title: 'Make ten', objective: 'Students can make ten.', warm_up: 'Count to ten', steps: ['Model it', 'Practise'], check_for_understanding: ['Exit ticket'], materials: ['Counters'] }
+  const DRAFT = { ai: 'on', reason: null, lesson: { id: 'lsn_1', topic: 'Make ten', status: 'draft' }, plan: PLAN, artifact_id: 'art_p' }
+
+  async function drafted(route: Route) {
+    const calls = installFetch((url, init) => {
+      if (url.endsWith('/studio/draft')) return { status: 201, body: DRAFT }
+      return route(url, init)
+    })
+    render(<ClassroomStudioPanel classId="cls_1" academyBase={ACADEMY} gradeLevel="K-2" />)
+    fireEvent.change(screen.getByLabelText('Topic'), { target: { value: 'Make ten' } })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Draft lesson' })) })
+    return calls
+  }
+
+  it('planEditOps: changed items set, extra items removed from the end, new items appended, blanks removed', () => {
+    expect(planEditOps(PLAN, PLAN)).toEqual([])
+    expect(planEditOps(PLAN, { ...PLAN, objective: ' New aim ', steps: ['Model it', 'Practise in pairs', 'Share'], check_for_understanding: [''], materials: ['Counters'] })).toEqual([
+      { op: 'set', path: 'objective', value: 'New aim' },
+      { op: 'set', path: 'steps[1]', value: 'Practise in pairs' },
+      { op: 'insert', path: 'steps[2]', value: 'Share' },
+      { op: 'remove', path: 'check_for_understanding[0]' },
+    ])
+    expect(planEditOps({ ...PLAN, steps: ['a', 'b', 'c'] }, { ...PLAN, steps: ['a'] })).toEqual([
+      { op: 'remove', path: 'steps[2]' }, { op: 'remove', path: 'steps[1]' },
+    ])
+  })
+
+  it('draft: the teacher\'s own material is sent as sources and named back', async () => {
+    const calls = installFetch((url) => {
+      if (url.endsWith('/studio/draft')) return { status: 201, body: { ...DRAFT, sources: [{ name: 'Chapter 3', chars: 12, used: 12 }], sources_truncated: true } }
+      return undefined
+    })
+    render(<ClassroomStudioPanel classId="cls_1" academyBase={ACADEMY} gradeLevel="K-2" />)
+    fireEvent.change(screen.getByLabelText('Topic'), { target: { value: 'Make ten' } })
+    fireEvent.click(screen.getByTestId('studio-add-source'))
+    fireEvent.change(screen.getByLabelText('Material 1 name'), { target: { value: 'Chapter 3' } })
+    fireEvent.change(screen.getByLabelText('Material 1 text'), { target: { value: 'Ten is 7 and 3.' } })
+    fireEvent.click(screen.getByTestId('studio-add-source'))
+    fireEvent.change(screen.getByLabelText('Material 2 text'), { target: { value: 'Ten frames.' } })
+    fireEvent.click(screen.getByTestId('studio-add-source'))  // a third, left empty: never sent
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Draft lesson' })) })
+    const body = JSON.parse(String(calls.find((c) => c.url.endsWith('/studio/draft'))?.init?.body))
+    expect(body.sources).toEqual([{ name: 'Chapter 3', text: 'Ten is 7 and 3.' }, { name: 'Material 2', text: 'Ten frames.' }])
+    expect(screen.getByTestId('studio-sources-used').textContent).toMatch(/Chapter 3/)
+    expect(screen.getByTestId('studio-msg').textContent).toMatch(/too long/)
+  })
+
+  it('draft: no material means no sources key at all', async () => {
+    const calls = await drafted(() => undefined)
+    const body = JSON.parse(String(calls.find((c) => c.url.endsWith('/studio/draft'))?.init?.body))
+    expect('sources' in body).toBe(false)
+  })
+
+  it('plan edit: reads the sha, PATCHes only the changed parts with it, says the tiers were dropped', async () => {
+    const calls = await drafted((url, init) => {
+      if (url.endsWith('/lessons/lsn_1/studio/plan') && !init?.method) return ok({ lesson_id: 'lsn_1', status: 'draft', artifact_id: 'art_p', sha256: SHA1, plan: PLAN })
+      if (url.endsWith('/lessons/lsn_1/studio/plan') && init?.method === 'PATCH') {
+        return ok({ lesson: { id: 'lsn_1', topic: 'Make ten', status: 'draft' }, plan: { ...PLAN, steps: ['Model it', 'Practise in pairs'] }, sha256: SHA2, tiers_dropped: 3 })
+      }
+      return undefined
+    })
+    await act(async () => { fireEvent.click(screen.getByTestId('studio-plan-edit')) })
+    fireEvent.change(screen.getByLabelText('steps 2'), { target: { value: 'Practise in pairs' } })
+    await act(async () => { fireEvent.click(screen.getByTestId('studio-plan-save')) })
+    const patch = calls.find((c) => c.init?.method === 'PATCH')
+    expect(patch?.url).toBe('/api/classroom/lessons/lsn_1/studio/plan')
+    expect(JSON.parse(String(patch?.init?.body))).toEqual({ expected_sha256: SHA1, ops: [{ op: 'set', path: 'steps[1]', value: 'Practise in pairs' }] })
+    expect(screen.getByTestId('studio-plan').textContent).toMatch(/Practise in pairs/)
+    expect(screen.getByTestId('studio-msg').textContent).toMatch(/tiers .*removed/)
+    expect(screen.queryByTestId('studio-plan-editor')).toBeNull()
+  })
+
+  it('plan edit: a 409 re-reads the plan and says so, never overwrites', async () => {
+    let reads = 0
+    const calls = await drafted((url, init) => {
+      if (url.endsWith('/studio/plan') && !init?.method) {
+        reads += 1
+        return ok({ lesson_id: 'lsn_1', status: 'draft', artifact_id: 'art_p', sha256: reads === 1 ? SHA1 : SHA2, plan: reads === 1 ? PLAN : { ...PLAN, objective: 'Changed elsewhere' } })
+      }
+      if (url.endsWith('/studio/plan') && init?.method === 'PATCH') return { status: 409, body: { detail: 'The plan changed since you read it; read it again' } }
+      return undefined
+    })
+    await act(async () => { fireEvent.click(screen.getByTestId('studio-plan-edit')) })
+    fireEvent.change(screen.getByLabelText('Objective'), { target: { value: 'Mine' } })
+    await act(async () => { fireEvent.click(screen.getByTestId('studio-plan-save')) })
+    expect(reads).toBe(2)
+    expect(calls.filter((c) => c.init?.method === 'PATCH')).toHaveLength(1)
+    expect(screen.getByTestId('studio-msg').textContent).toMatch(/changed since you opened it/)
+    expect((screen.getByLabelText('Objective') as HTMLTextAreaElement).value).toBe('Changed elsewhere')
+  })
+
+  it('plan edit: a 422 names the refusal', async () => {
+    await drafted((url, init) => {
+      if (url.endsWith('/studio/plan') && !init?.method) return ok({ lesson_id: 'lsn_1', status: 'draft', artifact_id: 'art_p', sha256: SHA1, plan: PLAN })
+      if (url.endsWith('/studio/plan')) return { status: 422, body: { detail: { error: 'steps[1] does not exist', op_index: 0 } } }
+      return undefined
+    })
+    await act(async () => { fireEvent.click(screen.getByTestId('studio-plan-edit')) })
+    fireEvent.change(screen.getByLabelText('Warm up'), { target: { value: 'Sing' } })
+    await act(async () => { fireEvent.click(screen.getByTestId('studio-plan-save')) })
+    expect(screen.getByTestId('studio-msg').textContent).toBe('That edit was not saved: steps[1] does not exist.')
+  })
+
+  it('quiz + slides: offline says why and saves nothing; on shows the key to the teacher and a deck download', async () => {
+    let on = false
+    await drafted((url) => {
+      if (url.endsWith('/lessons/lsn_1/studio/quiz')) {
+        return { status: 201, body: on
+          ? { ai: 'on', reason: null, challenge: { id: 'chl_1', title: 'Check quiz', questions: [{ prompt: '7 + ? = 10', type: 'multiple_choice', choices: ['2', '3'], answer: '3' }] } }
+          : { ai: 'offline', reason: 'llm_off', challenge: null } }
+      }
+      if (url.endsWith('/lessons/lsn_1/studio/deck')) {
+        return { status: 201, body: on
+          ? { ai: 'on', reason: null, deck: { slides: [{ title: 'Ten', bullets: ['7 and 3'], narration: 'Ten is seven and three.' }] }, artifact_id: 'art_d' }
+          : { ai: 'offline', reason: 'llm_off', deck: null, artifact_id: null } }
+      }
+      return undefined
+    })
+    await act(async () => { fireEvent.click(screen.getByTestId('studio-quiz-make')) })
+    expect(screen.getByTestId('studio-quiz-none').textContent).toBe('AI offline · no quiz was made. (llm_off) Nothing was saved.')
+    await act(async () => { fireEvent.click(screen.getByTestId('studio-deck-make')) })
+    expect(screen.getByTestId('studio-deck-none').textContent).toMatch(/AI offline · no slides were made/)
+    expect(screen.queryByTestId('studio-deck-download')).toBeNull()
+    on = true
+    await act(async () => { fireEvent.click(screen.getByTestId('studio-quiz-make')) })
+    expect(screen.getByTestId('studio-quiz').textContent).toMatch(/answer key for you only.*7 \+ \? = 10.*3 · answer/)
+    await act(async () => { fireEvent.click(screen.getByTestId('studio-deck-make')) })
+    expect(screen.getByTestId('studio-deck').textContent).toMatch(/Ten.*7 and 3.*Narration: Ten is seven and three/)
+    expect(screen.getByTestId('studio-deck-download').getAttribute('href')).toBe(`${ACADEMY}/artifacts/art_d/download`)
+  })
+
+  const NEEDS = { ...REVIEW.responses[0], response_id: 'rsp_2', auto_score: null, review_status: 'pending', flag: 'needs_score', answer_text: 'Ten is seven and three' }
+
+  it('review: a suggestion is labelled as one, and only "Use this score" sends it, as an override', async () => {
+    const calls = installFetch((url, init) => {
+      if (url.endsWith('/review-queue')) return ok({ responses: [NEEDS] })
+      if (url.endsWith('/responses/rsp_2/suggest')) return ok({ response_id: 'rsp_2', suggested_score: 0.6, suggested_comment: 'Right idea, no working shown.', suggested_at: 'x', reason: null })
+      if (url.endsWith('/responses/rsp_2/review')) return ok({ response_id: 'rsp_2', review_status: 'reviewed' })
+      return teacherRoute(url, init)
+    })
+    render(<ClassroomConsolePanel academyBase={ACADEMY} />)
+    await screen.findByTestId('review-suggest')
+    expect(screen.queryByRole('button', { name: 'Confirm' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Use this score' })).toBeNull()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Suggest a score' })) })
+    expect(screen.getByTestId('review-suggestion').textContent).toMatch(/suggestion · not a score until you set it.*Suggested 60%.*no working shown/)
+    expect(calls.some((c) => c.url.endsWith('/review'))).toBe(false)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Use this score' })) })
+    const posts = calls.filter((c) => c.url.endsWith('/responses/rsp_2/review'))
+    expect(posts).toHaveLength(1)
+    expect(JSON.parse(String(posts[0].init?.body))).toEqual({ action: 'override', score: 0.6 })
+  })
+
+  it('review: a stored suggestion shows on load; a model-off answer says so and offers nothing to use', async () => {
+    installFetch((url, init) => {
+      if (url.endsWith('/review-queue')) return ok({ responses: [{ ...NEEDS, suggested_score: 0.8, suggested_comment: 'Clear.' }] })
+      if (url.endsWith('/suggest')) return ok({ response_id: 'rsp_2', suggested_score: null, suggested_comment: null, reason: 'llm_off' })
+      return teacherRoute(url, init)
+    })
+    render(<ClassroomConsolePanel academyBase={ACADEMY} />)
+    await screen.findByTestId('review-suggestion')
+    expect(screen.getByTestId('review-suggestion').textContent).toMatch(/Suggested 80%/)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Ask again' })) })
+    expect(screen.queryByTestId('review-suggestion')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Use this score' })).toBeNull()
+    expect(screen.getByTestId('review-suggest').textContent).toMatch(/No suggestion this time \(llm_off\)/)
+  })
+
+  it('kid view: the deck reads "Lesson slides"; no answer key or suggestion ever renders', async () => {
+    installFetch((url) => {
+      if (url.endsWith('/me/assignments/asn_1')) {
+        return ok({
+          assignment_id: 'asn_1', class_id: 'cls_1', title: 'Make ten', done_at: null,
+          artifacts: [{ artifact_id: 'art_d', kind: 'presentation', title: null, filename: 'lesson-deck.pptx', content_type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' }],
+          // Belt over the server: even fields a child must never get stay unrendered if they arrived.
+          challenges: [{ id: 'chl_1', title: 'Check quiz', suggested_score: 0.9, questions: [{ prompt: '7 + ? = 10', type: 'multiple_choice', choices: ['2', '3'], answer: 'SECRET-KEY' }] }],
+        })
+      }
+      return undefined
+    })
+    render(<KidAssignmentView assignmentId="asn_1" onBack={() => {}} />)
+    await screen.findByText('7 + ? = 10')
+    const link = screen.getByTestId('kid-material')
+    expect(link.textContent).toMatch(/Lesson slides/)
+    expect(link.textContent).not.toMatch(/pptx/)
+    expect(link.getAttribute('href')).toBe('/api/classroom/me/assignments/asn_1/materials/art_d')
+    const text = screen.getByTestId('kid-assignment-view').textContent || ''
+    // ("Send my answers" is the child's own button; the key and the suggestion are what must not show.)
+    expect(text).not.toMatch(/SECRET-KEY|answer key|suggest|90%/i)
+  })
+
+  it('kidMaterialLabel: slides by kind, type or extension; other files keep their title', () => {
+    expect(kidMaterialLabel({ artifact_id: 'a', kind: 'presentation', title: 'Lesson slides' }).text).toBe('Lesson slides')
+    expect(kidMaterialLabel({ artifact_id: 'a', filename: 'x.PPTX' }).text).toBe('Lesson slides')
+    expect(kidMaterialLabel({ artifact_id: 'a', title: 'Ten frames', filename: 'frames.pdf' }).text).toBe('Ten frames')
   })
 })
 

@@ -119,14 +119,33 @@ export default function SkillLibraryPanel({
   // Packs state
   const [packs, setPacks] = useState<ToolPackSummary[]>([])
 
+  // Shelf state: a slow, stale or failed upstream is SAID, never an empty shelf.
+  const [shelfNotice, setShelfNotice] = useState<string | null>(null)
+  const [retryIn, setRetryIn] = useState<number | null>(null)
+
   // ── Fetch ───────────────────────────────────────────────────────────
   const fetchSkills = useCallback(async () => {
     try {
       const [skillsRes, catRes] = await Promise.allSettled([
-        fetch(`${apiBase}/skills`).then(r => r.json()),
+        fetch(`${apiBase}/skills`).then(async r => ({ ok: r.ok, status: r.status, body: await r.json().catch(() => ({})) })),
         fetch(`${apiBase}/categories`).then(r => r.json()),
       ])
-      if (skillsRes.status === 'fulfilled') setSkills(skillsRes.value.skills || [])
+      if (skillsRes.status === 'fulfilled') {
+        const { ok, status, body } = skillsRes.value
+        if (ok) {
+          setSkills(body.skills || [])
+          setShelfNotice(body.stale
+            ? `Showing the skill shelf from ${Math.max(1, Math.round((body.age_s || 0) / 60))} min ago while it refreshes.`
+            : null)
+        } else if (status === 503 && body.state === 'loading') {
+          setShelfNotice('The skill shelf is still loading (the skill service is busy). Retrying...')
+          setRetryIn(Number(body.retry_after) || 5)
+        } else {
+          setShelfNotice(body.detail || 'The skill service is unavailable right now.')
+        }
+      } else {
+        setShelfNotice('The skill service could not be reached.')
+      }
       if (catRes.status === 'fulfilled') {
         setCategories(catRes.value.categories || {})
         setAllTags(catRes.value.tags || [])
@@ -138,6 +157,10 @@ export default function SkillLibraryPanel({
     try {
       const res = await fetch(`${apiBase}/tools`)
       const data = await res.json()
+      if (!res.ok) {
+        setShelfNotice(data.detail || 'The tool list is unavailable right now.')
+        return
+      }
       setToolGroups(data.groups || {})
       setToolTotal(data.total || 0)
     } catch { /* graceful */ }
@@ -158,6 +181,10 @@ export default function SkillLibraryPanel({
     try {
       const res = await fetch(`${apiBase}/packs`)
       const data = await res.json()
+      if (!res.ok) {
+        setShelfNotice(data.detail || 'Tool packs are unavailable right now.')
+        return
+      }
       setPacks(data.packs || [])
     } catch { /* graceful */ }
   }, [apiBase])
@@ -167,6 +194,13 @@ export default function SkillLibraryPanel({
     Promise.allSettled([fetchSkills(), fetchTools(), fetchMarketplace(), fetchPacks()])
       .finally(() => setLoading(false))
   }, [fetchSkills, fetchTools, fetchMarketplace, fetchPacks])
+
+  // A "still loading" shelf retries itself; the server keeps ONE fetch running.
+  useEffect(() => {
+    if (retryIn == null) return
+    const t = setTimeout(() => { setRetryIn(null); fetchSkills() }, retryIn * 1000)
+    return () => clearTimeout(t)
+  }, [retryIn, fetchSkills])
 
   const openSkillDetail = async (skillId: string) => {
     setDetailLoading(true)
@@ -860,6 +894,15 @@ export default function SkillLibraryPanel({
           </button>
         ))}
       </div>
+
+      {shelfNotice && (
+        <div role="status" style={{
+          padding: '8px 12px', fontSize: '12px', borderRadius: '6px',
+          border: '1px solid var(--border, #333)', color: 'var(--fg-muted, #aaa)',
+        }}>
+          {shelfNotice}
+        </div>
+      )}
 
       {/* Tab content */}
       {activeTab === 'skills' && renderSkillsTab()}

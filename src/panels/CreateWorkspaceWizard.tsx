@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react'
 import { getApiBase } from '../lib/apiBase'
+import { friendlyHttpError } from '../lib/friendlyError'
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -270,7 +271,7 @@ export default function CreateWorkspaceWizard() {
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        throw new Error(data.detail || data.error || `HTTP ${res.status}`)
+        throw new Error(friendlyHttpError(res.status, { action: 'create the workspace', detail: data.detail || data.error }))
       }
 
       const reader = res.body?.getReader()

@@ -265,7 +265,15 @@ export default function FamilyQuestPanel({ apiBase, extraHeaders, waitSeconds = 
       <>
         <h1 style={{ margin: 0, fontSize: 30, textAlign: 'center' }}>Family Quest</h1>
         {invites.length === 0 ? (
-          <div style={{ ...card, textAlign: 'center', color: C.dim }}>No story yet. Your grown-up can start one!</div>
+          <div style={{ ...card, textAlign: 'center', color: C.dim }}>
+            <div>No story yet. Your grown-up can start one!</div>
+            {/* A dead end is not a next action: the child's own Sprite makes up a story
+                today (KidSpriteQuests on the Nest), so offer that door. */}
+            <a href="/learn?room=nest" data-testid="fq-make-story"
+              style={{ display: 'inline-block', marginTop: 12, fontSize: 18, color: 'inherit' }}>
+              Make up a story with your Sprite
+            </a>
+          </div>
         ) : invites.map((s) => (
           <button key={s.sid} data-testid="fq-invite" type="button" disabled={busy} onClick={() => void join(s)} style={{ ...big, width: '100%', flexDirection: 'column', minHeight: 96 }}>
             <span style={{ fontSize: 24 }}>{s.title}</span>

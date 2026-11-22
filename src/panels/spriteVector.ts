@@ -67,6 +67,8 @@ export const LAYER_ORDER = [
 ] as const
 
 export interface VectorSpriteDesign {
+  /** an Aitherium Collective character id (collective.ts): drawn instead of the creature */
+  collective?: string
   species?: string
   palette?: string
   colors?: Partial<Record<'body' | 'belly' | 'accent' | 'eye', string>>

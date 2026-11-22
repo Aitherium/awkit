@@ -29,6 +29,11 @@ interface SpriteStatus {
   mood: { valence: number; arousal: number }
   mood_label: string
   dormant: boolean
+  // "away" = the owner was gone > 24 h and it curled up to sleep (nothing was lost);
+  // "depleted" = neglected while the owner was around. "" when awake.
+  dormant_reason?: '' | 'away' | 'depleted'
+  // True for a short while after waking from an "away" sleep.
+  missed_you?: boolean
   age_days: number
   knowledge_count?: number
   intellect?: { tier: number; label: string }
@@ -46,18 +51,6 @@ interface KnowledgeEntry {
   updated_at: number
 }
 
-interface AssetEntry {
-  status: 'pending' | 'ready' | 'failed'
-  file: string | null
-  hash: string
-}
-
-interface Appearance {
-  stage: string
-  form: string
-  mood_label: string
-  assets: Record<string, AssetEntry>
-}
 
 export interface SpritePanelProps {
   apiBase?: string
@@ -71,7 +64,7 @@ const MOOD_THEME: Record<string, { aura: string; face: string; label: string; sp
   sleepy:  { aura: '#7C4DFF', face: '~', label: 'Sleepy',  speed: '4.4s' },
   grumpy:  { aura: '#f59e0b', face: '⌒', label: 'Grumpy',  speed: '3.0s' },
   sad:     { aura: '#536DFE', face: '⌢', label: 'Sad',     speed: '4.6s' },
-  dormant: { aura: '#2A4A6A', face: '-', label: 'Dormant…', speed: '6s' },
+  dormant: { aura: '#2A4A6A', face: '-', label: 'Asleep', speed: '6s' },
 }
 
 // Kids suite S6 (2026-10-14): the CSS blob is retired. The creature is the design drawn on
@@ -112,7 +105,6 @@ export default function SpritePanel({ apiBase = '/api/sprite', extraHeaders: ext
   const [sprite, setSprite] = useState<SpriteStatus | null>(null)
   const spriteRef = useRef<SpriteStatus | null>(null)
   spriteRef.current = sprite
-  const [appearance, setAppearance] = useState<Appearance | null>(null)
   const [needsHatch, setNeedsHatch] = useState(false)
   // Sprite requires an authenticated user. Without this, a 401 fell through the
   // generic `!r.ok` branch and the panel rendered "Sprite service unreachable",
@@ -142,7 +134,6 @@ export default function SpritePanel({ apiBase = '/api/sprite', extraHeaders: ext
   const [heartParticles, setHeartParticles] = useState<Array<{ id: string; x: number; y: number }>>([])
   const prevStage = useRef<string | null>(null)
   const prevIntellect = useRef<number | null>(null)
-  const artPumping = useRef(false)
   const [snapshotKey, setSnapshotKey] = useState<string | null>(null)
   const audioCtxRef = useRef<AudioContext | null>(null)
   const bubbleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -181,12 +172,6 @@ export default function SpritePanel({ apiBase = '/api/sprite', extraHeaders: ext
     setLoading(false)
   }, [apiBase, extraHeaders])
 
-  const fetchAppearance = useCallback(async () => {
-    try {
-      const r = await fetch(`${apiBase}/me/appearance`, { headers: extraHeaders })
-      if (r.ok) setAppearance(await r.json())
-    } catch { /* placeholder art still works */ }
-  }, [apiBase, extraHeaders])
 
   // Load soundEnabled from localStorage on mount
   useEffect(() => {
@@ -235,25 +220,10 @@ export default function SpritePanel({ apiBase = '/api/sprite', extraHeaders: ext
     }
   }, [soundEnabled])
 
-  /** Background art pump: one render at a time, waits out 429 throttles. */
-  const kickArt = useCallback(async () => {
-    if (artPumping.current) return
-    artPumping.current = true
-    try {
-      for (let i = 0; i < 40; i++) {
-        const r = await fetch(`${apiBase}/me/appearance/generate`, { method: 'POST', headers: extraHeaders })
-        if (r.status === 429) { await sleep(21000); continue }
-        if (!r.ok) break
-        const d = await r.json().catch(() => null)
-        if (!d) break
-        if (d.status === 'rendered') { await fetchAppearance(); await sleep(2000); continue }
-        if (d.status === 'complete') { await fetchAppearance(); break }
-        if (d.status === 'mediaforge_offline') break
-        if (d.status === 'failed') { await sleep(15000); continue }
-        await sleep(4000)
-      }
-    } finally { artPumping.current = false }
-  }, [apiBase, fetchAppearance, extraHeaders])
+  // No generated-art pump and no "rendering art… n/8" badge (owner, 2026-11-08): the
+  // creature is the live vector design (SpriteRendererContext) or its snapshot, so the
+  // SpriteAtelier stills were progress on work NOTHING here displays. Bring a pump back
+  // only together with a surface that actually shows a generated asset.
 
   const handlePet = async (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -360,9 +330,8 @@ export default function SpritePanel({ apiBase = '/api/sprite', extraHeaders: ext
 
   useEffect(() => {
     fetchSnapshot()
-    fetchStatus(); fetchAppearance()
+    fetchStatus()
     const statusTimer = setInterval(() => { if (!document.hidden) fetchStatus() }, 60_000)
-    const artTimer = setInterval(() => { if (!document.hidden) fetchAppearance() }, 300_000)
     // Whisper polling every 90s
     if (typeof document !== 'undefined') {
       whisperTimerRef.current = setInterval(() => {
@@ -374,12 +343,11 @@ export default function SpritePanel({ apiBase = '/api/sprite', extraHeaders: ext
     }
     return () => {
       clearInterval(statusTimer)
-      clearInterval(artTimer)
       if (whisperTimerRef.current) clearInterval(whisperTimerRef.current)
       if (typewriterTimerRef.current) clearInterval(typewriterTimerRef.current)
       if (bubbleTimerRef.current) clearTimeout(bubbleTimerRef.current)
     }
-  }, [fetchStatus, fetchAppearance])
+  }, [fetchStatus])
 
 
   const doPost = useCallback(async (path: string, tag: string, body?: object) => {
@@ -458,12 +426,18 @@ export default function SpritePanel({ apiBase = '/api/sprite', extraHeaders: ext
 
   const handleHatch = async () => {
     const data = await doPost('/hatch', 'hatch', { name: hatchName.trim() || 'Sprite' })
-    if (data) { setNeedsHatch(false); setSprite(data); fetchAppearance(); kickArt() }
+    if (data) { setNeedsHatch(false); setSprite(data) }
   }
 
   const handleRevive = async () => {
     const data = await doPost('/me/revive', 'revive')
-    if (data) setSprite(prev => ({ ...(prev as SpriteStatus), ...data }))
+    if (data) {
+      setSprite(prev => ({ ...(prev as SpriteStatus), ...data }))
+      if (data.missed_you) {
+        setToast(`💙 ${data.name ?? 'Your sprite'} missed you!`)
+        setTimeout(() => setToast(null), 6000)
+      }
+    }
   }
 
   // Data ownership: DELETE /me removes the sprite, its care history and its whole
@@ -609,9 +583,7 @@ export default function SpritePanel({ apiBase = '/api/sprite', extraHeaders: ext
   }
 
   const theme = MOOD_THEME[sprite.mood_label] ?? MOOD_THEME.content
-  const pendingCount = appearance
-    ? Object.values(appearance.assets).filter((a: any) => a.status !== 'ready').length
-    : null
+  const away = sprite.dormant && sprite.dormant_reason === 'away'
 
   return (
     <div style={{ padding: '1.5rem', maxWidth: 760, margin: '0 auto' }}>
@@ -712,29 +684,24 @@ export default function SpritePanel({ apiBase = '/api/sprite', extraHeaders: ext
             justifyContent: 'center', gap: 12,
           }}>
             <div style={{ color: 'var(--text-secondary)' }}>
-              {sprite.name} went dormant from neglect…
+              {away
+                ? `${sprite.name} curled up to sleep while you were away.`
+                : `${sprite.name} went dormant from neglect…`}
             </div>
             <button onClick={handleRevive} disabled={busy !== null}
               style={btnStyle(true, busy === 'revive')}>
-              💫 Revive
+              {away ? `👋 Wake ${sprite.name}` : '💫 Revive'}
             </button>
           </div>
         )}
 
-        {pendingCount !== null && pendingCount > 0 && !sprite.dormant && (
-          <button
-            onClick={kickArt}
-            title="Generated art renders in the background — click to nudge the queue"
-            style={{
-              position: 'absolute', bottom: 10, right: 10, fontSize: '0.7rem',
-              padding: '4px 10px', borderRadius: 999, cursor: 'pointer',
-              background: 'var(--bg-elevated)', color: 'var(--text-muted)',
-              border: '1px solid var(--glass-border)',
-            }}
-          >
-            🎨 rendering art… {Object.values(appearance!.assets).filter((a: any) => a.status === 'ready').length}
-            /{Object.keys(appearance!.assets).length}
-          </button>
+        {sprite.missed_you && !sprite.dormant && (
+          <div data-testid="sprite-missed-you" style={{
+            position: 'absolute', bottom: 10, right: 10, fontSize: '0.75rem',
+            padding: '4px 10px', borderRadius: 999, pointerEvents: 'none',
+            background: 'var(--bg-elevated)', color: 'var(--text-secondary)',
+            border: '1px solid var(--glass-border)',
+          }}>💙 missed you</div>
         )}
       </div>
 
@@ -742,6 +709,9 @@ export default function SpritePanel({ apiBase = '/api/sprite', extraHeaders: ext
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
         {Object.entries(NEED_META).map(([need, meta]) => {
           const v = sprite.needs[need] ?? 0
+          // Red only for a need that is genuinely low while the owner is around; a
+          // sleeping sprite's needs are paused, not an alarm.
+          const low = needIsLow(v, sprite.dormant)
           return (
             <div key={need} style={{
               padding: '10px 12px', borderRadius: 10, background: 'var(--bg-elevated)',
@@ -752,7 +722,7 @@ export default function SpritePanel({ apiBase = '/api/sprite', extraHeaders: ext
                 color: 'var(--text-secondary)', marginBottom: 6,
               }}>
                 <span>{meta.icon} {meta.label}</span>
-                <span style={{ color: v < 0.25 ? 'var(--accent-danger)' : 'var(--text-muted)' }}>
+                <span data-low={low ? 'true' : 'false'} style={{ color: low ? 'var(--accent-danger)' : 'var(--text-muted)' }}>
                   {Math.round(v * 100)}%
                 </span>
               </div>
@@ -1102,4 +1072,7 @@ function btnStyle(primary: boolean, isBusy?: boolean): React.CSSProperties {
   }
 }
 
-function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)) }
+/** A need bar reads red only when the need is low AND the sprite is awake. */
+export function needIsLow(value: number, dormant: boolean): boolean {
+  return !dormant && value < 0.25
+}

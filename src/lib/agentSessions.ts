@@ -71,6 +71,8 @@ export interface AgentDecision {
   urgency?: string
   options: Array<{ key: string; label: string; recommended?: boolean }>
   age_seconds?: number
+  /** Who raised it (`ship-share`, `support-loop`, ...): decides its group. */
+  raised_by?: string
 }
 
 export interface AgentListResult {
@@ -129,6 +131,51 @@ export interface AgentSessionsTransport {
 const URGENCY_RANK: Record<string, number> = { critical: 0, high: 1, normal: 2, low: 3 }
 
 /** Most urgent first, then oldest first (the one that has waited longest). Never mutates. */
+/** The groups "waiting on you" is shown in, in this order. */
+export type DecisionKind = 'ask' | 'permission' | 'support' | 'share'
+export const DECISION_KIND_LABEL: Record<DecisionKind, string> = {
+  ask: 'Questions',
+  permission: 'Permissions',
+  support: 'Support',
+  share: 'Shares',
+}
+const KIND_ORDER: DecisionKind[] = ['ask', 'permission', 'support', 'share']
+
+/** Which group a card belongs to: by who raised it, then by its title. */
+export function decisionKind(d: Pick<AgentDecision, 'title' | 'raised_by'>): DecisionKind {
+  const by = (d.raised_by || '').toLowerCase()
+  const title = (d.title || '').toLowerCase()
+  if (by === 'ship-share' || /^share:/.test(title)) return 'share'
+  if (by.includes('permission') || /^(allow|grant|permission)\b/.test(title)) return 'permission'
+  if (by.startsWith('support') || /^support\b/.test(title)) return 'support'
+  return 'ask'
+}
+
+/** The ONE action a row shows: the recommended option, else the first that is not a
+ *  skip/dismiss (the row's tap opens the rest). Null when the card has no options. */
+export function primaryOption(d: Pick<AgentDecision, 'options'>): AgentDecision['options'][number] | null {
+  const opts = d.options || []
+  return opts.find((o) => o.recommended)
+    || opts.find((o) => !/^(skip|dismiss|no|cancel|later|decline)$/i.test(o.key))
+    || opts[0]
+    || null
+}
+
+/** The option that skips a card, when it has one ("skip all shares" answers it). */
+export function skipOption(d: Pick<AgentDecision, 'options'>): AgentDecision['options'][number] | null {
+  return (d.options || []).find((o) => /^(skip|dismiss)$/i.test(o.key)) || null
+}
+
+/** Cards grouped by kind (questions first, shares last), each group in decisionOrder. */
+export function decisionGroups(decisions: readonly AgentDecision[]): Array<{ kind: DecisionKind; label: string; items: AgentDecision[] }> {
+  const by = new Map<DecisionKind, AgentDecision[]>()
+  for (const d of decisionOrder(decisions)) {
+    const k = decisionKind(d)
+    by.set(k, [...(by.get(k) || []), d])
+  }
+  return KIND_ORDER.filter((k) => by.has(k)).map((k) => ({ kind: k, label: DECISION_KIND_LABEL[k], items: by.get(k)! }))
+}
+
 export function decisionOrder(decisions: readonly AgentDecision[]): AgentDecision[] {
   return [...(decisions || [])].sort((a, b) => {
     const u = (URGENCY_RANK[(a.urgency || 'normal').toLowerCase()] ?? 2)

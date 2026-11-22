@@ -9,8 +9,9 @@
  * the finished film, shows the shot list, and takes a plain-language change for
  * Iris — which comes back as a change PROPOSAL the owner approves. A project
  * with a `builder_url` also opens the DarkMatter engine scene where the site is
- * designed, city-builder style; the film is made from that scene. Nothing here
- * approves, publishes or renders on its own.
+ * designed, city-builder style; the film is made from that scene. A workspace
+ * administrator also gets the desk controls (FilmDeskControls: approve/reject, rebuild,
+ * build, render), drawn from the role `GET /api/film/desk` reports for the session.
  *
  * Host contract: `GET /api/film/projects`, `GET /api/film/projects/{name}`,
  * `GET .../proposals`, `POST .../iris {instruction, shot?}`, `GET .../file/{path}`.
@@ -18,6 +19,7 @@
  */
 
 import { useCallback, useEffect, useState, type CSSProperties } from 'react'
+import FilmDeskControls, { useFilmDesk } from './FilmDeskControls'
 import FilmLookStrips from './FilmLookStrips'
 
 export interface FilmDeskPanelProps {
@@ -71,6 +73,7 @@ export default function FilmDeskPanel({ apiBase = '/api' }: FilmDeskPanelProps) 
   const [shot, setShot] = useState('')
   const [sending, setSending] = useState(false)
   const [sent, setSent] = useState('')
+  const desk = useFilmDesk(base, selected)
 
   useEffect(() => {
     let cancelled = false
@@ -218,6 +221,16 @@ export default function FilmDeskPanel({ apiBase = '/api' }: FilmDeskPanelProps) 
               ))}
             </div>
 
+            <FilmDeskControls
+              base={base}
+              project={manifest.project}
+              caps={desk.caps}
+              steer={desk.steer}
+              shots={manifest.shots}
+              onRefresh={desk.refresh}
+              onJobDone={() => { if (selected) void loadProject(selected) }}
+            />
+
             <FilmLookStrips
               base={base}
               project={manifest.project}
@@ -235,7 +248,7 @@ export default function FilmDeskPanel({ apiBase = '/api' }: FilmDeskPanelProps) 
                 </div>
               ))}
               <div style={{ ...muted, marginTop: 8 }}>
-                Proposals are reviewed and approved by the studio owner before they land.
+                Proposals are approved by a workspace administrator before they land.
               </div>
             </div>
           </>

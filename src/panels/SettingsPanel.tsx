@@ -5,6 +5,7 @@ import { useAuth } from '../hooks/useAuth'
 import LLMConfigPanel from './LLMConfigPanel'
 import AccessPolicyPanel from './AccessPolicyPanel'
 import DoorPeoplePanel from './DoorPeoplePanel'
+import LessonsCard from './LessonsCard'
 import { getApiBase } from '../lib/apiBase'
 
 interface ProviderInfo {
@@ -61,6 +62,11 @@ export default function SettingsPanel() {
       {/* Who gets in: invitations, grants and the door's own audited history.
           The endpoints existed since the door shipped and nothing called them. */}
       <DoorPeoplePanel />
+
+      {/* What the assistant learned from this workspace's own answers and
+          corrections: see it, switch it, forget it. Admins only (the card shows
+          nothing to a member); it lives here so the work screens gain no control. */}
+      {isAdmin && <LessonsCard agentName={(embedConfig?.app_name || '').split(' ')[0] || 'your assistant'} />}
 
       {isAdmin ? (
         <section style={{ marginBottom: '2rem' }}>

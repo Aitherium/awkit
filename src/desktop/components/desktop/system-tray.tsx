@@ -17,6 +17,7 @@ import {
   Settings, Power, LogOut, RefreshCw, Monitor,
   Bug, ExternalLink,
 } from 'lucide-react'
+import { friendlyHttpError } from '../../../lib/friendlyError'
 
 // ============================================================================
 // CLOCK
@@ -121,8 +122,7 @@ export function SystemTray({ onOpenSettings, onLock }: SystemTrayProps = {}) {
       // decided) is an answer; dropping the card would claim the agent was
       // approved while it stays blocked, and remove the only way to retry.
       if (!res.ok) {
-        const d = data?.detail ?? data?.error ?? `HTTP ${res.status}`
-        setCardError(typeof d === 'string' ? d : JSON.stringify(d))
+        setCardError(friendlyHttpError(res.status, { action: 'record that decision', detail: data?.detail ?? data?.error }))
         return
       }
       // Returned exactly once — show it or the approval is unusable.
@@ -152,7 +152,8 @@ export function SystemTray({ onOpenSettings, onLock }: SystemTrayProps = {}) {
       {/* Connection indicators */}
       <button
         className="p-1.5 rounded-md hover:bg-white/10 transition-colors"
-        title={mcpConnected ? 'MCP Connected' : 'MCP Disconnected'}
+        title={mcpConnected ? 'Connected to your AI tools' : 'Not connected to your AI tools'}
+        aria-label={mcpConnected ? 'Connected to your AI tools' : 'Not connected to your AI tools'}
       >
         <PlugZap className={`w-3.5 h-3.5 ${mcpConnected ? 'text-emerald-400' : 'text-zinc-600'}`} />
       </button>
@@ -355,16 +356,16 @@ export function SystemTray({ onOpenSettings, onLock }: SystemTrayProps = {}) {
               <div className="grid grid-cols-2 gap-2">
                 <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-zinc-800/50">
                   <PlugZap className={`w-3.5 h-3.5 ${mcpConnected ? 'text-emerald-400' : 'text-red-400'}`} />
-                  <span className="text-xs text-zinc-300">MCP</span>
+                  <span className="text-xs text-zinc-300">AI tools</span>
                   <span className={`ml-auto text-[10px] font-mono ${mcpConnected ? 'text-emerald-500' : 'text-red-500'}`}>
-                    {mcpConnected ? 'ON' : 'OFF'}
+                    {mcpConnected ? 'On' : 'Off'}
                   </span>
                 </div>
                 <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-zinc-800/50">
                   <Activity className={`w-3.5 h-3.5 ${realtimeConnected ? 'text-emerald-400' : 'text-zinc-600'}`} />
-                  <span className="text-xs text-zinc-300">Pulse</span>
+                  <span className="text-xs text-zinc-300">Live updates</span>
                   <span className={`ml-auto text-[10px] font-mono ${realtimeConnected ? 'text-emerald-500' : 'text-zinc-600'}`}>
-                    {realtimeConnected ? 'ON' : 'OFF'}
+                    {realtimeConnected ? 'On' : 'Off'}
                   </span>
                 </div>
               </div>

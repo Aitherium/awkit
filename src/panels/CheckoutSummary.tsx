@@ -61,14 +61,13 @@ export default function CheckoutSummary({
       // Create checkout session for each paid pack
       for (const item of paidItems) {
         if (!item.packId) continue
-        const res = await fetch(`${apiBase}/api/marketplace/checkout`, {
+        // The host backend's packs router proxies Genesis /v1/marketplace/checkout
+        // as the signed-in caller; Genesis owns the buyer and the return URLs.
+        const res = await fetch(`${apiBase}/api/packs/checkout`, {
           method: 'POST',
+          credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            pack_id: item.packId,
-            success_url: window.location.href + '?claim={CHECKOUT_SESSION_ID}',
-            cancel_url: window.location.href,
-          }),
+          body: JSON.stringify({ pack_id: item.packId }),
         })
 
         if (!res.ok) {

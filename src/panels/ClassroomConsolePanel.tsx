@@ -3,7 +3,9 @@
  *
  * Backed by Genesis /api/v1/classroom/* through the host's proxy (apiBase):
  * GET /classes, /classes/{id}/roster, /assignments, /hard-now, /review-queue;
- * POST /classes, /classes/{id}/assignments, /classes/{id}/responses/{rid}/review.
+ * POST /classes, /classes/{id}/assignments, /classes/{id}/responses/{rid}/review,
+ * /classes/{id}/responses/{rid}/suggest (a score SUGGESTION for an answer no machine
+ * can score; the teacher accepts it only by overriding with it, never by confirm).
  * The router answers 404 to anyone who is not the teacher of record, so this
  * panel holds no authorization logic.
  *
@@ -28,10 +30,10 @@ import ClassroomNoticesBell from './ClassroomNoticesBell'
 import { C, FONT_MONO, FONT_UI, LEARN_CSS, LearnModeSwitch } from './learnTheme'
 import { Field, SelectBox, Sheet, SheetHeading, Skel, fieldBox, help, mono, primary, quiet } from './learnParts'
 import {
-  CLASSROOM_API, CLASSROOM_CSS, classroomFetch, cs, cseg, heatLayer, loadStateOf, pct, send,
+  CLASSROOM_API, CLASSROOM_CSS, ClassroomHttpError, classroomFetch, cs, cseg, heatLayer, loadStateOf, pct, send,
   useClassroomSurface,
   type Assignment, type ClassroomClass, type DemoRemoveResult, type DemoSeedResult, type DemoStatus, type DemoView,
-  type HardNow, type HardNowRow, type Lesson, type LoadState, type ReviewItem, type Roster,
+  type HardNow, type HardNowRow, type Lesson, type LoadState, type ReviewItem, type Roster, type ScoreSuggestion,
 } from './classroomApi'
 
 export interface ClassroomConsolePanelProps {
@@ -302,6 +304,12 @@ export default function ClassroomConsolePanel({
     }
   }
 
+  // A suggestion only: the row stays pending, and only the teacher's own "Use this score" (an override) scores it.
+  const suggest = (item: ReviewItem) => classroomFetch<ScoreSuggestion>(
+    apiBase, `/classes/${cseg(active || '')}/responses/${cseg(item.response_id)}/suggest`,
+    { method: 'POST', body: '{}', extraHeaders, timeoutMs: 120000 },
+  )
+
   return (
     <div ref={rootRef} style={rootStyle} data-learn-theme={mode} data-testid="classroom-console">
       <style>{LEARN_CSS + CLASSROOM_CSS}</style>
@@ -416,7 +424,7 @@ export default function ClassroomConsolePanel({
               {data.review ? (
                 data.review.length === 0 ? <p style={help}>Nothing waiting. Machine scores appear here as provisional until you confirm them.</p> : (
                   <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
-                    {data.review.map((r) => <ReviewRow key={r.response_id} r={r} onReview={review} />)}
+                    {data.review.map((r) => <ReviewRow key={r.response_id} r={r} onReview={review} onSuggest={suggest} />)}
                   </ul>
                 )
               ) : <Offline what="The review queue" />}
@@ -464,8 +472,28 @@ function AssignmentRow({ a, apiBase, classId, extraHeaders }: { a: Assignment; a
   )
 }
 
-function ReviewRow({ r, onReview }: { r: ReviewItem; onReview: (r: ReviewItem, a: 'confirm' | 'override', score?: number) => void }) {
+function ReviewRow({ r, onReview, onSuggest }: {
+  r: ReviewItem
+  onReview: (r: ReviewItem, a: 'confirm' | 'override', score?: number) => void
+  onSuggest: (r: ReviewItem) => Promise<ScoreSuggestion>
+}) {
   const [score, setScore] = useState('')
+  const [sug, setSug] = useState<ScoreSuggestion | null>(
+    typeof r.suggested_score === 'number' ? { suggested_score: r.suggested_score, suggested_comment: r.suggested_comment } : null,
+  )
+  const [asking, setAsking] = useState(false)
+  const [sugNote, setSugNote] = useState<string | null>(null)
+  const ask = async () => {
+    setAsking(true); setSugNote(null)
+    try {
+      const s = await onSuggest(r)
+      setSug(s)
+      if (s.suggested_score == null) setSugNote(`No suggestion this time${s.reason ? ` (${s.reason})` : ''}. Score it yourself.`)
+    } catch (e) {
+      setSugNote(e instanceof ClassroomHttpError && e.status > 0 ? e.message : 'The suggestion could not be reached. Try again in a moment.')
+    } finally { setAsking(false) }
+  }
+  const suggested = sug && typeof sug.suggested_score === 'number' ? sug.suggested_score : null
   const n = Number(score)
   const valid = score !== '' && n >= 0 && n <= 100
   // The score the teacher is asked to confirm. Without it there is nothing to confirm: Confirm stays disabled.
@@ -490,6 +518,28 @@ function ReviewRow({ r, onReview }: { r: ReviewItem; onReview: (r: ReviewItem, a
           </ol>
         )}
       </div>
+      {r.flag === 'needs_score' && (
+        <div style={{ flexBasis: '100%', display: 'flex', flexDirection: 'column', gap: 6 }} data-testid="review-suggest">
+          {suggested != null && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '10px 12px', borderRadius: 12, border: `1px dashed ${C.hairlineStrong}` }}
+              data-testid="review-suggestion">
+              <span style={{ ...mono, letterSpacing: '.08em' }}>suggestion · not a score until you set it</span>
+              <span style={{ color: C.ink, font: `500 15px/1.4 ${FONT_UI}` }}>Suggested {pct(suggested)}</span>
+              {sug?.suggested_comment && <span style={{ ...help, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{sug.suggested_comment}</span>}
+            </div>
+          )}
+          {sugNote && <span role="status" style={{ ...help, color: C.amber }}>{sugNote}</span>}
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <button type="button" className="al-quiet al-focus" style={quiet} disabled={asking} onClick={ask}>
+              {asking ? 'Asking…' : suggested != null ? 'Ask again' : 'Suggest a score'}
+            </button>
+            {suggested != null && (
+              <button type="button" className="al-quiet al-focus" style={{ ...quiet, color: C.accent }}
+                onClick={() => onReview(r, 'override', suggested)}>Use this score</button>
+            )}
+          </div>
+        </div>
+      )}
       {r.flag === 'provisional' && (
         <button type="button" className="al-quiet al-focus" style={{ ...quiet, color: C.accent }} disabled={machine == null}
           onClick={() => onReview(r, 'confirm')}>Confirm</button>

@@ -16,6 +16,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { Badge, StateNotice, useApplianceCall } from './ApplianceConsole'
+import { MEMORY_STACK_ID, MemoryStackCard } from './MemoryStackCard'
 import type {
   ApiResult,
   AppliancePanelProps,
@@ -218,6 +219,14 @@ export function ComponentsPanel({ client }: AppliancePanelProps) {
     return <StateNotice result={result} onRetry={() => void reload()} />
   }
 
+  const memoryRow = rows.find((r) => r.id === MEMORY_STACK_ID)
+  const memoryMembers = memoryRow
+    ? rows.filter((r) =>
+        memoryRow.requires?.length
+          ? memoryRow.requires.includes(r.id)
+          : r.id !== MEMORY_STACK_ID && r.id.startsWith('memory-'),
+      )
+    : []
   const hidden = rows.filter((r) => r.state === 'unavailable').length
   const shown = showAll ? rows : rows.filter((r) => r.state !== 'unavailable')
   const counts = rows.reduce<Record<string, number>>((m, r) => {
@@ -228,135 +237,140 @@ export function ComponentsPanel({ client }: AppliancePanelProps) {
   const log = outcome ? outcome.row?.log_tail || outcome.result.stdoutTail || '' : ''
 
   return (
-    <section className="awx-card" aria-busy={loading || busy ? true : undefined}>
-      <div className="awx-card-head">
-        <h2>Components</h2>
-        <span className="awx-muted">
-          {counts.installed ?? 0} installed · {counts.baked ?? 0} built in · {counts.available ?? 0}{' '}
-          available
-        </span>
-      </div>
-      <p className="awx-muted">
-        Optional software pinned by this image. Installs are versioned and roll back with the
-        system; built-in parts cannot be removed.
-      </p>
-
-      {busy ? (
-        <div className="awx-notice awx-tone-muted" role="status" data-testid="busy">
-          {OP_DOING[busy.op]} {busy.id}… this can take a few minutes.
-        </div>
+    <>
+      {memoryRow ? (
+        <MemoryStackCard client={client} row={memoryRow} members={memoryMembers} reload={reload} />
       ) : null}
-
-      {said ? (
-        <div className={`awx-notice awx-tone-${said.tone}`} role="status" data-testid="outcome">
-          <strong>{said.title}</strong>
-          {said.detail ? <p className="awx-notice-detail">{said.detail}</p> : null}
-          {log ? <pre style={S.log}>{log}</pre> : null}
+      <section className="awx-card" aria-busy={loading || busy ? true : undefined}>
+        <div className="awx-card-head">
+          <h2>Components</h2>
+          <span className="awx-muted">
+            {counts.installed ?? 0} installed · {counts.baked ?? 0} built in · {counts.available ?? 0}{' '}
+            available
+          </span>
         </div>
-      ) : null}
+        <p className="awx-muted">
+          Optional software pinned by this image. Installs are versioned and roll back with the
+          system; built-in parts cannot be removed.
+        </p>
 
-      <div style={S.toolbar}>
-        <label className="awx-muted">
-          <input
-            type="checkbox"
-            checked={showAll}
-            onChange={(e) => setShowAll(e.target.checked)}
-          />{' '}
-          Show unavailable ({hidden})
-        </label>
-      </div>
+        {busy ? (
+          <div className="awx-notice awx-tone-muted" role="status" data-testid="busy">
+            {OP_DOING[busy.op]} {busy.id}… this can take a few minutes.
+          </div>
+        ) : null}
 
-      {shown.length === 0 ? (
-        <p className="awx-muted">Nothing to show. Tick "Show unavailable" to see every row.</p>
-      ) : (
-        <div style={S.wrap}>
-          <table style={S.table}>
-            <thead>
-              <tr>
-                <th style={S.th} scope="col">Component</th>
-                <th style={S.th} scope="col">State</th>
-                <th style={S.th} scope="col">
-                  <span className="awx-muted">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {shown.map((r) => {
-                const acts = rowActions(r)
-                const asking = confirm?.id === r.id ? confirm : null
-                return (
-                  <tr key={r.id} data-testid={`row-${r.id}`} data-state={r.state}>
-                    <td style={S.td}>
-                      <div style={S.name}>{r.id}</div>
-                      <div style={S.meta}>
-                        {r.kind}
-                        {r.version ? ` · ${r.version}` : ''}
-                        {r.pin ? ` · ${shortPin(r.pin)}` : ''}
-                      </div>
-                      {r.reason && r.state !== 'available' ? (
-                        <div style={S.reason} data-testid={`reason-${r.id}`}>
-                          {r.reason}
+        {said ? (
+          <div className={`awx-notice awx-tone-${said.tone}`} role="status" data-testid="outcome">
+            <strong>{said.title}</strong>
+            {said.detail ? <p className="awx-notice-detail">{said.detail}</p> : null}
+            {log ? <pre style={S.log}>{log}</pre> : null}
+          </div>
+        ) : null}
+
+        <div style={S.toolbar}>
+          <label className="awx-muted">
+            <input
+              type="checkbox"
+              checked={showAll}
+              onChange={(e) => setShowAll(e.target.checked)}
+            />{' '}
+            Show unavailable ({hidden})
+          </label>
+        </div>
+
+        {shown.length === 0 ? (
+          <p className="awx-muted">Nothing to show. Tick "Show unavailable" to see every row.</p>
+        ) : (
+          <div style={S.wrap}>
+            <table style={S.table}>
+              <thead>
+                <tr>
+                  <th style={S.th} scope="col">Component</th>
+                  <th style={S.th} scope="col">State</th>
+                  <th style={S.th} scope="col">
+                    <span className="awx-muted">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {shown.map((r) => {
+                  const acts = rowActions(r)
+                  const asking = confirm?.id === r.id ? confirm : null
+                  return (
+                    <tr key={r.id} data-testid={`row-${r.id}`} data-state={r.state}>
+                      <td style={S.td}>
+                        <div style={S.name}>{r.id}</div>
+                        <div style={S.meta}>
+                          {r.kind}
+                          {r.version ? ` · ${r.version}` : ''}
+                          {r.pin ? ` · ${shortPin(r.pin)}` : ''}
                         </div>
-                      ) : null}
-                    </td>
-                    <td style={S.td}>
-                      <Badge tone={STATE_TONE[r.state] ?? 'muted'}>
-                        {STATE_LABEL[r.state] ?? r.state}
-                      </Badge>
-                    </td>
-                    <td style={S.td}>
-                      {asking ? (
-                        <div style={S.confirm} role="group" aria-label={`Confirm ${asking.op}`}>
-                          <span>
-                            {OP_LABEL[asking.op]} {r.id}?
-                          </span>
-                          <button
-                            type="button"
-                            className={`awx-btn ${asking.op === 'remove' ? 'awx-btn-danger' : 'awx-btn-primary'}`}
-                            onClick={() => void run(r.id, asking.op)}
-                          >
-                            Confirm
-                          </button>
-                          <button
-                            type="button"
-                            className="awx-btn awx-btn-quiet"
-                            onClick={() => setConfirm(null)}
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      ) : acts.length ? (
-                        <div style={S.actions}>
-                          {acts.map((op) => (
+                        {r.reason && r.state !== 'available' ? (
+                          <div style={S.reason} data-testid={`reason-${r.id}`}>
+                            {r.reason}
+                          </div>
+                        ) : null}
+                      </td>
+                      <td style={S.td}>
+                        <Badge tone={STATE_TONE[r.state] ?? 'muted'}>
+                          {STATE_LABEL[r.state] ?? r.state}
+                        </Badge>
+                      </td>
+                      <td style={S.td}>
+                        {asking ? (
+                          <div style={S.confirm} role="group" aria-label={`Confirm ${asking.op}`}>
+                            <span>
+                              {OP_LABEL[asking.op]} {r.id}?
+                            </span>
                             <button
-                              key={op}
                               type="button"
-                              className={`awx-btn ${op === 'install' ? 'awx-btn-primary' : 'awx-btn-quiet'}`}
-                              disabled={busy !== null}
-                              onClick={() => setConfirm({ id: r.id, op })}
+                              className={`awx-btn ${asking.op === 'remove' ? 'awx-btn-danger' : 'awx-btn-primary'}`}
+                              onClick={() => void run(r.id, asking.op)}
                             >
-                              {OP_LABEL[op]}
+                              Confirm
                             </button>
-                          ))}
-                        </div>
-                      ) : (
-                        <span className="awx-muted">
-                          {r.state === 'baked'
-                            ? 'Part of this appliance'
-                            : r.state === 'needs-license'
-                              ? 'Needs a license'
-                              : '—'}
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </section>
+                            <button
+                              type="button"
+                              className="awx-btn awx-btn-quiet"
+                              onClick={() => setConfirm(null)}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : acts.length ? (
+                          <div style={S.actions}>
+                            {acts.map((op) => (
+                              <button
+                                key={op}
+                                type="button"
+                                className={`awx-btn ${op === 'install' ? 'awx-btn-primary' : 'awx-btn-quiet'}`}
+                                disabled={busy !== null}
+                                onClick={() => setConfirm({ id: r.id, op })}
+                              >
+                                {OP_LABEL[op]}
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="awx-muted">
+                            {r.state === 'baked'
+                              ? 'Part of this appliance'
+                              : r.state === 'needs-license'
+                                ? 'Needs a license'
+                                : '—'}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </>
   )
 }
 

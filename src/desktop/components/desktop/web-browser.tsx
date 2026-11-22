@@ -59,6 +59,7 @@ import {
   ChevronUp, ChevronDown, ExternalLink, Link2, LogIn, Monitor, Download
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { friendlyHttpError, friendlyThrown, isHumanDetail } from '../../../lib/friendlyError'
 
 // ============================================================================
 // TYPES
@@ -212,14 +213,37 @@ async function readJson(res: Response): Promise<any> {
   try { return await res.json() } catch { return null }
 }
 
-function detailOf(data: any, res: Response): string {
-  if (data && typeof data.detail === 'string' && data.detail) return data.detail
+/**
+ * The sentence the HOST wrote, or '' when it wrote none. It never invents one: each
+ * call site picks its own plain sentence for the empty case, because a suffix such as
+ * "sign in to browse" only reads right after a short clause, not after a full sentence.
+ */
+function detailOf(data: any): string {
+  if (data && isHumanDetail(data.detail)) return data.detail.trim()
   // The Veil edge (proxy.ts) refuses with `{ error, message, required }`, not
   // `{ detail }`. Reading only `detail` turned its sentence into a bare
   // "HTTP 403" -- which names nothing a signed-in user can act on.
-  if (data && typeof data.message === 'string' && data.message) return data.message
-  return `HTTP ${res.status}${res.statusText ? ' ' + res.statusText : ''}`
+  if (data && isHumanDetail(data.message)) return data.message.trim()
+  return ''
 }
+
+/** End a sentence with exactly one full stop so two can be joined without "..". */
+function endSentence(s: string): string {
+  return s.replace(/[\s.]+$/, '') + '.'
+}
+
+/** The host's sentence, else the plain sentence for this status. */
+function whyOf(data: any, res: Response, action: string): string {
+  return endSentence(detailOf(data) || friendlyHttpError(res.status, { action }))
+}
+
+/** The 401 banner: one sign-in sentence, never a refusal text glued to a hint. */
+function signInText(data: any): string {
+  const said = detailOf(data)
+  return said ? `${endSentence(said)} Sign in to browse.` : 'You have been signed out. Sign in again to browse.'
+}
+
+const SESSION_ENDED = 'Your browser session ended. Open the page again.'
 
 /**
  * The 403 sentence. A 403 here means the caller WAS identified and was refused --
@@ -229,8 +253,9 @@ function detailOf(data: any, res: Response): string {
  */
 export function refusalText(data: any, res: Response): string {
   const need = data && typeof data.required === 'string' && data.required ? data.required : ''
-  const said = detailOf(data, res)
-  const reason = /^HTTP \d+/.test(said) ? '' : ` The server said: "${said}"`
+  const said = detailOf(data)
+  // Only words the host really sent are attributed to it; a bare 403 has none.
+  const reason = said ? ` The server said: "${said}"` : ''
   const perm = need ? ` (it needs the ${need} permission)` : ''
   return `Your account is not allowed to open an Aither Browser session${perm}.${reason} ` +
     'Ask an admin of your workspace to grant it, then try again.'
@@ -333,9 +358,9 @@ function viewOf(data: any): { url: string; title: string; shot: string | null } 
   return { url, title, shot: raw.length ? raw : null }
 }
 
-function errText(e: unknown): string {
-  if (e instanceof Error) return e.message
-  return typeof e === 'string' ? e : 'Unknown error'
+/** A thrown error as a sentence a person can act on (parser and network wording hidden). */
+function errText(e: unknown, action?: string): string {
+  return friendlyThrown(e, { action })
 }
 
 let tabSeq = 0
@@ -601,7 +626,7 @@ export function WebBrowser({ className = '', renderSidebar, localOnly = false, d
         patch(tabId, {
           loading: false, busy: null, sessionId: null, screenshot: null,
           authRequired: true, view: 'idle', latencyMs: Date.now() - t0,
-          error: `${detailOf(data, res)} — sign in to browse.`,
+          error: signInText(data),
         })
         return
       }
@@ -627,8 +652,8 @@ export function WebBrowser({ className = '', renderSidebar, localOnly = false, d
           sessionId: orphan, screenshot: null,
           loading: false, busy: null, latencyMs: Date.now() - t0,
           error: orphan
-            ? `The session opened but its first view did not come back: ${detailOf(data, res)}`
-            : `Could not open a browser session: ${detailOf(data, res)}`,
+            ? `The session opened but its first view did not come back. ${whyOf(data, res, 'show that page')}`
+            : detailOf(data) ? `Could not open a browser session: ${detailOf(data)}` : whyOf(data, res, 'open a browser session'),
         })
         return
       }
@@ -654,7 +679,7 @@ export function WebBrowser({ className = '', renderSidebar, localOnly = false, d
     } catch (e) {
       patch(tabId, {
         loading: false, busy: null, latencyMs: Date.now() - t0,
-        error: `Could not open a browser session: ${errText(e)}`,
+        error: errText(e, 'open a browser session'),
       })
     }
   }, [localOnly, measureViewport, needLocal, patch])
@@ -715,7 +740,7 @@ export function WebBrowser({ className = '', renderSidebar, localOnly = false, d
         patch(tabId, {
           loading: false, busy: null, sessionId: null, screenshot: null,
           authRequired: true, view: 'idle', latencyMs: Date.now() - t0,
-          error: `${detailOf(data, res)} — sign in to browse.`,
+          error: signInText(data),
         })
         return
       }
@@ -725,7 +750,7 @@ export function WebBrowser({ className = '', renderSidebar, localOnly = false, d
         patch(tabId, {
           loading: false, busy: null, sessionId: null, screenshot: null,
           sessionLost: true, latencyMs: Date.now() - t0,
-          error: `${detailOf(data, res)} — the remote browser session is gone.`,
+          error: SESSION_ENDED,
         })
         return
       }
@@ -738,8 +763,8 @@ export function WebBrowser({ className = '', renderSidebar, localOnly = false, d
         patch(tabId, {
           loading: false, busy: null, latencyMs: Date.now() - t0,
           error: acted
-            ? `${label} ran, but the view did not come back: ${detailOf(data, res)} — press Reload.`
-            : `${label} failed: ${detailOf(data, res)}`,
+            ? `${label} ran, but the view did not come back. ${whyOf(data, res, 'show that page')} Press Reload.`
+            : detailOf(data) ? `${label} failed: ${detailOf(data)}` : whyOf(data, res, label.toLowerCase()),
         })
         return
       }
@@ -757,7 +782,7 @@ export function WebBrowser({ className = '', renderSidebar, localOnly = false, d
     } catch (e) {
       patch(tabId, {
         loading: false, busy: null, latencyMs: Date.now() - t0,
-        error: `${label} failed: ${errText(e)}`,
+        error: errText(e, label.toLowerCase()),
       })
     }
   }, [getTab, openSession, patch])
@@ -787,7 +812,7 @@ export function WebBrowser({ className = '', renderSidebar, localOnly = false, d
         patch(tabId, {
           loading: false, busy: null, sessionId: null, screenshot: null,
           authRequired: true, view: 'idle', latencyMs: Date.now() - t0,
-          error: `${detailOf(data, res)} — sign in to browse.`,
+          error: signInText(data),
         })
         return
       }
@@ -795,11 +820,11 @@ export function WebBrowser({ className = '', renderSidebar, localOnly = false, d
         patch(tabId, {
           loading: false, busy: null, sessionId: null, screenshot: null,
           sessionLost: true, latencyMs: Date.now() - t0,
-          error: `${detailOf(data, res)} — the remote browser session is gone.`,
+          error: SESSION_ENDED,
         })
         return
       }
-      if (!res.ok) throw new Error(detailOf(data, res))
+      if (!res.ok) throw new Error(whyOf(data, res, 'do that'))
       const v = viewOf(data)
       const landed = v.url || t.url
       patch(tabId, {
@@ -815,7 +840,7 @@ export function WebBrowser({ className = '', renderSidebar, localOnly = false, d
     } catch (e) {
       patch(tabId, {
         loading: false, busy: null, latencyMs: Date.now() - t0,
-        error: `observe failed: ${errText(e)}`,
+        error: errText(e, 'refresh the page'),
       })
     }
   }, [getTab, openSession, patch])
@@ -835,7 +860,7 @@ export function WebBrowser({ className = '', renderSidebar, localOnly = false, d
         body: JSON.stringify({ query, mode: 'quick', limit: 12 }),
       })
       const data = await readJson(res)
-      if (!res.ok) throw new Error(detailOf(data, res))
+      if (!res.ok) throw new Error(whyOf(data, res, 'search'))
       const results: SearchResult[] = Array.isArray(data?.results)
         ? (data.results as any[])
             .map((r): SearchResult => ({
@@ -853,7 +878,7 @@ export function WebBrowser({ className = '', renderSidebar, localOnly = false, d
     } catch (e) {
       patch(tabId, {
         loading: false, busy: null, latencyMs: Date.now() - t0, results: [],
-        error: `Search failed: ${errText(e)}`,
+        error: errText(e, 'search'),
       })
     }
   }, [patch])

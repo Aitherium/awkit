@@ -13,7 +13,9 @@ interface ModelEntry {
   id: string
   name: string
   provider: string
-  category: string  // "chat" | "reasoning" | "embedding" | "vision" | "code"
+  category: string  // "chat" | "reasoning" | "embedding" | "vision" | "code" | "image" | "voice"
+  /** Voice models: "tts" (speech out) or "stt" (speech in). */
+  subcategory?: string
   parameters: string  // e.g. "7B", "70B"
   vram_gb: number
   context_length: number
@@ -21,9 +23,16 @@ interface ModelEntry {
   license: string
   description: string
   recommended?: boolean
-  /** "platform" (catalog) or "tenant" (this workspace's own models). */
+  /**
+   * "platform" (catalog), "tenant" (this workspace's own models) or "appliance"
+   * (downloadable onto this appliance from its models/models.yaml).
+   */
   source?: string
   status?: string
+  /** Appliance models: total download size and the one command that fetches it. */
+  size_bytes?: number | null
+  download_command?: string
+  deprecated?: boolean
   releases?: { tag: string; url: string; eval?: string | null }[]
 }
 
@@ -41,6 +50,41 @@ const CATEGORY_ICONS: Record<string, string> = {
   embedding: '\uD83D\uDD17',
   vision: '\uD83D\uDC41',
   code: '\uD83D\uDCBB',
+  image: '\uD83C\uDFA8',
+  voice: '\uD83C\uDF99',
+}
+
+/**
+ * The types the filter always offers, in this order, so image and voice models
+ * are discoverable even before a catalog row of that kind has loaded. Any other
+ * category the catalog returns is appended after these.
+ */
+export const KNOWN_CATEGORIES = ['chat', 'reasoning', 'code', 'vision', 'image', 'voice', 'embedding']
+
+const SUBCATEGORY_LABELS: Record<string, string> = {
+  tts: 'Text to speech',
+  stt: 'Speech to text',
+}
+
+/** Categories for the filter: the known ones first, then anything else the data has. */
+export function categoryOptions(models: { category?: string }[]): string[] {
+  const extra = new Set(
+    models.map(m => m.category || '').filter(c => c && !KNOWN_CATEGORIES.includes(c)),
+  )
+  return [...KNOWN_CATEGORIES, ...Array.from(extra).sort()]
+}
+
+/** 9731112222 -> "9.7 GB" (decimal units, as download pages quote them). */
+export function formatBytes(n?: number | null): string {
+  if (!n || n <= 0) return ''
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let v = n
+  let i = 0
+  while (v >= 1000 && i < units.length - 1) {
+    v /= 1000
+    i += 1
+  }
+  return i === 0 ? `${v} B` : `${v.toFixed(1)} ${units[i]}`
 }
 
 export default function ModelBrowser({
@@ -55,6 +99,7 @@ export default function ModelBrowser({
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [hwProfile, setHwProfile] = useState(initialProfile)
+  const [platformAvailable, setPlatformAvailable] = useState(true)
 
   const fetchModels = useCallback(async () => {
     setLoading(true)
@@ -66,6 +111,7 @@ export default function ModelBrowser({
       if (res.ok) {
         const data = await res.json()
         setModels(data.models || [])
+        setPlatformAvailable(data.platform_available !== false)
         setError(null)
       } else {
         // No built-in model list: an unreachable catalog is stated, not papered over.
@@ -97,10 +143,7 @@ export default function ModelBrowser({
     })
   }, [models, categoryFilter, search, maxVram])
 
-  const categories = useMemo(() => {
-    const cats = new Set(models.map(m => m.category).filter(Boolean))
-    return Array.from(cats).sort()
-  }, [models])
+  const categories = useMemo(() => categoryOptions(models), [models])
 
   return (
     <div>
@@ -145,6 +188,12 @@ export default function ModelBrowser({
         </select>
       </div>
 
+      {!platformAvailable && !error && (
+        <div role="status" style={{ marginBottom: 8, fontSize: 11, color: '#fbbf24' }}>
+          The platform catalog is unreachable; showing the models this appliance can download.
+        </div>
+      )}
+
       {/* Model grid */}
       <div style={{
         display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
@@ -172,6 +221,11 @@ export default function ModelBrowser({
                       Yours
                     </span>
                   )}
+                  {model.source === 'appliance' && (
+                    <span style={{ marginLeft: 6, fontSize: 9, padding: '1px 5px', borderRadius: 8, background: 'var(--bg-deep, #111)', color: 'var(--text-muted, #aaa)' }}>
+                      {model.status === 'unavailable' ? 'Not downloadable yet' : 'Download'}
+                    </span>
+                  )}
                   {model.status === 'offline' && (
                     <span style={{ marginLeft: 6, fontSize: 9, padding: '1px 5px', borderRadius: 8, background: '#3a2a1a', color: '#fbbf24' }}>
                       Offline
@@ -188,12 +242,34 @@ export default function ModelBrowser({
               <div style={{ fontSize: 11, color: 'var(--text-muted, #888)', marginBottom: 6 }}>
                 {model.description}
               </div>
-              <div style={{ display: 'flex', gap: 8, fontSize: 10, color: 'var(--text-muted, #666)' }}>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 10, color: 'var(--text-muted, #666)' }}>
                 <span>{model.provider}</span>
                 <span>{CATEGORY_ICONS[model.category] || ''} {model.category}</span>
+                {model.subcategory && <span>{SUBCATEGORY_LABELS[model.subcategory] || model.subcategory}</span>}
                 {model.vram_gb > 0 && <span>{model.vram_gb} GB VRAM</span>}
+                {model.vram_gb === 0 && model.source === 'appliance' && <span>runs on CPU</span>}
                 {model.context_length > 0 && <span>{(model.context_length / 1000).toFixed(0)}k ctx</span>}
+                {model.size_bytes ? <span>{formatBytes(model.size_bytes)}</span> : null}
               </div>
+              <div
+                data-testid="model-license"
+                style={{ marginTop: 6, fontSize: 10, color: model.license ? 'var(--text-primary, #ccc)' : '#fbbf24' }}
+              >
+                Licence: {model.license || 'not recorded'}
+              </div>
+              {model.download_command && (
+                <code
+                  title="Run this in your appliance's repo to download the model"
+                  onClick={e => e.stopPropagation()}
+                  style={{
+                    display: 'block', marginTop: 6, padding: '3px 6px', fontSize: 10,
+                    background: 'var(--bg-deep, #111)', borderRadius: 4,
+                    color: 'var(--text-muted, #aaa)', userSelect: 'all', overflowX: 'auto',
+                  }}
+                >
+                  {model.download_command}
+                </code>
+              )}
               {model.releases && model.releases.length > 0 && (
                 <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 6 }}>
                   {model.releases.map(r => (

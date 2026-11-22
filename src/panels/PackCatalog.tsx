@@ -39,6 +39,8 @@ export default function PackCatalog({
   const [error, setError] = useState<string | null>(null)
   const [installing, setInstalling] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  /** Which half of the shelf is missing when only one catalog answered. */
+  const [partial, setPartial] = useState<string | null>(null)
 
   useEffect(() => {
     if (externalSelected) setSelected(new Set(externalSelected))
@@ -57,6 +59,10 @@ export default function PackCatalog({
         const data = await res.json()
         setPacks(data.packs || [])
         setError(null)
+        const missing: string[] = []
+        if (data.platform_available === false) missing.push('Aitherium platform packs')
+        if (data.awpack && data.awpack.available === false) missing.push('agent packs')
+        setPartial(missing.length ? `Not shown right now: ${missing.join(' and ')} (unavailable).` : null)
       } else {
         // Never show a stale or invented shelf: an upstream failure is stated.
         setPacks([])
@@ -73,13 +79,16 @@ export default function PackCatalog({
   useEffect(() => { fetchPacks() }, [fetchPacks])
 
   const handleInstall = useCallback(async (pack: PackCardPack) => {
-    setInstalling(pack.id)
+    setInstalling(`${pack.source || 'platform'}:${pack.id}`)
     setNotice(null)
     try {
-      const res = await fetch(`${apiBase}/api/marketplace/packs/${encodeURIComponent(pack.id)}/install`, { method: 'POST' })
+      const src = pack.source === 'awpack' ? '?source=awpack' : ''
+      const res = await fetch(`${apiBase}/api/marketplace/packs/${encodeURIComponent(pack.id)}/install${src}`, { method: 'POST' })
       const data = await res.json().catch(() => ({}))
       if (res.ok) {
-        setNotice(`${pack.name} installed for your workspace.`)
+        setNotice(pack.source === 'awpack'
+          ? `${pack.name} installed on your appliance.`
+          : `${pack.name} installed for your workspace.`)
         await fetchPacks()
       } else {
         setNotice(data.error || `Install failed (${res.status}).`)
@@ -141,6 +150,16 @@ export default function PackCatalog({
         </select>
       </div>
 
+      {partial && !error && (
+        <div role="status" style={{
+          marginBottom: 10, padding: '8px 12px', fontSize: 12,
+          border: '1px solid var(--glass-border, #2a2a4a)', borderRadius: 'var(--radius, 8px)',
+          color: 'var(--text-muted, #aaa)',
+        }}>
+          {partial}
+        </div>
+      )}
+
       {notice && (
         <div role="status" style={{
           marginBottom: 10, padding: '8px 12px', fontSize: 12,
@@ -174,14 +193,14 @@ export default function PackCatalog({
         }}>
           {packs.map(pack => (
             <PackCard
-              key={pack.id}
+              key={`${pack.source || 'platform'}:${pack.id}`}
               pack={pack}
               selected={selected.has(pack.id)}
               owned={owned.includes(pack.id)}
               onSelect={selectable ? handleSelect : undefined}
               onPurchase={onPurchase}
               onInstall={allowInstall ? handleInstall : undefined}
-              installing={installing === pack.id}
+              installing={installing === `${pack.source || 'platform'}:${pack.id}`}
               compact={compact}
             />
           ))}

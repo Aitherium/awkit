@@ -555,7 +555,7 @@ export function resolveAccessMode(): AccessMode {
     ) {
         // Tenant workspace subdomains (slug.aitherium.com) = gateway mode (SaaS, tenant-scoped)
         const parts = hostname.split('.')
-        if (parts.length >= 3 && !['www','app','gateway','portal','demo','blog','chat','saga','irc','tunnel','playground','launch','edge','forge','smtp','create','grafana','prometheus','mcp','idp','wildroot'].includes(parts[0])) {
+        if (parts.length >= 3 && !['www','app','gateway','portal','demo','blog','chat','saga','irc','tunnel','playground','launch','edge','forge','smtp','create','grafana','prometheus','mcp','idp'].includes(parts[0])) {
             return 'gateway' // Tenant workspace subdomain — SaaS, pre-scoped to this tenant
         }
         return 'gateway'
@@ -576,7 +576,7 @@ export function resolveWorkspaceSlug(): string | null {
     const parts = hostname.split('.')
     if (parts.length < 3) return null
     const slug = parts[0]
-    const reserved = ['www','app','gateway','portal','demo','blog','chat','saga','irc','tunnel','playground','launch','edge','forge','smtp','create','grafana','prometheus','mcp','idp','wildroot']
+    const reserved = ['www','app','gateway','portal','demo','blog','chat','saga','irc','tunnel','playground','launch','edge','forge','smtp','create','grafana','prometheus','mcp','idp']
     if (reserved.includes(slug)) return null
     if (!/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(slug)) return null
     return slug

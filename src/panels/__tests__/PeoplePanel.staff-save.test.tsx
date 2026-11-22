@@ -75,3 +75,54 @@ describe('PeoplePanel staff edit', () => {
     expect(screen.queryByText('Staff member removed')).toBeNull()
   })
 })
+
+/**
+ * (tenant ask), 2026-11-17: "the 'workspace user' can be included right into
+ * here and not be separate tabs ... there is an additional one invite/add that can
+ * be removed." The Staff tab is ONE roster; the invite/add tab is gone.
+ */
+describe('PeoplePanel roster', () => {
+  function mockRoster() {
+    ;(global as any).fetch = jest.fn(async (url: string, init?: RequestInit) => {
+      if ((init?.method || 'GET') !== 'GET') {
+        return { ok: true, status: 200, json: async () => ({}) }
+      }
+      return {
+        ok: true, status: 200,
+        json: async () => ({
+          workspace_users: [{
+            id: 'u1', username: 'jason', email: 'jason@example.test',
+            role: 'workspace_admin', display_name: 'Jason Morse', last_active: '2026-11-17T10:00:00Z',
+          }],
+          company_staff: [{
+            id: 's1', name: 'Ann Lee', title: 'PE', location: 'Austin',
+            certifications: ['PE'], specialties: [], firms: [], years_experience: 10,
+            source_doc_id: null,
+          }],
+          counts: { workspace_users: 1, company_staff: 1 },
+          workspace_users_error: null,
+        }),
+      }
+    })
+  }
+
+  it('lists workspace users in the same roster and offers no invite/add tab', async () => {
+    mockRoster()
+    render(<PeoplePanel />)
+    expect(await screen.findByText('Ann Lee')).toBeTruthy()
+    expect(await screen.findByText('Jason Morse')).toBeTruthy()
+    expect(screen.getByText('Workspace users (1)')).toBeTruthy()
+    expect(screen.queryByText('Invite / Add')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Invite' })).toBeNull()
+    expect(screen.queryByLabelText('Email to invite')).toBeNull()
+  })
+
+  it('opens a workspace user as a profile, not an action list', async () => {
+    mockRoster()
+    render(<PeoplePanel />)
+    fireEvent.click(await screen.findByText('Jason Morse'))
+    expect(screen.getAllByText('jason@example.test').length).toBeGreaterThan(1)
+    expect(screen.getAllByText('workspace_admin').length).toBeGreaterThan(0)
+  })
+})
+

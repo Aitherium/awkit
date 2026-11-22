@@ -1685,6 +1685,24 @@ const SOCIAL_APPS: AitherApp[] = [
         keywords: ['studio', 'spaces', 'aitherspaces', 'agent spaces', 'manage', 'profile', 'neighborhood'],
     },
     {
+        // Wesyn (owner 2026-11-12/13): the open network window -- profile (your Space +
+        // standing EARNED in communities), feed (Relay rooms incl. the Discord mirror),
+        // people, worlds (workspaces + their Discord; "planets" until 2026-11-15) and Relay DMs. The window is the
+        // Living OS app `network` (AitherVeil components/os/apps/network-app.tsx), so the
+        // route is its /?app= deep link, like `studio`. Reads are gated server-side.
+        id: 'network',
+        name: 'Wesyn',
+        description: 'Profiles, people and worlds: reputation earned in communities, never typed in',
+        icon: 'users',
+        route: '/?app=network',
+        category: 'social',
+        status: 'beta',
+        requiresAuth: false,
+        availability: 'gateway',
+        showInNav: false,
+        keywords: ['wesyn', 'network', 'profile', 'people', 'connections', 'reputation', 'worlds', 'planets', 'linkedin'],
+    },
+    {
         id: 'relay',
         name: 'Relay',
         description: 'RCS-style messaging hub — multi-protocol chat with agents and humans',

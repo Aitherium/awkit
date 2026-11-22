@@ -151,7 +151,7 @@ export function Taskbar({
   )
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 h-12 z-[200] bg-zinc-950/80 backdrop-blur-2xl border-t border-white/[0.06] flex items-center px-2 gap-2 select-none shadow-[0_-4px_20px_rgba(0,0,0,0.3)]">
+    <div data-os-taskbar="" className="fixed bottom-0 left-0 right-0 h-12 z-[200] bg-zinc-950/80 backdrop-blur-2xl border-t border-white/[0.06] flex items-center px-2 gap-2 select-none shadow-[0_-4px_20px_rgba(0,0,0,0.3)]">
       {/* ── Start / Activities Button ── */}
       <button
         onClick={onOpenStartMenu}

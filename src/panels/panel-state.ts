@@ -12,10 +12,10 @@
  * AUTO-GENERATED from `AitherOS/config/registry-unified.json`
  * DO NOT EDIT by hand. Run: python AitherOS/dev/tools/generate_panel_state.py
  *
- * Generated: 2026-09-28T08:38:06.742925
+ * Generated: 2026-10-31T20:11:12.202909
  * Source: AitherOS/config/registry-unified.json
- * Panels: 142 total
- * State breakdown: demo: 2, unbuilt: 1, usable: 139
+ * Panels: 152 total
+ * State breakdown: demo: 2, unbuilt: 1, usable: 149
  */
 
 export type PanelState = 'usable' | 'demo' | 'gated' | 'unbuilt'
@@ -46,6 +46,7 @@ export const PANEL_STATE_MAP: Record<string, PanelState> = {
   'activity-feed': 'usable',
   'agent-builder': 'usable',
   'agent-dispatch': 'usable',
+  'agentic-web': 'usable',
   'agents': 'usable',
   'ai-search': 'usable',
   'aither-capture': 'usable',
@@ -78,6 +79,7 @@ export const PANEL_STATE_MAP: Record<string, PanelState> = {
   'connectors': 'usable',
   'contacts': 'usable',
   'content-studio': 'usable',
+  'creator': 'usable',
   'dashboard': 'usable',
   'data-plane': 'usable',
   'data-source-setup': 'usable',
@@ -91,6 +93,7 @@ export const PANEL_STATE_MAP: Record<string, PanelState> = {
   'door-people': 'usable',
   'durability': 'demo',
   'elysium-credits': 'usable',
+  'embed-migrate': 'usable',
   'erase': 'usable',
   'escalations': 'usable',
   'esign': 'usable',
@@ -99,6 +102,9 @@ export const PANEL_STATE_MAP: Record<string, PanelState> = {
   'experiments': 'usable',
   'feature-marketplace': 'usable',
   'file-sync': 'usable',
+  'film-desk': 'usable',
+  'certtrack': 'usable',
+  'fine-tune': 'usable',
   'fleet-dashboard': 'usable',
   'forms': 'usable',
   'forum': 'usable',
@@ -111,6 +117,7 @@ export const PANEL_STATE_MAP: Record<string, PanelState> = {
   'invoicing': 'usable',
   'iris': 'demo',
   'knowledge-rag': 'usable',
+  'kv-handoff': 'usable',
   'landing-page': 'usable',
   'llm-config': 'usable',
   'lockbox': 'usable',
@@ -118,11 +125,12 @@ export const PANEL_STATE_MAP: Record<string, PanelState> = {
   'managed-agents': 'usable',
   'marketing-calendar': 'usable',
   'marketing-dashboard': 'usable',
+  'mcp-endpoints': 'usable',
   'migration': 'usable',
   'model-browser': 'usable',
   'my-hardware': 'usable',
-  'film-desk': 'usable',
   'my-packs': 'usable',
+  'my-scopes': 'usable',
   'nanobrain': 'usable',
   'notebooks': 'usable',
   'onboarding-setup': 'usable',
@@ -175,8 +183,6 @@ export const PANEL_STATE_MAP: Record<string, PanelState> = {
   'terminal': 'usable',
   'themis-legal': 'usable',
   'training-jobs': 'usable',
-  'fine-tune': 'usable',
-  'mcp-endpoints': 'usable',
   'tunnel': 'usable',
   'volunteer-compute': 'usable',
   'webhooks': 'usable',

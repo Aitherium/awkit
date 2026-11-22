@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * ExecutiveBriefingPanel — "Good morning" unified dashboard.
+ * ExecutiveBriefingPanel — the reader's day on one screen, greeted by their own clock.
  *
  * Next meeting hero card, priority items, today's agenda timeline,
  * quick actions, auto-refresh every 5 minutes.
@@ -9,17 +9,22 @@
 
 import { useState, useEffect, useCallback } from 'react'
 
+import { greetingForHour } from '../lib/greeting'
+
+export interface BriefingMeeting {
+  event_id: string
+  title: string
+  start_time: string
+  end_time: string
+  attendees: string[]
+  minutes_until: number | null
+}
+
 interface BriefingData {
   date: string
+  /** The server's word, from ITS clock (UTC). Not rendered: see greetingForHour. */
   greeting: string
-  next_meeting: {
-    event_id: string
-    title: string
-    start_time: string
-    end_time: string
-    attendees: string[]
-    minutes_until: number | null
-  } | null
+  next_meeting: BriefingMeeting | null
   priority_items: Array<{
     type: 'email' | 'task' | 'meeting' | 'message'
     priority: string
@@ -90,12 +95,28 @@ const TYPE_ICONS: Record<string, string> = {
   message: '\u{1F4AC}', // speech bubble
 }
 
-function formatTime(iso: string): string {
-  try {
-    return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  } catch {
-    return ''
-  }
+/** A clock time, or '' when `iso` is not a date. `new Date('')` does not throw: it is an
+ *  Invalid Date whose toLocaleTimeString() is the literal text "Invalid Date". */
+export function formatTime(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+/**
+ * The meeting the hero card may show, or null. A card needs a title AND a real start.
+ * An empty workspace's briefing used to carry the demo fixture's next_meeting with every
+ * field zeroed (title '', start '', minutes_until 0), and the card rendered it as
+ * "Invalid Date - Invalid Date", a "Now" pill and a Prepare button beside "Meetings 0"
+ * (a tenant host, 2026-11-16). The backend now sends null; this keeps any other
+ * backend's blank object from drawing a meeting that does not exist.
+ */
+export function upcomingMeeting(m: BriefingMeeting | null | undefined): BriefingMeeting | null {
+  if (!m || typeof m !== 'object') return null
+  if (typeof m.title !== 'string' || !m.title.trim()) return null
+  if (!formatTime(m.start_time)) return null
+  return m
 }
 
 export default function ExecutiveBriefingPanel({
@@ -155,12 +176,17 @@ export default function ExecutiveBriefingPanel({
 
   const now = new Date()
   const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  // The reader's hour, never data.greeting (the server's UTC hour). Client-only: this
+  // branch renders after the fetch, so there is no server render to disagree with.
+  const greeting = greetingForHour(now.getHours())
+  const meeting = upcomingMeeting(data.next_meeting)
+  const meetingEnd = meeting ? formatTime(meeting.end_time) : ''
 
   return (
     <div style={{ padding: 32, maxWidth: 900, margin: '0 auto' }}>
       {/* Greeting */}
       <div style={{ marginBottom: 28 }}>
-        <h1 style={{ fontSize: '1.6rem', fontWeight: 700, marginBottom: 4 }}>{data.greeting}</h1>
+        <h1 data-testid="briefing-greeting" style={{ fontSize: '1.6rem', fontWeight: 700, marginBottom: 4 }}>{greeting}</h1>
         <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
           {now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })} &middot; {timeStr}
         </p>
@@ -171,38 +197,38 @@ export default function ExecutiveBriefingPanel({
         )}
       </div>
 
-      {/* Next meeting hero */}
-      {data.next_meeting && (
-        <div style={{
+      {/* Next meeting hero: only a real meeting (a title and a start that is a date) */}
+      {meeting && (
+        <div data-testid="next-meeting" style={{
           background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-primary)cc)',
           borderRadius: 'var(--radius)', padding: '20px 24px', marginBottom: 24, color: 'white',
         }}>
           <div style={{ fontSize: '0.7rem', opacity: 0.8, marginBottom: 6 }}>NEXT MEETING</div>
-          <h2 style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: 8 }}>{data.next_meeting.title}</h2>
+          <h2 style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: 8 }}>{meeting.title}</h2>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, fontSize: '0.8rem', opacity: 0.9 }}>
-            <span>{formatTime(data.next_meeting.start_time)} - {formatTime(data.next_meeting.end_time)}</span>
-            {data.next_meeting.minutes_until != null && (
+            <span>{formatTime(meeting.start_time)}{meetingEnd ? ` - ${meetingEnd}` : ''}</span>
+            {meeting.minutes_until != null && (
               <span style={{
                 background: 'rgba(255,255,255,0.2)', padding: '3px 10px', borderRadius: 12,
                 fontSize: '0.75rem', fontWeight: 600,
               }}>
-                {data.next_meeting.minutes_until <= 0 ? 'Now' : `in ${data.next_meeting.minutes_until}m`}
+                {meeting.minutes_until <= 0 ? 'Now' : `in ${meeting.minutes_until}m`}
               </span>
             )}
-            {data.next_meeting.attendees.length > 0 && (
-              <span>{data.next_meeting.attendees.length} attendee{data.next_meeting.attendees.length > 1 ? 's' : ''}</span>
+            {(meeting.attendees?.length ?? 0) > 0 && (
+              <span>{meeting.attendees.length} attendee{meeting.attendees.length > 1 ? 's' : ''}</span>
             )}
           </div>
           <button
-            onClick={() => handleMeetingPrep(data.next_meeting!.event_id, data.next_meeting!.title)}
-            disabled={prepLoading === data.next_meeting.event_id}
+            onClick={() => handleMeetingPrep(meeting.event_id, meeting.title)}
+            disabled={prepLoading === meeting.event_id}
             style={{
               marginTop: 12, padding: '6px 16px', borderRadius: 'var(--radius)',
               background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.3)',
               color: 'white', fontSize: '0.75rem', cursor: 'pointer',
             }}
           >
-            {prepLoading === data.next_meeting.event_id ? 'Preparing...' : 'Prepare'}
+            {prepLoading === meeting.event_id ? 'Preparing...' : 'Prepare'}
           </button>
         </div>
       )}

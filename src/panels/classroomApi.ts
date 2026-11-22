@@ -181,6 +181,20 @@ export interface ReviewItem {
   answer_text?: string | null
   /** question id -> the student's answer (academy `_response_out`). */
   answers?: Record<string, unknown> | null
+  /** A score suggestion (0..1) the teacher asked for (POST .../suggest). Never a score: the
+   *  row stays pending until the teacher overrides with a score of their own choosing. */
+  suggested_score?: number | null
+  suggested_comment?: string | null
+}
+
+/** POST /classes/{id}/responses/{rid}/suggest. `suggested_score` is null when the model was off
+ *  or its answer failed a check; `reason` says which. */
+export interface ScoreSuggestion {
+  response_id?: string
+  suggested_score: number | null
+  suggested_comment?: string | null
+  suggested_at?: string | null
+  reason?: string | null
 }
 
 /** DELETE /classes/{id}: `deleted` is 'partial' when a part could not be erased (lib/classroom/consent.py). */
@@ -233,6 +247,41 @@ export interface StudioPlan {
   steps?: string[]
   check_for_understanding?: string[]
   materials?: string[]
+}
+
+/** One edit of a saved plan (PATCH /lessons/{lid}/studio/plan). A path is `title`, `objective`,
+ *  `warm_up` or one list item such as `steps[1]`; `insert` at the list length appends. */
+export type PlanOp =
+  | { op: 'set' | 'insert'; path: string; value: string }
+  | { op: 'str_replace'; path: string; old: string; new: string }
+  | { op: 'remove'; path: string }
+
+/** The server takes at most this many ops in one edit (lesson_studio.MAX_PLAN_OPS). */
+export const MAX_PLAN_OPS = 20
+
+const PLAN_SCALARS = ['title', 'objective', 'warm_up'] as const
+const PLAN_LISTS = ['steps', 'check_for_understanding', 'materials'] as const
+
+/** The ops that turn `base` (the plan as read, with its sha) into `next`. Lists are compared by
+ *  position: changed items are `set`, extra old items are removed from the end backwards (so an
+ *  earlier index never shifts under a later op), new items are appended. A blank item is a
+ *  removed item. */
+export function planEditOps(base: StudioPlan, next: StudioPlan): PlanOp[] {
+  const ops: PlanOp[] = []
+  for (const k of PLAN_SCALARS) {
+    const was = (base[k] ?? '').trim()
+    const now = (next[k] ?? '').trim()
+    if (now !== was) ops.push({ op: 'set', path: k, value: now })
+  }
+  for (const k of PLAN_LISTS) {
+    const a = (base[k] ?? []).map((t) => t.trim())
+    const b = (next[k] ?? []).map((t) => t.trim()).filter(Boolean)
+    const common = Math.min(a.length, b.length)
+    for (let i = 0; i < common; i++) if (a[i] !== b[i]) ops.push({ op: 'set', path: `${k}[${i}]`, value: b[i] })
+    for (let i = a.length - 1; i >= b.length; i--) ops.push({ op: 'remove', path: `${k}[${i}]` })
+    for (let i = a.length; i < b.length; i++) ops.push({ op: 'insert', path: `${k}[${i}]`, value: b[i] })
+  }
+  return ops
 }
 
 export interface StudioTier { label: string; focus: string; activities: string[]; check: string }

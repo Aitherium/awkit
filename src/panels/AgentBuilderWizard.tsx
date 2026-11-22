@@ -12,6 +12,7 @@ import { PackCardPack } from './PackCard'
 
 export interface AgentBuilderWizardProps {
   apiBase?: string
+  /** @deprecated ignored: the Elysium host is retired; every call uses apiBase. */
   elysiumBase?: string
   onComplete?: (result: BuildResult) => void
 }
@@ -74,7 +75,6 @@ const inputStyle: React.CSSProperties = {
 
 export default function AgentBuilderWizard({
   apiBase = '',
-  elysiumBase = '',
   onComplete,
 }: AgentBuilderWizardProps) {
   const [step, setStep] = useState<Step>(0)
@@ -236,7 +236,7 @@ export default function AgentBuilderWizard({
         Agent packs define your agent's personality, knowledge, and behavior.
       </p>
       <PackCatalog
-        apiBase={elysiumBase || apiBase}
+        apiBase={apiBase}
         type="agent"
         selectable
         selected={agentPackId ? [agentPackId] : []}
@@ -260,7 +260,7 @@ export default function AgentBuilderWizard({
         Skills add capabilities like CRM, scheduling, content creation, and more. Select multiple.
       </p>
       <PackCatalog
-        apiBase={elysiumBase || apiBase}
+        apiBase={apiBase}
         type="skill"
         selectable
         multiSelect
@@ -303,7 +303,7 @@ export default function AgentBuilderWizard({
       </div>
 
       <PackCatalog
-        apiBase={elysiumBase || apiBase}
+        apiBase={apiBase}
         type="tool"
         selectable
         multiSelect
@@ -375,7 +375,7 @@ export default function AgentBuilderWizard({
         <div style={sectionCard}>
           <h3 style={{ fontSize: 14, marginBottom: 12 }}>Model Selection</h3>
           <ModelBrowser
-            apiBase={elysiumBase || apiBase}
+            apiBase={apiBase}
             selectedModel={model}
             onModelSelect={setModel}
             hardwareProfile={hwProfile}
@@ -389,7 +389,7 @@ export default function AgentBuilderWizard({
           <h3 style={{ fontSize: 14, marginBottom: 12 }}>Live Preview</h3>
           <div style={{ flex: 1 }}>
             <AgentPreviewChat
-              apiBase={elysiumBase || apiBase}
+              apiBase={apiBase}
               agentName={agentName || 'Agent'}
               systemPrompt={systemPrompt}
             />
@@ -491,7 +491,7 @@ export default function AgentBuilderWizard({
       <div style={{ flex: '1 1 320px' }}>
         <CheckoutSummary
           items={lineItems}
-          apiBase={elysiumBase || apiBase}
+          apiBase={apiBase}
           onCheckoutComplete={() => handleBuild()}
           onBack={goBack}
         />
