@@ -26,6 +26,7 @@ import PillarLanes from './PillarLanes'
 import BeadSpacePanel from '../../panels/BeadSpacePanel'
 import OnDevicePanel from '../../panels/OnDevicePanel'
 import MyHardwarePanel from '../../panels/MyHardwarePanel'
+import DeviceSetupCard from '../../panels/DeviceSetupCard'
 import Tooltip from '../../ui/Tooltip'
 import { useSpeechOutput } from '../../voice/useSpeechOutput'
 import './room.css'
@@ -57,6 +58,12 @@ export interface CompanyRoomProps {
    * Opts the host into the `/hardware` summons (MyHardwarePanel). Requires the
    * host's backend to serve GET/POST `/api/devices`. Absent → the summons is
    * not offered (same enabled-filter rule as on-device).
+   *
+   * It also mounts the enroll-this-computer prompt (DeviceSetupCard) at the top
+   * of the room. The prompt asks the host whether to show
+   * (`GET /api/devices/onboarding`) and renders nothing unless the host says
+   * so — a signed-out visitor, someone already enrolled, someone who said "Not
+   * now", or a backend without that route all see no card.
    */
   enableHardware?: boolean
   /**
@@ -397,6 +404,24 @@ const CompanyRoom = forwardRef<CompanyRoomHandle, CompanyRoomProps>(function Com
           data-listening={room.listening}
           aria-hidden="true"
         />
+
+        {enableHardware && !(blockOpen && summoned?.s.id === 'hardware') && (
+          // The sign-in prompt to enroll this computer. It decides for itself
+          // whether to show (see `enableHardware`); while My Hardware is open the
+          // same card is already on screen there, so this one steps aside. It
+          // sits in the sheet's own flow (the room is a grid of named areas) and
+          // stays pinned to the top while the conversation scrolls under it. No
+          // wrapper element: a card that shows nothing must leave nothing behind.
+          <DeviceSetupCard
+            mode="prompt"
+            productName={appName}
+            style={{
+              position: 'sticky', top: 0, zIndex: 3, width: 'auto',
+              margin: '0 0 1.25rem 1.5rem',
+              background: 'var(--sheet-panel, var(--bg-surface))',
+            }}
+          />
+        )}
 
         {!room.loading && shownMessages.length === 0 && greeting && (
           <div className="room-blank" data-greeting="true">

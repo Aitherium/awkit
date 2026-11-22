@@ -15,8 +15,12 @@
  *   1. Download — the appliance (the boot-proven release leads; a booted:false
  *      build is labelled preview), then the registry-VERIFIED package surface
  *      (no invented URLs) inside a collapsed "Advanced" block.
- *   2. Enroll — mints a device owned by the signed-in user and returns the
- *      copy-paste commands (per OS), including the device secret shown ONCE.
+ *   2. Enroll — ONE command (DeviceSetupCard): the host hands back a one-liner,
+ *      the person pastes it, and a live checklist follows the setup script's five
+ *      steps to "Connected". The older flow — mint a device and get the separate
+ *      copy-paste commands (per OS), including the device secret shown ONCE — is
+ *      kept behind "Show the individual steps", and is what renders, as before,
+ *      on a host that has no one-step setup.
  *   3. Your devices — live list (polled), each with its status and a Remove.
  *      A host may also list machines its identity provider registered (the setup
  *      door's `adk enroll`): `source: 'identity'`, `removable: false` — no Remove,
@@ -31,6 +35,7 @@
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import Tooltip from '../ui/Tooltip'
+import DeviceSetupCard from './DeviceSetupCard'
 
 export interface MyHardwarePanelProps {
   apiBase?: string
@@ -551,6 +556,10 @@ export default function MyHardwarePanel({
       <h3 style={{ fontSize: '0.85rem', fontWeight: 700, margin: '1.25rem 0 0.6rem', color: 'var(--text-muted)' }}>
         2 · Enroll this machine
       </h3>
+      {/* One command and a live checklist. The manual flow below is its
+          "Show the individual steps"; a host with no one-step setup renders the
+          manual flow as it always did. */}
+      <DeviceSetupCard mode="panel" apiBase={apiBase} productName={productName}>
       {!enrolled ? (
         <div style={row}>
           {!enrollOpen ? (
@@ -615,6 +624,7 @@ export default function MyHardwarePanel({
           </p>
         </div>
       )}
+      </DeviceSetupCard>
 
       {/* 3 — Your devices */}
       <h3 style={{ fontSize: '0.85rem', fontWeight: 700, margin: '1.25rem 0 0.6rem', color: 'var(--text-muted)' }}>
